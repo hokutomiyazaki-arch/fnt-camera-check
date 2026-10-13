@@ -110,7 +110,8 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 function frame(pts) {
   const a = pts[P.eyeOut[0]], b = pts[P.eyeOut[1]];
   const c = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, d = dist(a, b);
-  const ang = Math.atan2(b.y - a.y, b.x - a.x);
+  let ang = Math.atan2(b.y - a.y, b.x - a.x);
+  if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;   // 左右の点の並びが逆の端末でも、傾きを 0 付近にそろえる（逆のままだと 180° と出て「まっすぐ」にならなかった）
   const cs = Math.cos(-ang), sn = Math.sin(-ang);
   const f = p => { const x = p.x - c.x, y = p.y - c.y; return { x: (x * cs - y * sn) / d, y: (x * sn + y * cs) / d }; };
   return { f, d, ang, c };
@@ -181,8 +182,10 @@ function sideWord(r, l, big = '大きい') { if (Math.max(r, l) < 0.02) return '
 
 // ════ 0. 位置合わせ
 async function stepAlign() {
-  show(0, '最初に：顔の位置を合わせる', '顔をまっすぐカメラに向けて、明るい所で。3つが緑になったら次へ進めます。');
+  show(0, '最初に：顔の位置を合わせる', '顔をまっすぐカメラに向けて、明るい所で。3つが緑になったら次へ進めます。<br><span class="small">顔が写っていれば、緑にならなくても5秒たつと「このまま進む」が押せます。</span>');
   const b = btn('次へ（8の字）', stepEight); b.disabled = true;
+  const skip = btn('このまま進む', stepEight, 'sub'); skip.style.display = 'none';
+  const t0 = performance.now();
   let okCount = 0, unlocked = false;
   while (!$('sMain').classList.contains('hide') && $('title').textContent.startsWith('最初に')) {
     const items = [];
@@ -190,19 +193,22 @@ async function stepAlign() {
     else {
       const { d } = frame(last), w = video.videoWidth;
       const nose = last[1], cl = last[P.cheek[0]], cr = last[P.cheek[1]];
-      const yaw = (nose.x - cl.x) / (cr.x - cl.x);             // 0.5 で正面
+      const { f } = frame(last);
+      const yaw = (f(nose).x - f(cl).x) / (f(cr).x - f(cl).x);   // 0.5 で正面。傾きを戻した座標で取る（首をかしげただけで「正面に向けて」と出ないように）
       const roll = Math.abs(frame(last).ang * 180 / Math.PI);
       const size = d / w;
-      items.push([size < 0.13 ? 'もう少し近づいてください' : size > 0.42 ? 'もう少し離れてください' : '距離：ちょうどいい', size >= 0.13 && size <= 0.42]);
-      items.push([Math.abs(yaw - 0.5) > 0.08 || roll > 8 ? '顔をまっすぐ正面に向けてください' : '向き：まっすぐ', Math.abs(yaw - 0.5) <= 0.08 && roll <= 8]);
+      items.push([size < 0.10 ? 'もう少し近づいてください' : size > 0.50 ? 'もう少し離れてください' : '距離：ちょうどいい', size >= 0.10 && size <= 0.50]);
+      const yOk = Math.abs(yaw - 0.5) <= 0.12, rOk = roll <= 12;
+      items.push([yOk && rOk ? '向き：まっすぐ' : !yOk ? '顔をまっすぐ正面に向けてください' : '頭の傾き（首をかしげる向き）をまっすぐに', yOk && rOk]);
       const br = brightness();
-      items.push([br < 60 ? '暗いです。明るい所へ' : '明るさ：OK', br >= 60]);
+      items.push([br < 45 ? '暗いです。明るい所へ' : '明るさ：OK', br >= 45]);
     }
     $('checks').innerHTML = items.map(([t, ok]) => `<div class="chk ${ok ? 'ok' : 'ng'}">${ok ? '●' : '○'} ${t}</div>`).join('');
     const all = items.length === 3 && items.every(i => i[1]);
     okCount = all ? okCount + 1 : Math.max(0, okCount - 1);   // 顔が少し揺れても数え直しにしない
     if (okCount >= 5) unlocked = true;                          // 一度そろえば、次へは押せたままにする
     b.disabled = !unlocked;
+    skip.style.display = !unlocked && last && performance.now() - t0 > 5000 ? '' : 'none';   // 顔が写っていないときは出さない（先の段で何も取れないため）
     $('msg').textContent = all ? 'OK。次へ進めます' : '位置を合わせています…';
     await sleep(150);
   }
