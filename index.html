@@ -89,13 +89,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // ── 顔の点の番号（右・左は本人から見た向き。起動後に実際の位置で確かめて入れ替える）
 let P = { eyeOut: [33, 263], eyeIn: [133, 362], mouth: [61, 291], brow: [105, 334], lidUp: [159, 386], lidDn: [145, 374], iris: [468, 473], cheek: [234, 454] };
 let sideChecked = false;
+// GPU で顔の点が取れない端末がある（Android の Chrome で、顔が映っていても点が出ず「顔が見えている時間が短すぎました」になった）。
+// 取れない・エラーが続いたら CPU に切り替える
+let delegate = '', toCPU = async () => {}, switching = false, gpuMiss = 0, everSeen = false;
 
 // ── 読み込み（GPU が使えなければ CPU）
 async function load() {
   const fs = await FilesetResolver.forVisionTasks(WASM);
   const opt = d => ({ baseOptions: { modelAssetPath: MODEL, delegate: d }, runningMode: 'VIDEO', numFaces: 1 });
-  try { lm = await FaceLandmarker.createFromOptions(fs, opt('GPU')); }
-  catch (e) { lm = await FaceLandmarker.createFromOptions(fs, opt('CPU')); }
+  try { lm = await FaceLandmarker.createFromOptions(fs, opt('GPU')); delegate = 'GPU'; }
+  catch (e) { lm = await FaceLandmarker.createFromOptions(fs, opt('CPU')); delegate = 'CPU'; }
+  toCPU = async () => { if (delegate === 'CPU' || switching) return; switching = true; try { lm = await FaceLandmarker.createFromOptions(fs, opt('CPU')); delegate = 'CPU'; } finally { switching = false; } };
   window.__lm = lm;
   $('loadState').textContent = '準備ができました。';
   $('bStart').disabled = false;
@@ -130,22 +134,29 @@ function loop() {
   if (video.readyState >= 2 && video.currentTime !== lastT) {
     lastT = video.currentTime;
     const t = performance.now();
-    const r = lm.detectForVideo(video, t);
+    let r = null;
+    if (!switching) { try { r = lm.detectForVideo(video, t); } catch (e) { window.__detErr = e.message; toCPU(); } }
+    const got = !!(r && r.faceLandmarks && r.faceLandmarks[0]);
+    if (got) everSeen = true;
+    gpuMiss = got ? 0 : gpuMiss + 1;
+    if (delegate === 'GPU' && gpuMiss > 45) toCPU();   // GPU で約3秒続けて顔が取れなければ、CPU に切り替える（一度だけ）
+    window.__delegate = delegate;
     ov.width = video.videoWidth; ov.height = video.videoHeight;
     oc.clearRect(0, 0, ov.width, ov.height);
-    if (r.faceLandmarks && r.faceLandmarks[0]) {
+    if (got) {
       const pts = r.faceLandmarks[0].map(px);
       if (!sideChecked) {   // 写っている映像（鏡にしていない）では、本人の右は画面の左＝x が小さい
         if (pts[33].x > pts[263].x) for (const k in P) P[k] = [P[k][1], P[k][0]];
         sideChecked = true;
       }
-      last = pts;
+      last = pts; window.__last = pts;
       oc.fillStyle = 'rgba(90,209,139,.9)';
       for (let i = 0; i < pts.length; i += 2) oc.fillRect(pts[i].x - 1.2, pts[i].y - 1.2, 2.4, 2.4);
       oc.fillStyle = '#ffcc00';
       for (const i of [...P.iris, 1]) { oc.beginPath(); oc.arc(pts[i].x, pts[i].y, 3.5, 0, 7); oc.fill(); }
       if (rec) rec.push({ t, pts });
-    } else last = null;
+      if (G) drawGuide(t, pts);
+    } else { last = null; if (G) drawGuide(t, null); }
     window.__frames = (window.__frames || 0) + 1;
     window.__faceSeen = (window.__faceSeen || 0) + (last ? 1 : 0);
   }
@@ -168,6 +179,7 @@ function show(step, title, desc) {
   $('result').innerHTML = ''; $('btns').innerHTML = ''; $('checks').innerHTML = ''; $('msg').textContent = '';
   $('photoWrap').style.display = 'none'; $('stage').style.display = '';
   gc.clearRect(0, 0, gd.width, gd.height);
+  G = null;
 }
 function btn(label, fn, cls = '') { const b = document.createElement('button'); b.textContent = label; b.className = cls; b.onclick = fn; $('btns').appendChild(b); return b; }
 async function countdown(n = 3) { for (let i = n; i > 0; i--) { $('big').textContent = i; await sleep(800); } $('big').textContent = ''; }
@@ -214,46 +226,99 @@ async function stepAlign() {
   }
 }
 
-// ════ 1. 首の8の字（鼻先の通り道）
+// ════ 1. 首の8の字（画面の ∞ のガイドを、鼻先でなぞる）
+// ガイド：横向きの ∞（x＝sinθ・y＝sin2θ）。1周 5秒で3周 → 反対回りで3周。
+// 位置と大きさは、始める直前の鼻先の位置と目の間の長さ（d）に合わせる。座標は写っている映像のまま（画面は鏡なので x の向きが逆）
+const LAP = 5000, LAPS = 3, GA = 0.6, GB = 0.3;   // 横の半幅・縦の半幅（d を1として）
+let G = null;                                      // 描いている最中のガイド { cx, cy, d, t0, dir, trail }
+const gPos = (g, th) => ({ x: g.cx - g.dir0 * GA * g.d * Math.sin(th), y: g.cy - GB * g.d * Math.sin(2 * th) });   // dir0=1：画面の右上へ出る
+function drawGuide(t, pts) {
+  const g = G; oc.lineWidth = Math.max(3, g.d * 0.05);
+  oc.strokeStyle = 'rgba(255,255,255,.75)'; oc.setLineDash([g.d * 0.08, g.d * 0.06]); oc.beginPath();
+  for (let i = 0; i <= 120; i++) { const p = gPos(g, i / 120 * 2 * Math.PI); i ? oc.lineTo(p.x, p.y) : oc.moveTo(p.x, p.y); }
+  oc.stroke(); oc.setLineDash([]);
+  if (g.t0 != null) {
+    const th = g.dir * 2 * Math.PI * Math.max(0, t - g.t0) / LAP, p = gPos(g, th);
+    oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(p.x, p.y, g.d * 0.09, 0, 7); oc.fill();
+    // 進む向きの矢印（少し先の位置へ）
+    const q = gPos(g, th + g.dir * 0.35); oc.strokeStyle = '#ffcc00'; oc.lineWidth = g.d * 0.03; oc.beginPath(); oc.moveTo(p.x, p.y); oc.lineTo(q.x, q.y); oc.stroke();
+  }
+  if (pts) { const n = pts[1]; g.trail.push(n); if (g.trail.length > 40) g.trail.shift();
+    oc.strokeStyle = 'rgba(255,90,90,.8)'; oc.lineWidth = g.d * 0.03; oc.beginPath(); g.trail.forEach((p, i) => i ? oc.lineTo(p.x, p.y) : oc.moveTo(p.x, p.y)); oc.stroke();
+    oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, g.d * 0.06, 0, 7); oc.fill(); }
+}
 async function stepEight() {
-  show(1, '1. 首の8の字', '鼻先で、横向きの「∞」をゆっくり3回描いてください。15秒です。<br><span class="small">痛みが出たら止めてください。</span>');
+  show(1, '1. 首の8の字', `画面に出る白い「∞」の線を、鼻先（赤い点）でなぞります。<br>黄色い点が1周 ${LAP / 1000}秒で進むので、鼻先で追いかけてください。<b>3周 → 「反対回り」の合図で逆向きに3周</b>（合わせて約${LAP * LAPS * 2 / 1000 + 3}秒）。<br><span class="small">痛みが出たら止めてください。肩は動かさず、首だけで。</span>`);
   btn('始める', async () => {
-    $('btns').innerHTML = ''; await countdown();
-    $('msg').textContent = '鼻先で ∞ を描いて…';
-    const r = await record(15000, p => { $('msg').textContent = `鼻先で ∞ を描いて…（あと${Math.ceil(15 * (1 - p))}秒）`; });
-    analyzeEight(r);
+    $('btns').innerHTML = '';
+    // 鼻先の位置を取ってガイドを置く（顔が見えるまで待つ）
+    $('msg').textContent = '顔をまっすぐ向けて、そのまま…';
+    let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
+    if (!last) return fail(stepEight, '顔が見つかりませんでした');
+    const s0 = await record(700);
+    const src = s0.length ? s0 : [{ pts: last }];
+    const md = a => { const v = [...a].sort((x, y) => x - y); return v[v.length >> 1]; };
+    G = { cx: md(src.map(f => f.pts[1].x)), cy: md(src.map(f => f.pts[1].y)), d: md(src.map(f => dist(f.pts[P.eyeOut[0]], f.pts[P.eyeOut[1]]))), t0: null, dir: 1, dir0: 1, trail: [] };
+    $('msg').textContent = '白い線の上に、鼻先（赤い点）を置いてください'; await countdown();
+    const seg = [];
+    for (const [k, dir] of [['fwd', 1], ['rev', -1]]) {
+      if (k === 'rev') { G.t0 = null; $('big').textContent = '反対回り'; $('msg').textContent = 'ここから逆向きに3周'; await sleep(2200); $('big').textContent = ''; }
+      G.dir = dir; G.t0 = performance.now();
+      const r = await record(LAP * LAPS, p => { const lap = Math.min(LAPS, Math.floor(p * LAPS) + 1); $('msg').textContent = `${k === 'fwd' ? '' : '反対回り・'}${lap}周目／${LAPS}　黄色い点を鼻先で追って${last ? '' : '（顔が見えません）'}`; });
+      seg.push({ k, dir, t0: G.t0, r });
+    }
+    const g = G; G = null; analyzeEight(seg, g);
   });
 }
-function analyzeEight(r) {
-  if (r.length < 30) return fail(stepEight, '顔が見えている時間が短すぎました');
-  // 鏡の向き（画面の右＝本人の右）・目の間の長さで割った鼻先の位置
-  const pts = r.map(({ pts }) => { const d = dist(pts[P.eyeOut[0]], pts[P.eyeOut[1]]); return { x: -pts[1].x / d, y: pts[1].y / d, t: 0 }; });
-  const med = a => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
-  const cx = med(pts.map(p => p.x)), cy = med(pts.map(p => p.y));
-  const q = pts.map(p => ({ x: p.x - cx, y: p.y - cy }));
-  const side = s => q.filter(p => s * p.x > 0);
-  const W = s => Math.max(0, ...side(s).map(p => Math.abs(p.x)));
-  const H = s => { const a = side(s).map(p => p.y); return a.length ? Math.max(...a) - Math.min(...a) : 0; };
-  const wR = W(1), wL = W(-1), hR = H(1), hL = H(-1);
-  // 途中で止まりかけた所（輪の端ではない所で、速さが中央値の25%を下回った回数）※仮の目安
-  const sp = q.slice(1).map((p, i) => Math.hypot(p.x - q[i].x, p.y - q[i].y));
-  const ms = med(sp); let stops = 0, run = 0;
-  sp.forEach((v, i) => { const mid = Math.abs(q[i + 1].x) < 0.5 * Math.max(wR, wL); if (v < ms * 0.25 && mid) { run++; if (run === 3) stops++; } else run = 0; });
-  // 通り道を描く
-  gd.width = gd.clientWidth * 2; gd.height = gd.clientHeight * 2;
-  const sc = Math.min(gd.width / (2.4 * Math.max(wR, wL, 0.05)), gd.height / (2.4 * Math.max(hR, hL, 0.05)));
-  gc.lineWidth = 5; gc.lineJoin = 'round';
-  for (let i = 1; i < q.length; i++) {
-    gc.strokeStyle = q[i].x > 0 ? '#ffcc00' : '#4fc3f7';
-    gc.beginPath(); gc.moveTo(gd.width / 2 + q[i - 1].x * sc, gd.height / 2 + q[i - 1].y * sc); gc.lineTo(gd.width / 2 + q[i].x * sc, gd.height / 2 + q[i].y * sc); gc.stroke();
+function analyzeEight(seg, g) {
+  const all = seg.flatMap(s => s.r);
+  if (all.length < 30) return fail(stepEight, '顔が見えている時間が短すぎました');
+  const N = 240, curve = []; for (let i = 0; i < N; i++) curve.push(gPos(g, i / N * 2 * Math.PI));
+  const TOL = 0.15, TOLF = 0.2;   // 線の上＝d の15%以内／点について＝遅れを差し引いた点の位置から d の20%以内
+  // 人は点より少し遅れて動くので、遅れ（0〜1.2秒・向きごと）と、体ごとのずれ（上下左右）を、いちばん合う値に合わせてから採点する
+  const rows = seg.flatMap(s => s.r.map(({ t, pts }) => ({ s, t, n: pts[1] })));
+  const at = (r, lag) => gPos(g, r.s.dir * 2 * Math.PI * (r.t - lag - r.s.t0) / LAP);
+  const fit = rs => { let best = { lag: 0, ox: 0, oy: 0, e: Infinity }; const sub = rs.filter((_, i) => i % 3 === 0);
+    for (let lag = 0; lag <= 1200; lag += 100) { const gp = sub.map(r => at(r, lag));
+      for (let i = -4; i <= 4; i++) for (let j = -4; j <= 4; j++) { const ox = i * 0.1 * g.d, oy = j * 0.1 * g.d; let e = 0;
+        sub.forEach((r, k) => { e += Math.min(dist(gp[k], { x: r.n.x + ox, y: r.n.y + oy }) / g.d, 1); });
+        if (e < best.e) best = { lag, ox, oy, e }; } }
+    return best; };
+  const fits = {}; for (const s of seg) fits[s.k] = fit(rows.filter(r => r.s === s));
+  const best = fits.fwd;   // 結果の絵は最初の向きのずれで描く
+  const out = {};
+  for (const s of seg) {
+    const fb = fits[s.k], rs = rows.filter(r => r.s === s), n = rs.map(r => ({ x: r.n.x + fb.ox, y: r.n.y + fb.oy }));
+    const on = rs.filter((r, i) => dist(at(r, fb.lag), n[i]) / g.d < TOLF).length;
+    // なぞれた範囲：∞ の線の点のうち、鼻先が近くを通った点の割合（右の輪・左の輪）。止まったままだと上がらない
+    const cov = side => { const cs = curve.filter(c => side * (g.cx - c.x) > 1e-6); const hit = cs.filter(c => n.some(p => dist(c, p) / g.d < TOL)).length; return cs.length ? Math.round(hit / cs.length * 100) : 0; };
+    const xs = n.map(p => (g.cx - p.x) / (GA * g.d));
+    out[s.k] = { lag: fb.lag, n: rs.length, follow: rs.length ? Math.round(on / rs.length * 100) : 0, covR: cov(1), covL: cov(-1), wR: Math.max(0, ...xs), wL: Math.max(0, ...xs.map(v => -v)) };
   }
-  R.eight = { wR, wL, hR, hL, stops, n: r.length };
-  $('msg').textContent = '黄＝あなたの右の輪　青＝左の輪';
-  $('result').innerHTML = `<div class="res">右の輪：幅 <b>${f2(wR)}</b>・高さ <b>${f2(hR)}</b><br>左の輪：幅 <b>${f2(wL)}</b>・高さ <b>${f2(hL)}</b><br>
-  幅は${sideWord(wR, wL)}（差 ${pct(wR, wL)}%）・高さは${sideWord(hR, hL)}（差 ${pct(hR, hL)}%）<br>途中で止まりかけた所：<b>${stops}</b> 回（仮の目安）<br><span class="small">数字は目の間の長さを1とした大きさ。${r.length}コマ読み取り。</span></div>`;
+  const near = p => Math.min(...curve.map(c => dist(c, { x: p.x + best.ox, y: p.y + best.oy }))) / g.d;
+  // 結果の絵：ガイドの線と鼻先の通り道（緑＝線の上・赤＝外れ）。鏡の向きに直して描く
+  gd.width = gd.clientWidth * 2; gd.height = gd.clientHeight * 2;
+  const sc = Math.min(gd.width / (2.8 * GA), gd.height / (2.8 * 2 * GB)) / g.d;
+  const T = (p, o = 0) => ({ x: gd.width / 2 - (p.x + o * best.ox - g.cx) * sc, y: gd.height / 2 + (p.y + o * best.oy - g.cy) * sc });
+  gc.fillStyle = 'rgba(0,0,0,.55)'; gc.fillRect(0, 0, gd.width, gd.height);
+  gc.lineWidth = 6; gc.strokeStyle = 'rgba(255,255,255,.6)'; gc.setLineDash([14, 10]); gc.beginPath();
+  curve.forEach((c, i) => { const p = T(c); i ? gc.lineTo(p.x, p.y) : gc.moveTo(p.x, p.y); }); gc.closePath(); gc.stroke(); gc.setLineDash([]);
+  gc.lineWidth = 4;
+  for (const s of seg) for (let i = 1; i < s.r.length; i++) {
+    const a = T(s.r[i - 1].pts[1], 1), b = T(s.r[i].pts[1], 1);
+    gc.strokeStyle = near(s.r[i].pts[1]) < TOL ? (s.dir > 0 ? '#5ad18b' : '#4fc3f7') : '#ff6b6b';
+    gc.beginPath(); gc.moveTo(a.x, a.y); gc.lineTo(b.x, b.y); gc.stroke();
+  }
+  R.eight = out;
+  const F = out.fwd, B = out.rev;
+  $('msg').textContent = '緑＝最初の向き・水色＝反対回りで線の上　赤＝線から外れた所';
+  $('result').innerHTML = `<div class="res">黄色い点について線の上を動けた割合：最初の向き <b>${F.follow}%</b>・反対回り <b>${B.follow}%</b>（d の${Math.round(TOLF * 100)}%以内）<br>
+  ∞をなぞれた範囲　あなたの右の輪：最初 <b>${F.covR}%</b>・反対 <b>${B.covR}%</b>　左の輪：最初 <b>${F.covL}%</b>・反対 <b>${B.covL}%</b><br>
+  鼻先が届いた横幅（線の端を1）：右 <b>${f2(Math.max(F.wR, B.wR))}</b>・左 <b>${f2(Math.max(F.wL, B.wL))}</b><br>
+  <span class="small">「線の上」＝鼻先が線から目の間の長さの${Math.round(TOL * 100)}%以内。点についての割合は、あなたの遅れ（最初 ${(F.lag / 1000).toFixed(1)}秒・反対 ${(B.lag / 1000).toFixed(1)}秒）を差し引いて数えています。${F.n + B.n}コマ読み取り。</span></div>`;
   btn('もう一度', stepEight, 'sub'); btn('次へ（表情）', stepFace);
 }
-function fail(again, why) { $('result').innerHTML = `<div class="res">${why}。顔を画面に入れて、もう一度どうぞ。</div>`; btn('もう一度', again); }
+function fail(again, why) { $('result').innerHTML = `<div class="res">${why}。顔を画面に入れて、もう一度どうぞ。<br><span class="small">（確かめ用：顔の点の読み取り ${delegate}・${window.__faceSeen || 0}／${window.__frames || 0}コマ${window.__detErr ? '・' + window.__detErr : ''}）</span></div>`; btn('もう一度', again); }
 
 // ════ 2. 表情の左右差
 async function stepFace() {
@@ -399,14 +464,14 @@ async function stepTongue() {
 function finish() {
   const L = [];
   const e = R.eight, f = R.face, y = R.eyes, c = R.conv;
-  if (e) L.push(`1. 首の8の字：右の輪 幅${f2(e.wR)}・高さ${f2(e.hR)}／左の輪 幅${f2(e.wL)}・高さ${f2(e.hL)}（幅の差${pct(e.wR, e.wL)}%）・止まりかけ${e.stops}回`);
+  if (e) L.push(`1. 首の8の字：点について線の上 最初${e.fwd.follow}%・反対${e.rev.follow}%／なぞれた範囲 右の輪 ${e.fwd.covR}%・${e.rev.covR}%／左の輪 ${e.fwd.covL}%・${e.rev.covL}%／届いた横幅 右${f2(Math.max(e.fwd.wR, e.rev.wR))}・左${f2(Math.max(e.fwd.wL, e.rev.wL))}`);
   if (f) L.push(`2. 表情：口角 右${f2(f.m0)}・左${f2(f.m1)}（差${pct(f.m0, f.m1)}%）／眉 右${f2(f.b0)}・左${f2(f.b1)}（差${pct(f.b0, f.b1)}%）／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%`);
   if (y) L.push(`3. 目の動き：ついていけた度合い${Math.round(y.c * 100)}・頭の動き${f2(y.head)}/${f2(y.headYaw)}・跳んだ${y.jumps}回`);
   if (c) L.push(`4. 寄り目：右${f2(c[0].gain)}・左${f2(c[1].gain)}（差${pct(c[0].gain, c[1].gain)}%）・逃げた目 ${c[0].esc ? '右' : ''}${c[1].esc ? '左' : ''}${!c[0].esc && !c[1].esc ? 'なし' : ''}`);
   if (R.tongue) L.push(`5. 舌：${R.tongue}`);
   $('sMain').classList.add('hide'); $('sEnd').classList.remove('hide');
   $('endList').innerHTML = L.map(s => `<div class="res">${s}</div>`).join('');
-  $('endText').value = 'カメラで5つのチェック（試し版）の結果\n' + L.join('\n') + '\n' + navigator.userAgent;
+  $('endText').value = 'カメラで5つのチェック（試し版）の結果\n' + L.join('\n') + '\n' + navigator.userAgent + '（顔の点：' + delegate + '）';
 }
 $('bCopy').onclick = async () => { const t = $('endText'); let ok = false; try { await navigator.clipboard.writeText(t.value); ok = true; } catch (e) { t.select(); try { ok = document.execCommand('copy'); } catch (_) {} } $('bCopy').textContent = ok ? 'コピーしました' : '上の枠を長押しでコピー'; };
 $('bAgain').onclick = () => { $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepAlign(); };
@@ -419,7 +484,7 @@ $('bStart').onclick = async () => {
   stepAlign();
 };
 // 確かめ用（自動の試験から各段を直接呼ぶ）
-window.__steps = { stepAlign, stepEight, stepFace, stepEyes, stepConv, stepTongue, R };
+window.__steps = { analyzeEight, gPos, finish, stepAlign, stepEight, stepFace, stepEyes, stepConv, stepTongue, R };
 </script>
 </body>
 </html>
