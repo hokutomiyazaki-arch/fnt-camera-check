@@ -43,6 +43,9 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 #cue.low{top:68%}
 #cue.huge{font-size:clamp(60px,22vw,110px)}
 #cue small{display:block;font-size:16px;font-weight:600;color:#dfe3ea;margin-top:8px;line-height:1.5}
+#cue canvas{display:block;margin:0 auto 6px;width:220px;height:170px}
+/* 音声の入り切り（いつでも押せるよう右上に固定） */
+#bVoice{position:absolute;right:10px;top:calc(30px + env(safe-area-inset-top));width:auto;margin:0;padding:6px 12px;font-size:14px;border-radius:20px;background:rgba(0,0,0,.6);border:1px solid #556;z-index:10}
 #cue .ok{display:inline-block;color:#5ad18b;font-size:1.5em}
 .meter{position:relative;height:16px;border-radius:8px;background:#2b2f38;margin:12px 4px 2px;overflow:hidden}
 .meter i{position:absolute;top:0;bottom:0;background:rgba(90,209,139,.45)}
@@ -96,6 +99,7 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
   </div>
   <div id="top"><div class="steps" id="steps"></div><div id="title"></div></div>
   <div id="cue"></div>
+  <button id="bVoice"></button>
   <div id="near"></div>
   <div id="bottom"><div id="result"></div><div id="btns"></div><div id="msg"></div></div>
 </div>
@@ -319,7 +323,26 @@ function show(step, title) {
   return tok;
 }
 // 指示は画面の真ん中に太く大きく出す（2026-10-14 宮崎さん「常に画面の真ん中に指示が出て、その通りに目や顔を動かす」）
-function cue(html, cls = '') { const c = $('cue'); c.className = cls; c.innerHTML = html; }
+// ∞・線のガイドを出している間は、指示を下へ逃がして線を隠さない（2026-10-14 宮崎さん「点線が文字の後ろに被って見えない」）
+function cue(html, cls = '', voice) { const c = $('cue'); if (G && !/low/.test(cls)) cls += ' low'; c.className = cls; c.innerHTML = html; say(voice ?? html); }   // voice：細かく変わる数字を読ませたくないときの読み上げ文
+// ── 音声の指示（2026-10-14 宮崎さん「音声で指示を伝えてほしい。すぐにオフにできるボタンをつけて」）。右上のボタンで入り切り、端末に覚える
+let VOICE = localStorage.getItem('fntVoice') !== 'off', said = '', jaV = null;
+const toSpeech = html => { const d = document.createElement('div'); d.innerHTML = String(html).replace(/<br\s*\/?>/g, '。').replace(/<small>/g, '。'); d.querySelectorAll('button').forEach(b => b.remove());
+  return d.textContent.replace(/「∞」/g, '8の字').replace(/∞/g, '8の字').replace(/(\d+)(周目|往復目)／\d+/g, '$1$2').replace(/／/g, '、').replace(/\s+/g, ' ').replace(/。+/g, '。').replace(/^。|。$/g, '').trim(); };
+function say(html) {
+  const t = html ? toSpeech(html) : '';
+  if (!t) return;
+  if (t === said) return;
+  let u = t;   // 数字だけ変わったとき（カウントダウン・何周目）は、変わった所から先だけ読む
+  if (said && t.replace(/\d+/g, '#') === said.replace(/\d+/g, '#')) { let i = 0; while (t[i] === said[i]) i++; while (i > 0 && /\d/.test(t[i - 1])) i--; u = t.slice(i); }
+  said = t;
+  if (!VOICE || !window.speechSynthesis) return;
+  try { speechSynthesis.cancel(); const x = new SpeechSynthesisUtterance(u); x.lang = 'ja-JP'; x.rate = 1.1;
+    jaV = jaV || speechSynthesis.getVoices().find(v => /^ja/i.test(v.lang)); if (jaV) x.voice = jaV; speechSynthesis.speak(x); } catch (e) {}
+}
+function voiceBtn() { $('bVoice').textContent = VOICE ? '🔊 音声オン' : '🔇 音声オフ'; }
+$('bVoice').onclick = () => { VOICE = !VOICE; localStorage.setItem('fntVoice', VOICE ? 'on' : 'off'); voiceBtn(); if (!VOICE) { try { speechSynthesis.cancel(); } catch (e) {} } else { const t = said; said = ''; say(t.replace(/。/g, '<br>')); } };
+voiceBtn(); try { speechSynthesis.onvoiceschanged = () => { jaV = null; }; } catch (e) {}
 function dark(on) { $('stage').classList.toggle('dark', on); $('sMain').classList.toggle('dark', on); }
 function btn(label, fn, cls = '') { const b = document.createElement('button'); b.textContent = label; b.className = cls; b.onclick = fn; $('btns').appendChild(b); return b; }
 const clearBtns = () => { $('btns').innerHTML = ''; $('result').innerHTML = ''; };
@@ -348,7 +371,7 @@ function hideDot() { dot.style.display = 'none'; }
 function near(html, label, fn) {
   const n = $('near'); n.innerHTML = '';
   if (html == null) { n.style.display = 'none'; return; }
-  n.innerHTML = html;
+  n.innerHTML = html; say(html);
   if (label) { const b = document.createElement('button'); b.textContent = label; b.onclick = fn; n.appendChild(b); }
   n.style.display = 'block'; n.style.top = (parseFloat(dot.style.top) + 24) + 'px';
 }
@@ -384,7 +407,7 @@ async function stepAlign() {
     b.disabled = !unlocked;
     skip.style.display = !unlocked && last && performance.now() - t0 > 5000 ? '' : 'none';   // 顔が写っていないときは出さない
     const head = all || unlocked ? '<span class="ok">OK ✓</span><br>下の「次へ」を押してください' : '顔の位置を合わせます';
-    cue(`${head}<small>${items.map(([t, ok]) => `<span style="color:${ok ? '#5ad18b' : '#ff8a65'}">${ok ? '●' : '○'} ${t}</span>`).join('<br>')}</small>`);
+    cue(`${head}<small>${items.map(([t, ok]) => `<span style="color:${ok ? '#5ad18b' : '#ff8a65'}">${ok ? '●' : '○'} ${t}</span>`).join('<br>')}</small>`, '', all || unlocked ? 'OK。下の「次へ」を押してください' : '顔の位置を合わせます。' + items.filter(i => !i[1]).map(i => i[0]).join('。'));
     await sleep(150);
   }
 }
@@ -418,7 +441,7 @@ async function stepTilt() {
       const t1 = performance.now(); let okN = 0;
       while (my === tok && performance.now() - t1 < 8000) { const p = phoneDeg(); if (p == null && performance.now() - t1 > 1500) break;
         okN = p != null && p <= 2 ? okN + 1 : 0; if (okN >= 5) break;
-        cue(`スマホを<br>まっすぐ縦に<small>${p != null ? `スマホの傾き ${p.toFixed(1)}°（2°以内に）` : ''}</small>`); await sleep(150); }
+        cue(`スマホを<br>まっすぐ縦に<small>${p != null ? `スマホの傾き ${p.toFixed(1)}°（2°以内に）` : ''}</small>`, '', 'スマホをまっすぐ縦に'); await sleep(150); }
     }
     if (my !== tok) return;
     cue('楽にしたまま<br>画面を見ていてください', 'thin low');
@@ -490,6 +513,44 @@ function askNausea(key, then) {
   }, cls);
 }
 
+// ── 動き方の見本（線画の顔が、鼻先で線をなぞる）。指示の枠の中に出し、始めたら消える（2026-10-14 宮崎さん「どんな風に顔を動かすのか動画で見せる。線画の動画」）
+// 画面の上の動きは本番のガイドと同じ（鏡に映った自分と同じ向き）。肩の線は動かさない
+const DEMO = '<canvas id="demoC" width="440" height="340"></canvas>';
+function demo(kind) {
+  const c = $('demoC'); if (!c) return; const x = c.getContext('2d'), t0 = performance.now(), my = tok;
+  const W = 440, cx = 220, cy = 150, A = 62, B = kind === 'eight' ? 36 : 48;
+  const at = e => {   // 鼻先の位置（u＝右が＋・v＝上が＋、−1〜1）
+    if (kind === 'eight') { const per = 5000, lap = Math.floor(e / per), dir = lap % 2 ? -1 : 1, th = dir * 2 * Math.PI * (e % per) / per; return { u: Math.sin(th), v: Math.sin(2 * th), lab: dir > 0 ? '' : '反対回り' }; }
+    const per = 3000, k = Math.floor(e / (per * 2)) % 2, ph = 2 * Math.PI * (e % per) / per;
+    return k ? { u: 0, v: Math.sin(ph), lab: '上下' } : { u: Math.sin(ph), v: 0, lab: '左右' };
+  };
+  const path = kind === 'eight' ? th => ({ u: Math.sin(th), v: Math.sin(2 * th) }) : null;
+  (function frame() {
+    if (!document.body.contains(c) || my !== tok) return;
+    const e = performance.now() - t0, { u, v, lab } = at(e);
+    x.clearRect(0, 0, W, 340); x.lineCap = x.lineJoin = 'round';
+    // 肩（動かない）
+    x.strokeStyle = '#cfd6e4'; x.lineWidth = 4;
+    x.beginPath(); x.moveTo(40, 335); x.quadraticCurveTo(70, 262, 170, 255); x.lineTo(270, 255); x.quadraticCurveTo(370, 262, 400, 335); x.stroke();
+    // 頭は鼻先の6割だけ動き、目鼻はもっと動く＝首を回して鼻先で線をなぞっている見え方
+    const nx = cx + A * u, ny = cy + 18 - B * v, hx = cx + A * u * 0.6, hy = cy - B * v * 0.6, fx = nx - A * u * 0.12, fy = ny - 18 + B * v * 0.12;
+    x.beginPath(); x.moveTo(190, 257); x.lineTo(hx - 24, hy + 74); x.moveTo(250, 257); x.lineTo(hx + 24, hy + 74); x.stroke();
+    x.fillStyle = '#222'; x.beginPath(); x.ellipse(hx, hy, 62, 80, 0, 0, 7); x.fill(); x.stroke();
+    x.beginPath(); x.ellipse(fx - 22, fy - 14, 9, 5, 0, 0, 7); x.stroke(); x.beginPath(); x.ellipse(fx + 22, fy - 14, 9, 5, 0, 0, 7); x.stroke();
+    x.beginPath(); x.moveTo(fx, fy - 8); x.lineTo(nx, ny); x.lineTo(fx - 7, ny + 3); x.stroke();
+    x.beginPath(); x.moveTo(fx - 16, fy + 38); x.quadraticCurveTo(fx, fy + 45, fx + 16, fy + 38); x.stroke();
+    // なぞる線（顔の手前に重ねる）
+    x.setLineDash([10, 8]); x.strokeStyle = 'rgba(255,255,255,.6)'; x.lineWidth = 4; x.beginPath();
+    if (path) for (let i = 0; i <= 80; i++) { const q = path(i / 80 * 2 * Math.PI), X = cx + A * q.u, Y = cy + 18 - B * q.v; i ? x.lineTo(X, Y) : x.moveTo(X, Y); }
+    else if (lab === '左右') { x.moveTo(cx - A, cy + 18); x.lineTo(cx + A, cy + 18); } else { x.moveTo(cx, cy + 18 - B); x.lineTo(cx, cy + 18 + B); }
+    x.stroke(); x.setLineDash([]);
+    x.fillStyle = '#ffcc00'; x.beginPath(); x.arc(nx, ny, 11, 0, 7); x.fill();
+    x.fillStyle = '#ff5a5a'; x.beginPath(); x.arc(nx, ny, 6, 0, 7); x.fill();
+    if (lab) { x.fillStyle = '#ffcc00'; x.font = 'bold 26px sans-serif'; x.textAlign = 'center'; x.fillText(lab, cx, 34); }
+    requestAnimationFrame(frame);
+  })();
+}
+
 // ════ 1. 首の8の字（画面の ∞ のガイドを、鼻先でなぞる）
 // ガイド：横向きの ∞（x＝sinθ・y＝sin2θ）。1周 8秒で3周 → 反対回りで3周（2026-10-14 宮崎さん「もう少しゆっくり」で 5秒→8秒）。
 const LAP = 8000, LAPS = 3, GA = 0.6, GB = 0.3;   // 横の半幅・縦の半幅（d を1として）
@@ -497,8 +558,11 @@ let G = null;                                      // 描いている最中の�
 const gPos = (g, th) => ({ x: g.cx - g.dir0 * GA * g.d * Math.sin(th), y: g.cy - GB * g.d * Math.sin(2 * th) });   // dir0=1：画面の右上へ出る
 // g.path(th)：線の形（th＝0〜2π）、g.pos(e)：始めてから e ミリ秒後の黄色い点の位置、g.per：1周（1往復）のミリ秒
 function drawGuide(t, pts) {
-  const g = G; oc.lineWidth = Math.max(3, g.d * 0.05);
-  oc.strokeStyle = 'rgba(255,255,255,.75)'; oc.setLineDash([g.d * 0.08, g.d * 0.06]); oc.beginPath();
+  const g = G; oc.lineWidth = Math.max(3, g.d * 0.05) + 4;   // 下に黒いふちを敷いて、明るい背景でも線が見えるように
+  oc.strokeStyle = 'rgba(0,0,0,.55)'; oc.beginPath();
+  for (let i = 0; i <= 120; i++) { const p = g.path(i / 120 * 2 * Math.PI); i ? oc.lineTo(p.x, p.y) : oc.moveTo(p.x, p.y); }
+  oc.stroke(); oc.lineWidth -= 4;
+  oc.strokeStyle = 'rgba(255,255,255,.9)'; oc.setLineDash([g.d * 0.08, g.d * 0.06]); oc.beginPath();
   for (let i = 0; i <= 120; i++) { const p = g.path(i / 120 * 2 * Math.PI); i ? oc.lineTo(p.x, p.y) : oc.moveTo(p.x, p.y); }
   oc.stroke(); oc.setLineDash([]);
   if (g.t0 == null && g.arrow) {   // 始まる前：真ん中から、点が動き始める向きへ黄色い矢印（2026-10-14 宮崎さん）
@@ -518,11 +582,18 @@ function drawGuide(t, pts) {
     oc.strokeStyle = 'rgba(255,90,90,.8)'; oc.lineWidth = g.d * 0.03; oc.beginPath(); g.trail.forEach((p, i) => i ? oc.lineTo(p.x, p.y) : oc.moveTo(p.x, p.y)); oc.stroke();
     oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, g.d * 0.06, 0, 7); oc.fill(); }
 }
-async function stepEight() {
+// 練習（記録しない・1周ずつ）を先に1回できる（2026-10-14 宮崎さん「8の字は一回練習のセクションを入れる」）
+async function stepEight(practiced) {
+  practiced = practiced === true;   // ボタンから呼ばれると押した出来事が渡ってくるので、true のときだけ練習後とみなす
   show(2, '2. 首の8の字');
-  cue(`白い「∞」の線を<br>鼻先でなぞります<small>黄色い点が1周${LAP / 1000}秒で進むので、鼻先（赤い点）で追いかけてください。3周したら「反対回り」の合図で逆向きに3周。肩は動かさず首だけで。痛みが出たら止めてください</small>`);
-  btn('始める', async () => {
-    const my = tok; clearBtns();
+  cue(`${DEMO}${practiced ? '練習おわり。次は本番です' : '白い「∞」の線を<br>鼻先でなぞります'}<small>黄色い点が1周${LAP / 1000}秒で進むので、鼻先（赤い点）で追いかけてください。${LAPS}周したら「反対回り」の合図で逆向きに${LAPS}周。肩は動かさず首だけで。痛みが出たら止めてください</small>`);
+  demo('eight');
+  btn(practiced ? 'もう一度練習する' : 'まず練習する（1周ずつ・記録しない）', () => runEight(true), 'sub');
+  btn(practiced ? '本番を始める' : '練習せずに始める', () => runEight(false));
+}
+async function runEight(practice) {
+  {
+    const my = tok, laps = practice ? 1 : LAPS; clearBtns();
     cue('顔をまっすぐ向けて<br>そのまま…');
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepEight, '顔が見つかりませんでした');
@@ -537,11 +608,14 @@ async function stepEight() {
       if (my !== tok) return;
       if (k === 'rev') { G.t0 = null; G.dir = dir; cue('<b>反対回り</b>　矢印の向きへ', 'low'); await sleep(2500); }
       G.dir = dir; G.t0 = performance.now();
-      const r = await record(LAP * LAPS, p => { const lap = Math.min(LAPS, Math.floor(p * LAPS) + 1); cue(`${k === 'fwd' ? '' : '反対回り・'}${lap}周目／${LAPS}${last ? '' : '<small>顔が見えません</small>'}`, 'thin low'); });
+      const r = await record(LAP * laps, p => { const lap = Math.min(laps, Math.floor(p * laps) + 1); cue(`${practice ? '練習・' : ''}${k === 'fwd' ? '' : '反対回り・'}${lap}周目／${laps}${last ? '' : '<small>顔が見えません</small>'}`, 'thin low'); });
       seg.push({ k, dir, t0: G.t0, r });
     }
-    const g = G; G = null; analyzeEight(seg, g);
-  });
+    if (my !== tok) return;
+    const g = G; G = null;
+    if (practice) return stepEight(true);
+    analyzeEight(seg, g);
+  }
 }
 function analyzeEight(seg, g) {
   const all = seg.flatMap(s => s.r);
@@ -610,7 +684,8 @@ const LPER = 6000, LCYC = 3, AH = 0.7, AV = 0.4;   // 横・たての半幅（�
 const lPos = (g, ph) => g.ax === 'H' ? { x: g.cx - AH * g.d * Math.sin(ph), y: g.cy } : { x: g.cx, y: g.cy - AV * g.d * Math.sin(ph) };   // 最初は本人の右・上へ
 async function stepNeck() {
   show(3, '3. 首の左右・上下');
-  cue(`白い線の上を動く点を<br>鼻先で追います<small>はじめに左右へ${LCYC}往復、次に上下へ${LCYC}往復。1往復${LPER / 1000}秒です。肩は動かさず首だけで。痛みが出たら止めてください</small>`);
+  cue(`${DEMO}白い線の上を動く点を<br>鼻先で追います<small>はじめに左右へ${LCYC}往復、次に上下へ${LCYC}往復。1往復${LPER / 1000}秒です。肩は動かさず首だけで。痛みが出たら止めてください</small>`);
+  demo('neck');
   btn('始める', async () => {
     const my = tok; clearBtns();
     cue('顔をまっすぐ向けて<br>そのまま…');
