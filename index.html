@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>カメラでチェック（試し版）</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0f1115">
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;background:#0f1115;color:#f2f2f2;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;line-height:1.6;-webkit-text-size-adjust:100%}
@@ -202,11 +205,20 @@ async function reviveCam(why) {
 // 2026-10-14 3回目「一回閉じるとカメラが起動しなくなる」：画面を離れてもカメラを持ったままだったので、
 // Android では裏に残ったこのページがカメラを握り、開き直した新しいページがカメラを開けなかった。
 // 画面を離れたら（隠れた・閉じた）すぐカメラを手放し、戻ったら開き直す
+// 2026-10-14 4回目「ホーム画面に追加したリンクだと使えない。新しいリンクなら起動する」：ホーム画面のアイコンは、
+// 前に開いた古い版のページ（直す前のコード）をそのまま呼び戻していた。戻ってきたとき・開いたときに公開中の版と比べ、
+// 新しくなっていて測っている最中でなければ、読み込み直して最新の版にする
+let srcSig = null;
+const pageSig = async () => { try { const t = await (await fetch(location.pathname + '?sig=' + Date.now(), { cache: 'no-store' })).text(); let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return h; } catch (e) { return null; } };
+const idle = () => !$('sIntro').classList.contains('hide') || !$('sEnd').classList.contains('hide');
+pageSig().then(h => { srcSig = h; });
+async function checkUpdate() { const h = await pageSig(); if (h != null && srcSig != null && h !== srcSig && idle()) location.reload(); }
 function releaseCam() { if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; } stillSince = 0; }
 addEventListener('pagehide', releaseCam);
-addEventListener('pageshow', e => { if (e.persisted && camWanted) reviveCam('pageshow'); });
+addEventListener('pageshow', e => { if (e.persisted) { checkUpdate(); if (camWanted) reviveCam('pageshow'); } });
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden) { releaseCam(); return; }
+  checkUpdate();
   if (!camWanted) return;
   wake(); await sleep(400);   // 戻った直後はカメラを開けない端末があるので、少し待つ
   if (!camOK()) reviveCam('back'); else video.play().catch(() => reviveCam('play'));
