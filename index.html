@@ -163,12 +163,22 @@ async function startCam() {
   const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60 } }, audio: false });
   video.srcObject = s;
   await video.play();
-  RUN.cam = { w: video.videoWidth, h: video.videoHeight, screen: [innerWidth, innerHeight, window.devicePixelRatio || 1], fpsSetting: s.getVideoTracks()[0]?.getSettings?.().frameRate || null };
+  RUN.cam = { w: video.videoWidth, h: video.videoHeight, screen: [innerWidth, innerHeight, window.devicePixelRatio || 1], fpsSetting: s.getVideoTracks()[0]?.getSettings?.().frameRate || null, settings: (() => { const g = s.getVideoTracks()[0]?.getSettings?.() || {}; return { w: g.width, h: g.height }; })() };
   loop();
 }
 // 顔の点のキャンバスを画面の大きさ（×画素密度）にして、映像の画素の座標で描けるように変換をかける。
 // 映像は object-fit:contain＋鏡写しで出ているので、同じ位置・同じ倍率・左右反転にそろえる
 let OVU = 1;
+// 顔の読み取りには、映像をいったん映像と同じ大きさのキャンバスに写してから渡す。
+// Android の Chrome で video をそのまま渡すと、顔の点が映像より約1.5倍に広がり左下へずれた（2026-10-14 宮崎さんのスクショ）。
+// キャンバスに写せば、点の位置は必ずこのキャンバス（＝videoWidth×videoHeight）の上の位置になる
+const detC = document.createElement('canvas'), detX = detC.getContext('2d');
+function frameCanvas() {
+  const w = video.videoWidth, h = video.videoHeight;
+  if (detC.width !== w || detC.height !== h) { detC.width = w; detC.height = h; }
+  detX.drawImage(video, 0, 0, w, h);
+  return detC;
+}
 function fitOverlay() {
   const W = ov.clientWidth, H = ov.clientHeight, r = window.devicePixelRatio || 1, vw = video.videoWidth, vh = video.videoHeight;
   const cw = Math.round(W * r), ch = Math.round(H * r);
@@ -185,7 +195,7 @@ function loop() {
     lastT = video.currentTime;
     const t = performance.now();
     let r = null;
-    if (!switching) { try { r = lm.detectForVideo(video, t); } catch (e) { window.__detErr = e.message; toCPU(); } }
+    if (!switching) { try { r = lm.detectForVideo(frameCanvas(), t); } catch (e) { window.__detErr = e.message; toCPU(); } }
     const got = !!(r && r.faceLandmarks && r.faceLandmarks[0]);
     gpuMiss = got ? 0 : gpuMiss + 1;
     if (delegate === 'GPU' && gpuMiss > 45) toCPU();   // GPU で約3秒続けて顔が取れなければ、CPU に切り替える（一度だけ）
@@ -213,6 +223,7 @@ function loop() {
       }
       if (G) drawGuide(t, pts);
     } else { last = null; lastBs = null; if (G) drawGuide(t, null); }
+    if (STAFF && window.__frames % 30 === 0) document.querySelector('.badge').textContent = `スタッフ表示 ${video.videoWidth}×${video.videoHeight} ${delegate}`;   // ずれたときの手がかり
     window.__frames = (window.__frames || 0) + 1;
     window.__faceSeen = (window.__faceSeen || 0) + (last ? 1 : 0);
   }
