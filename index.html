@@ -199,8 +199,15 @@ async function reviveCam(why) {
   camFixBtn(!ok);
   stillSince = 0; reviving = false;
 }
+// 2026-10-14 3回目「一回閉じるとカメラが起動しなくなる」：画面を離れてもカメラを持ったままだったので、
+// Android では裏に残ったこのページがカメラを握り、開き直した新しいページがカメラを開けなかった。
+// 画面を離れたら（隠れた・閉じた）すぐカメラを手放し、戻ったら開き直す
+function releaseCam() { if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; } stillSince = 0; }
+addEventListener('pagehide', releaseCam);
+addEventListener('pageshow', e => { if (e.persisted && camWanted) reviveCam('pageshow'); });
 document.addEventListener('visibilitychange', async () => {
-  if (document.hidden || !camWanted) return;
+  if (document.hidden) { releaseCam(); return; }
+  if (!camWanted) return;
   wake(); await sleep(400);   // 戻った直後はカメラを開けない端末があるので、少し待つ
   if (!camOK()) reviveCam('back'); else video.play().catch(() => reviveCam('play'));
 });
@@ -1401,8 +1408,9 @@ $('bAgain').onclick = () => { newRun(); CAL = null; $('sEnd').classList.add('hid
 
 $('bStart').onclick = async () => {
   $('bStart').disabled = true;
-  try { await Promise.race([startCam(), sleep(10000).then(() => { throw { name: '時間切れ。ほかのアプリやタブでカメラを使っていないか確かめて、ページを読み込み直してください' }; })]); }
-  catch (e) { $('loadState').textContent = 'カメラを起動できませんでした（' + e.name + '）。ブラウザの設定でカメラを許可してください。'; $('bStart').disabled = false; return; }
+  const startTry = async () => { for (let i = 0; ; i++) { try { return await startCam(); } catch (e) { if (i >= 4 || !/NotReadable|Abort|TrackStart/.test(e.name)) throw e; await sleep(1000); } } };   // 前のページがカメラを手放すまで少し待って、やり直す
+  try { await Promise.race([startTry(), sleep(10000).then(() => { throw { name: '時間切れ。ほかのアプリやタブでカメラを使っていないか確かめて、ページを読み込み直してください' }; })]); }
+  catch (e) { $('loadState').textContent = 'カメラを起動できませんでした（' + e.name + '）。' + (/NotAllowed|Security/.test(e.name) ? 'ブラウザの設定でカメラを許可してください。' : 'Chrome のほかのタブ（このページの古いタブも）や、カメラを使うアプリを閉じてから、もう一度押してください。'); $('bStart').disabled = false; return; }
   $('sIntro').classList.add('hide'); $('sMain').classList.remove('hide');
   stepAlign();
 };
