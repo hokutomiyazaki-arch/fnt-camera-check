@@ -515,7 +515,7 @@ function analyzeTilt(r, ph) {
 }
 
 // ── 首の検査（8の字・左右・上下）の読み。右・左は本人から見た向き（2026-10-14 宮崎さん）
-// 8の字：真ん中→左下＝右の前半規管、→右上＝右の後半規管、→右下＝左の前半規管、→左上＝左の後半規管（左上は宮崎さんの文が途中で切れていたので、ほかの3つから当てはめた）
+// 8の字：真ん中→左下＝右の前半規管、→右上＝右の後半規管、→右下＝左の前半規管、→左上＝左の後半規管（左上は 2026-10-14 夕方に宮崎さんが VOR の対応として確定。8の字と同じ）
 // 左右：左→右でずれる＝右の水平半規管、右→左＝左の水平半規管。上下：上＝両方の後半規管、下＝両方の前半規管
 // 「右」の半規管は右の小脳、「左」は左の小脳と結びつけて読む
 const CANAL = { UR: '右の後半規管', UL: '左の後半規管', DR: '左の前半規管', DL: '右の前半規管', toR: '右の水平半規管', toL: '左の水平半規管', up: '両方の後半規管', down: '両方の前半規管' };
@@ -730,7 +730,7 @@ function analyzeEight(seg, g) {
 function headJudgeHTML(H) {
   const L = []; if (H.overall) L.push(`<b>小脳虫部・前庭機能</b>の働き低下の可能性 — ${H.overall}`);
   for (const c of H.canals) L.push(`<b>${c.k}</b>（→ ${c.cb}）の問題の可能性 — ${c.why}`);
-  return `<div class="res judge">内部の読み（仮・お客さんには出ない）：<br>${L.length ? L.join('<br>') : '目立ったずれなし'}<br><span class="small">読み方：真ん中→左下＝右の前半規管・→右上＝右の後半規管・→右下＝左の前半規管・→左上＝左の後半規管／左→右＝右の水平・右→左＝左の水平・上＝両方の後半・下＝両方の前半規管。「右」の半規管→右の小脳、「左」→左の小脳。<br>※左上→左の後半規管は、ほかの3つの並びからの補完。宮崎さんが後で判定ルールを送ってきたら、それで上書きする</span></div>`;
+  return `<div class="res judge">内部の読み（仮・お客さんには出ない）：<br>${L.length ? L.join('<br>') : '目立ったずれなし'}<br><span class="small">読み方：真ん中→左下＝右の前半規管・→右上＝右の後半規管・→右下＝左の前半規管・→左上＝左の後半規管／左→右＝右の水平・右→左＝左の水平・上＝両方の後半・下＝両方の前半規管。「右」の半規管→右の小脳、「左」→左の小脳。</span></div>`;
 }
 
 // ════ 2. 首の左右・上下（線の上を動く点を、鼻先で追う）。1往復 6秒で左右3往復 → 上下3往復
@@ -1065,9 +1065,9 @@ const JTH = 15, FIX_SD = 0.08, FIX_INT = 3;   // 見つめる：揺れ（よこ�
 const fixFlag = x => x && x.ok && (Math.max(x.sdX, x.sdY) >= FIX_SD || x.intrusions >= FIX_INT) ? `点を見つめている間の揺れ よこ${f2(x.sdX)}・たて${f2(x.sdY)}・外れ${x.intrusions}回（しきい値 揺れ${FIX_SD}・外れ${FIX_INT}回）` : null;
 function judge() {
   const J = [], d = RUN.pursuit && RUN.pursuit.dir;
-  for (const H of [RUN.eightJudge, RUN.neckJudge, RUN.vorJudge]) if (H) {
-    if (H.overall) J.push({ k: H.lab || '小脳虫部・前庭機能', why: H.overall });
-    for (const c of H.canals) J.push({ k: `${c.k}（→ ${c.cb}）`, why: c.why });
+  for (const [H, src] of [[RUN.eightJudge, '8の字'], [RUN.neckJudge, '首の左右・上下'], [RUN.vorJudge, 'VOR']]) if (H) {
+    if (H.overall) J.push({ k: H.lab || '小脳虫部・前庭機能', why: H.overall, src });
+    for (const c of H.canals) J.push({ k: `${c.k}（→ ${c.cb}）`, why: c.why, src, canal: c.k, cb: c.cb });
   }
   RUN.judgeNote = null;
   if (d && RUN.calib && !RUN.calib.reliable) { RUN.judge = J; RUN.judgeNote = '目の追従は、目の合わせが不安定（見分け ' + CAL_MIN + ' 未満）なので判定していない'; return; }
@@ -1232,8 +1232,10 @@ function analyzeFixSeries(fr) {
 // 前庭動眼反射が効いていれば、頭が動いても目は点にとどまる（目が頭と逆へ同じだけ動く）。
 // 効きが悪い向きでは、目が頭と一緒に点から持っていかれ、あとから点へ跳んで戻る（修正のサッカード）。この「持っていかれた量」を向きごとに測る。
 // 頭の動き＝鼻先の動き（目じりの間＝1）。目の向き＝目の準備で作った換算（点の幅＝1）。目の向きのうち鼻先の動きで説明できる分（ふつうの VOR）を差し引いた残りを、点からのずれとみる。
-// 読み：頭を動かした向き → 半規管は BDC「前庭器官を学ぶ(3)」の表（首の検査と同じ CANAL）、半規管 → 同じ側の小脳（BDC「CN8 三半規管のアセスメント」「VOR-C」）。
-// ※BDC は VOR を「動かした瞬間にターゲットがぼやける方向＝三半規管の働きが悪い方向」で見ている。目が持っていかれて戻る動きそのものの読みは BDC に無いので、ぼやける向きと同じ対応で読む。
+// 読み（2026-10-14 夕方 宮崎さん確定）：頭を動かした向きで、目が反対へ動く反射が働き切らない → その向きの半規管。
+//   右＝右の水平・左＝左の水平・左下＝右の前・右下＝左の前・左上＝左の後・右上＝右の後・上＝両方の後・下＝両方の前半規管（8の字・首の検査と同じ CANAL）。半規管 → 同じ側の小脳。
+//   見るのは2つ：①動いた瞬間、目が反対へ動き出すのが遅れる（＝頭につられて点から離れる）②動いた瞬間の目の微妙な動き（離れたあと点へ跳んで戻る）。
+//   1回では出ないことがあるので、何回かやる中でくり返し出た向きを読み、8の字・首の検査の同じ半規管、サッカードの同じ側の小脳と合わせて見立てで数える。
 // どの向きも同じように持っていかれるときは、両側の前庭（VOR 全体）と読む
 const VOR_N = 3, VLEN = 0.35, VOR_TH = 0.25, VOR_GAP = 0.12, VOR_MIN = 0.08;   // 1本あたりの回数・線の長さ（目じりの間＝1）・持っていかれた量（点の幅＝1）・ほかの向きとの差・小さすぎる動き（目じりの間＝1）。しきい値はどれも仮
 const VK = { R: 'toR', L: 'toL', U: 'up', D: 'down', UR: 'UR', UL: 'UL', DR: 'DR', DL: 'DL' };   // 頭を動かす向き → CANAL の鍵
@@ -1297,7 +1299,7 @@ async function stepVor() {
     RUN.vorJudge = CAL && !CAL.reliable ? null : vorJudge(out);
     const VJ = RUN.vorJudge;
     staff(`頭を動かしたとき、目が点から持っていかれた量（向きごと・点の幅＝1）<br>${DIRS.map(k => out.dir[k] ? `${DJ[k]}へ：<b>${f2(out.dir[k].carry)}</b>（${f2(out.th)} 以上 ${out.dir[k].hit}／${out.dir[k].n}回・点へ跳んで戻った ${out.dir[k].back}回）` : `${DJ[k]}へ —`).join('<br>')}<br>向きの中央 <b>${f2(out.base)}</b>・目が頭と逆へ動いた割合 よこ ${f2(out.gainX)}・たて ${f2(out.gainY)}・止まっている間の読み取りの揺れ ${f2(out.noise)}<br><span class="small">読めた回 ${out.valid}／${out.total}（動きが小さすぎた回 ${out.small}）・${out.fps}コマ/秒。速い戻りはコマの間に入って取りこぼすことがある</span>
-    <div class="res judge">内部の読み（仮）：${!VJ ? '<br>目の合わせが不安定なので読まない' : (VJ.overall ? `<br><b>${VJ.lab}</b>の働き低下の可能性 — ${VJ.overall}` : '') + (VJ.canals.length ? VJ.canals.map(c => `<br><b>${c.k}</b>（→ ${c.cb}）の問題の可能性 — ${c.why}`).join('') : VJ.overall ? '' : '<br>目立った向きなし')}<br><span class="small">頭を動かした向き：右＝右の水平半規管・左＝左の水平・上＝両方の後半規管・下＝両方の前半規管・右上＝右の後・左上＝左の後・右下＝左の前・左下＝右の前半規管（BDC「前庭器官を学ぶ(3)」）。半規管→同じ側の小脳。BDC は VOR を「動かした瞬間にぼやける向き＝その向きの半規管」で見ていて、目が持っていかれて戻る動きの読みは BDC に無いので、同じ対応で読んでいる。${VOR_TH}（読み取りの揺れが大きいときはその3倍）以上が2回以上・ほかの向きの中央より ${VOR_GAP} 以上多い向きを読む（仮）</span></div>` + calWarn());
+    <div class="res judge">内部の読み（仮）：${!VJ ? '<br>目の合わせが不安定なので読まない' : (VJ.overall ? `<br><b>${VJ.lab}</b>の働き低下の可能性 — ${VJ.overall}` : '') + (VJ.canals.length ? VJ.canals.map(c => `<br><b>${c.k}</b>（→ ${c.cb}）の問題の可能性 — ${c.why}`).join('') : VJ.overall ? '' : '<br>目立った向きなし')}<br><span class="small">頭を動かした向き：右＝右の水平半規管・左＝左の水平・上＝両方の後半規管・下＝両方の前半規管・右上＝右の後・左上＝左の後・右下＝左の前・左下＝右の前半規管（BDC「前庭器官を学ぶ(3)」）。半規管→同じ側の小脳。見るのは、動いた瞬間に目が反対へ動き出す遅れと、動いた瞬間の目の微妙な動き（離れて点へ跳んで戻る）。各向き${VOR_N}回のうち2回以上出て、離れた量がほかの向きの中央より ${VOR_GAP} 以上多い向きを読む（しきい値 ${VOR_TH}、読み取りの揺れが大きいときはその3倍。仮）。1回では出ないことがあるので、8の字・首の検査・サッカードの小脳と合わせて見立てで見る</span></div>` + calWarn());
     recorded(stepVor, stepConv, '次へ（寄り目）');
   });
 }
@@ -1329,11 +1331,13 @@ function analyzeVor(fr, flicks, g) {
     const carry = Math.max(...win.map(o => o.e)), im = es.findIndex(o => o.e === carry);
     // 点へ跳んで戻った：いちばん離れたあと、頭がまだ出ている（半分以上）うちに、ずれが半分以下へ戻った
     const back = carry >= th && es.slice(im + 1).some(o => o.m >= 0.5 * peak && o.e <= carry * 0.5);
-    each.push({ k: F.k, ok: true, carry: r3(carry), back, peak: r3(peak), rise: r0(tp - on.t) });
+    // 遅れ：頭が動き出してから 150ms の間に、目がもう点から離れている（反対へ動き出すのが間に合っていない）
+    const early = es.filter(o => o.t >= on.t && o.t <= on.t + 150), late = early.length > 0 && Math.max(...early.map(o => o.e)) >= th;
+    each.push({ k: F.k, ok: true, carry: r3(carry), back, late, sign: late || back || carry >= th, peak: r3(peak), rise: r0(tp - on.t) });
   }
   const dir = {};
   for (const k of DIRS) { const A = each.filter(o => o.k === k && o.ok); if (!A.length) continue;
-    dir[k] = { n: A.length, carry: r3(med(A.map(o => o.carry))), hit: A.filter(o => o.carry >= th).length, back: A.filter(o => o.back).length, peak: r3(med(A.map(o => o.peak))) }; }
+    dir[k] = { n: A.length, carry: r3(med(A.map(o => o.carry))), hit: A.filter(o => o.sign).length, late: A.filter(o => o.late).length, back: A.filter(o => o.back).length, peak: r3(med(A.map(o => o.peak))) }; }
   const valid = each.filter(o => o.ok).length;
   return { ok: valid >= 12, dir, base: r3(med(Object.values(dir).map(d => d.carry))), gainX: r3(-fx.b), gainY: r3(-fy.b), noise: r3(noise), th: r3(th), each, valid, total: each.length, small: each.filter(o => o.why === '動きが小さい').length, frames: rows.length };
 }
@@ -1341,7 +1345,7 @@ function vorJudge(o) {
   const J = { lab: '前庭（両側・VOR 全体）', overall: null, canals: [] }; if (!o || !o.ok) return J;
   const ks = DIRS.filter(k => o.dir[k] && o.dir[k].n >= 2);
   for (const k of ks) { const d = o.dir[k];
-    if (d.hit >= 2 && d.carry - o.base >= VOR_GAP) { const c = CANAL[VK[k]]; J.canals.push({ k: c, cb: cereb(c), leg: k, why: `頭を${DJ[k]}へ動かすと、目が点から持っていかれる（${d.hit}／${d.n}回・量 ${f2(d.carry)}、ほかの向きの中央 ${f2(o.base)}）` }); } }
+    if (d.hit >= 2 && d.carry - o.base >= VOR_GAP) { const c = CANAL[VK[k]]; J.canals.push({ k: c, cb: cereb(c), leg: k, why: `頭を${DJ[k]}へ動かすと、目が反対へ動く反射が働き切らない（${d.n}回中${d.hit}回：動き出しの遅れ${d.late ?? 0}回・点へ跳んで戻る動き${d.back ?? 0}回・離れた量 ${f2(d.carry)}、ほかの向きの中央 ${f2(o.base)}）` }); } }
   const many = ks.filter(k => o.dir[k].hit >= 2).length;
   if (ks.length >= 6 && o.base >= VOR_TH && many >= ks.length * 0.75) J.overall = `どの向きでも目が点から持っていかれる（${many}／${ks.length}方向・向きの中央 ${f2(o.base)}）`;
   return J;
@@ -1773,6 +1777,13 @@ function mitate() {
     for (const j of J) if (j.k.includes(`${s}の小脳`)) plus.push(`${j.k}（${j.why.replace(/（.*$/, '')}）`);
     M.vest.plus = plus;
     L.push(`<b>${s}の前庭器官（卵形嚢）</b> — ${M.vest.why}${plus.length ? `<br>　加算材料（同じ側の PMRF・小脳 ${plus.length}件）：${plus.join('・')} → ${s}の卵形嚢の働き低下をより強く疑う` : '（同じ側の PMRF・小脳の所見なし）'}`); }
+  // VOR で出た半規管：何回かやる中でくり返し出た向きを、8の字・首の検査の同じ半規管と、同じ側の小脳（サッカード）と合わせて見る（2026-10-14 夕方 宮崎さん）
+  M.vor = [];
+  for (const v of J.filter(j => j.src === 'VOR' && j.canal)) { const plus = [];
+    for (const j of J) if (j !== v && j.canal === v.canal) plus.push(`${j.src}で同じ${j.canal}（${j.why.replace(/（.*$/, '')}）`);
+    if (v.cb !== '左右の小脳') for (const j of J) if (!j.canal && j.k.startsWith(v.cb)) plus.push(`${j.k}（${j.src || '眼球運動'}：${j.why.replace(/（.*$/, '')}）`);
+    M.vor.push({ canal: v.canal, cb: v.cb, plus });
+    L.push(`<b>${v.canal}</b>（→ ${v.cb}）— VOR：${v.why}${plus.length ? `<br>　加算材料（8の字・首の検査の同じ半規管・同じ側の小脳 ${plus.length}件）：${plus.join('・')} → ${v.canal}の働き低下をより強く疑う` : '<br>　（8の字・首の検査・小脳にまだ同じ所見なし。VOR だけで決めない）'}`); }
   const nz = RUN.eight && RUN.eight.nausea; if (nz && nz !== 'いいえ') { M.nausea = nz; L.push(`<b>前庭</b>の問題を疑う — 首の8の字で気持ち悪さ「${nz}」`); }
   for (const s of pmS) L.push(`<b>${s}の PMRF</b> — ${M.pmrf.filter(p => p.side === s).map(p => p.why).join('・')}`);
   if (M.pain) L.push(`<b>痛み</b>：${M.pain}`);
@@ -1792,16 +1803,18 @@ function mitate() {
   for (const c of cn) { const lv = (c.n.match(/（.*?(延髄|橋)）/) || [])[1]; if (lv && !(cortex && c.side === cortex)) add(`${c.side}の${lv}`, `${c.side}の${c.n.replace(/（.*?）/, '')}`); }   // 延髄・橋の脳神経は、皮質と逆の側ならその側の脳幹に重ねる（BDC：橋の神経核はほかの橋の働きと一緒に見る）
   if (vermis || cbv.length) { if (vermis) add('小脳虫部・前庭', '見つめる検査'); for (const k of cbv) add('小脳虫部・前庭', k); }
   for (const s of pmS) for (const p of M.pmrf.filter(p => p.side === s)) add(`${s}の PMRF`, p.why);
+  for (const j of J) if (j.canal) add(j.canal, j.src);   // 同じ半規管が 8の字・首の検査・VOR で何回出たか
+  for (const v of M.vor) if (v.cb !== '左右の小脳') for (const j of J) if (!j.canal && j.k.startsWith(v.cb)) add(v.canal, `${j.k}（${j.src || '眼球運動'}）`);
   if (M.vest) { add(`${M.vest.side}の卵形嚢`, '首の傾き'); for (const x of M.vest.plus) add(`${M.vest.side}の卵形嚢`, x); }
   const OL = Object.entries(O).sort((a, b) => b[1].length - a[1].length);
   M.overlap = OL.map(([k, v]) => ({ k, n: v.length, from: v }));
   if (OL.length) L.unshift(`<b>重なり</b>（多い順）：${OL.map(([k, v]) => `${k} ${v.length}件`).join('／')}`);
-  RUN.mitate = { cortex: cx, cn: cn.map(({ n, side, why, read }) => ({ n, side, why, read })), vest: M.vest, nausea: M.nausea || null, midbrain: !!mb, overlap: M.overlap, pmrf: M.pmrf, pain: M.pain && M.pain.replace(/<\/?b>/g, ''), lines: L.map(x => x.replace(/<\/?b>/g, '')) };
+  RUN.mitate = { cortex: cx, cn: cn.map(({ n, side, why, read }) => ({ n, side, why, read })), vest: M.vest, vor: M.vor, nausea: M.nausea || null, midbrain: !!mb, overlap: M.overlap, pmrf: M.pmrf, pain: M.pain && M.pain.replace(/<\/?b>/g, ''), lines: L.map(x => x.replace(/<\/?b>/g, '')) };
   return L;
 }
 function mitateHTML() {
   const L = mitate();
-  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。首の傾き＝傾いた側の卵形嚢で、同じ側の PMRF・小脳の所見は加算材料。頭を動かして点を見つめる（VOR）で目が持っていかれる向き＝その向きの半規管→同じ側の小脳。動眼神経＝中脳、寄り目と上下の追従が両方弱い＝中脳。三叉神経（口の開け方）＝橋、副神経（肩すくめ）＝延髄（BDC）。8の字で気持ち悪い＝前庭。見つめる検査の揺れ＝小脳虫部（両側）で、ほかの小脳・前庭の所見は加算材料。重なりが多い所ほど問題がありそうと読む</span></div>`;
+  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。首の傾き＝傾いた側の卵形嚢で、同じ側の PMRF・小脳の所見は加算材料。頭を動かして点を見つめる（VOR）で、動いた瞬間に目が反対へ動く反射が遅れる・点へ跳んで戻る向き＝その向きの半規管→同じ側の小脳。何回かやってくり返し出た向きを、8の字・首の検査の同じ半規管とサッカードの同じ側の小脳と合わせて見る。動眼神経＝中脳、寄り目と上下の追従が両方弱い＝中脳。三叉神経（口の開け方）＝橋、副神経（肩すくめ）＝延髄（BDC）。8の字で気持ち悪い＝前庭。見つめる検査の揺れ＝小脳虫部（両側）で、ほかの小脳・前庭の所見は加算材料。重なりが多い所ほど問題がありそうと読む</span></div>`;
 }
 
 // ════ まとめ：記録はこの端末に残す（内部用）。お客さんには判定を見せない
