@@ -45,7 +45,11 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 #cue small{display:block;font-size:16px;font-weight:600;color:#dfe3ea;margin-top:8px;line-height:1.5}
 #cue canvas{display:block;margin:0 auto 6px;width:220px;height:170px}
 /* 音声の入り切り（いつでも押せるよう右上に固定） */
-#bVoice{position:absolute;right:10px;top:calc(30px + env(safe-area-inset-top));width:auto;margin:0;padding:6px 12px;font-size:14px;border-radius:20px;background:rgba(0,0,0,.6);border:1px solid #556;z-index:10}
+#bVoice{position:absolute;right:10px;top:calc(40px + env(safe-area-inset-top));width:auto;margin:0;padding:6px 12px;font-size:14px;border-radius:20px;background:rgba(0,0,0,.6);border:1px solid #556;z-index:10}
+#bRedo{position:absolute;left:10px;top:calc(40px + env(safe-area-inset-top));width:auto;margin:0;padding:6px 12px;font-size:14px;border-radius:20px;background:rgba(0,0,0,.6);border:1px solid #556;z-index:10}
+#cue.top{top:calc(82px + env(safe-area-inset-top));transform:translateX(-50%);padding:8px 12px 12px}
+#cue.top canvas{width:170px;height:131px}
+#bottom{display:flex;flex-direction:column}#msg.note{order:-1;font-size:15.5px;color:#eef;line-height:1.55;margin:4px 2px 2px;text-align:left}
 #cue .ok{display:inline-block;color:#5ad18b;font-size:1.5em}
 .meter{position:relative;height:16px;border-radius:8px;background:#2b2f38;margin:12px 4px 2px;overflow:hidden}
 .meter i{position:absolute;top:0;bottom:0;background:rgba(90,209,139,.45)}
@@ -100,6 +104,7 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
   <div id="top"><div class="steps" id="steps"></div><div id="title"></div></div>
   <div id="cue"></div>
   <button id="bVoice"></button>
+  <button id="bRedo" style="display:none">↺ 最初からやり直し</button>
   <div id="near"></div>
   <div id="bottom"><div id="result"></div><div id="btns"></div><div id="msg"></div></div>
 </div>
@@ -311,12 +316,15 @@ function brightness() {
 // ── 画面の部品
 const NSTEP = 12;
 $('steps').innerHTML = '<span></span>'.repeat(NSTEP);
-let tok = 0;                       // 段を移ったら増える（前の段の待ちを止めるため）
+let tok = 0, CUR = null;
+// テストの最中でも、いまのテストを最初からやり直せる（2026-10-14 宮崎さん）
+const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首の8の字': stepEight, '3. 首の左右・上下': stepNeck, '4. 表情の左右差': stepFace, '5. 目の準備（測る前の合わせ）': stepEyePrep, '6. 点を目で追う': stepPursuit, '7. 跳ぶ点を見る': stepSacc, '8. 点を見つめる': stepFix, '9. 瞳孔の大きさ': stepPupil, '9. 寄り目': stepConv, '10. 舌の出方': stepTongue });                       // 段を移ったら増える（前の段の待ちを止めるため）
 function show(step, title) {
   tok++;
   [...$('steps').children].forEach((e, i) => e.classList.toggle('on', i <= step));
   $('title').textContent = title;
-  $('result').innerHTML = ''; $('btns').innerHTML = ''; $('msg').textContent = ''; cue('');
+  $('result').innerHTML = ''; $('btns').innerHTML = ''; $('msg').textContent = ''; $('msg').className = ''; cue('');
+  CUR = title; $('bRedo').style.display = REDO()[title] ? '' : 'none';
   $('photoWrap').style.display = 'none'; dark(false); hideDot(); near(null);
   gc.clearRect(0, 0, gd.width, gd.height);
   G = null; rec = null; grab = null;
@@ -324,9 +332,14 @@ function show(step, title) {
 }
 // 指示は画面の真ん中に太く大きく出す（2026-10-14 宮崎さん「常に画面の真ん中に指示が出て、その通りに目や顔を動かす」）
 // ∞・線のガイドを出している間は、指示を下へ逃がして線を隠さない（2026-10-14 宮崎さん「点線が文字の後ろに被って見えない」）
-function cue(html, cls = '', voice) { const c = $('cue'); if (G && !/low/.test(cls)) cls += ' low'; c.className = cls; c.innerHTML = html; say(voice ?? html); }   // voice：細かく変わる数字を読ませたくないときの読み上げ文
+function cue(html, cls = '', voice) { const c = $('cue'); if (G && !/low|top/.test(cls)) cls += ' low'; c.className = cls; c.innerHTML = html; say(voice ?? html); }   // voice：細かく変わる数字を読ませたくないときの読み上げ文
 // ── 音声の指示（2026-10-14 宮崎さん「音声で指示を伝えてほしい。すぐにオフにできるボタンをつけて」）。右上のボタンで入り切り、端末に覚える
 let VOICE = localStorage.getItem('fntVoice') !== 'off', said = '', jaV = null;
+// 声は ElevenLabs で前もって作った音声（voice/）を流す。無い文だけ端末の声で読む（2026-10-14 宮崎さん「音声は連携してあるAIの声で」）
+// 文を足したら tools/voice_build.py を走らせて voice/ を作り直す
+const VA = new Audio(); let VMAP = null;
+const vkey = t => t.replace(/[\s。]/g, '');
+fetch('voice/index.json', { cache: 'no-cache' }).then(r => r.json()).then(m => { VMAP = m; }).catch(() => {});
 const toSpeech = html => { const d = document.createElement('div'); d.innerHTML = String(html).replace(/<br\s*\/?>/g, '。').replace(/<small>/g, '。'); d.querySelectorAll('button').forEach(b => b.remove());
   return d.textContent.replace(/「∞」/g, '8の字').replace(/∞/g, '8の字').replace(/(\d+)(周目|往復目)／\d+/g, '$1$2').replace(/／/g, '、').replace(/\s+/g, ' ').replace(/。+/g, '。').replace(/^。|。$/g, '').trim(); };
 function say(html) {
@@ -336,13 +349,20 @@ function say(html) {
   let u = t;   // 数字だけ変わったとき（カウントダウン・何周目）は、変わった所から先だけ読む
   if (said && t.replace(/\d+/g, '#') === said.replace(/\d+/g, '#')) { let i = 0; while (t[i] === said[i]) i++; while (i > 0 && /\d/.test(t[i - 1])) i--; u = t.slice(i); }
   said = t;
-  if (!VOICE || !window.speechSynthesis) return;
+  if (!VOICE) return;
+  const f = VMAP && VMAP[vkey(u)];
+  if (f) { try { speechSynthesis.cancel(); } catch (e) {} VA.pause(); VA.src = 'voice/' + f; VA.play().catch(() => {}); return; }
+  if (STAFF && VMAP) { (window.__voiceMiss = window.__voiceMiss || []).push(u); console.log('[voice] 音声ファイルなし：' + u); }
+  if (!window.speechSynthesis) return;
+  VA.pause();
   try { speechSynthesis.cancel(); const x = new SpeechSynthesisUtterance(u); x.lang = 'ja-JP'; x.rate = 1.1;
     jaV = jaV || speechSynthesis.getVoices().find(v => /^ja/i.test(v.lang)); if (jaV) x.voice = jaV; speechSynthesis.speak(x); } catch (e) {}
 }
 function voiceBtn() { $('bVoice').textContent = VOICE ? '🔊 音声オン' : '🔇 音声オフ'; }
-$('bVoice').onclick = () => { VOICE = !VOICE; localStorage.setItem('fntVoice', VOICE ? 'on' : 'off'); voiceBtn(); if (!VOICE) { try { speechSynthesis.cancel(); } catch (e) {} } else { const t = said; said = ''; say(t.replace(/。/g, '<br>')); } };
+$('bVoice').onclick = () => { VOICE = !VOICE; localStorage.setItem('fntVoice', VOICE ? 'on' : 'off'); voiceBtn(); if (!VOICE) { try { speechSynthesis.cancel(); } catch (e) {} VA.pause(); } else { const t = said; said = ''; say(t.replace(/。/g, '<br>')); } };
+$('bRedo').onclick = () => { const f = REDO()[CUR]; if (f) { try { speechSynthesis.cancel(); } catch (e) {} VA.pause(); f(); } };
 voiceBtn(); try { speechSynthesis.onvoiceschanged = () => { jaV = null; }; } catch (e) {}
+function note(t) { const m = $('msg'); m.className = t ? 'note' : ''; m.textContent = t; }   // 読み上げは cue の voice に入れる
 function dark(on) { $('stage').classList.toggle('dark', on); $('sMain').classList.toggle('dark', on); }
 function btn(label, fn, cls = '') { const b = document.createElement('button'); b.textContent = label; b.className = cls; b.onclick = fn; $('btns').appendChild(b); return b; }
 const clearBtns = () => { $('btns').innerHTML = ''; $('result').innerHTML = ''; };
@@ -350,9 +370,9 @@ function staff(html) { $('result').innerHTML = STAFF ? `<div class="res">${html}
 const calWarn = () => CAL && !CAL.reliable ? '<br><span style="color:#ff8a65">※目の合わせが不安定なので、この数字は信用しない</span>' : '';
 async function countdown(n = 3, pre = '') { for (let i = n; i > 0; i--) { cue(pre ? `${pre}<br><span style="font-size:1.8em">${i}</span>` : String(i), pre ? '' : 'huge'); await sleep(800); } cue(''); }
 async function record(ms, onTick) {
-  rec = []; const t0 = performance.now();
-  while (performance.now() - t0 < ms) { if (onTick) onTick((performance.now() - t0) / ms); await sleep(16); }
-  const r = rec; rec = null; return r;
+  const mine = rec = [], my = tok, t0 = performance.now();   // やり直しで段が変わったら、すぐ抜ける（次の段の記録を横取りしない）
+  while (performance.now() - t0 < ms && my === tok) { if (onTick) onTick((performance.now() - t0) / ms); await sleep(16); }
+  if (rec === mine) rec = null; return mine;
 }
 const fpsOf = (r, ms) => Math.round(r.length / (ms / 1000));
 function fail(again, why) {
@@ -477,10 +497,11 @@ const CANAL = { UR: '右の後半規管', UL: '左の後半規管', DR: '左の�
 const LEGJ = { UR: '真ん中→右上', UL: '真ん中→左上', DR: '真ん中→右下', DL: '真ん中→左下', toR: '左→右', toL: '右→左', up: '下→上', down: '上→下' };
 const cereb = c => c.startsWith('右') ? '右の小脳' : c.startsWith('左') ? '左の小脳' : '左右の小脳';
 const OFF_MIN = 35, OFF_GAP = 15, SPD_GAP = 15, TOLF = 0.2;   // しきい値は仮（ずれの割合・速さの差は％ポイント）
+// 線は画面の真ん中に固定したので、鼻の位置とのずれは ±0.8（目じりの間を1）まで探す
 function fitTrack(rs, at, d) {   // 人の遅れ（0〜1.2秒）と体ごとのずれを探して差し引く
   let best = { lag: 0, ox: 0, oy: 0, e: Infinity }; const sub = rs.filter((_, i) => i % 3 === 0);
   for (let lag = 0; lag <= 1200; lag += 100) { const gp = sub.map(r => at(r, lag));
-    for (let i = -4; i <= 4; i++) for (let j = -4; j <= 4; j++) { const ox = i * 0.1 * d, oy = j * 0.1 * d; let e = 0;
+    for (let i = -8; i <= 8; i++) for (let j = -8; j <= 8; j++) { const ox = i * 0.1 * d, oy = j * 0.1 * d; let e = 0;
       sub.forEach((r, k) => { e += Math.min(dist(gp[k], { x: r.n.x + ox, y: r.n.y + oy }) / d, 1); });
       if (e < best.e) best = { lag, ox, oy, e }; } }
   return best;
@@ -582,26 +603,32 @@ function drawGuide(t, pts) {
     oc.strokeStyle = 'rgba(255,90,90,.8)'; oc.lineWidth = g.d * 0.03; oc.beginPath(); g.trail.forEach((p, i) => i ? oc.lineTo(p.x, p.y) : oc.moveTo(p.x, p.y)); oc.stroke();
     oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, g.d * 0.06, 0, 7); oc.fill(); }
 }
+// ガイドの線は画面の真ん中（横）に固定し、たては鼻の高さ。始める前から出しておき、鼻先を線に合わせてから動く
+// （2026-10-14 宮崎さん「上下の線が左にずれている。まっすぐ真ん中に」「スタートする前に線が見えない」）
+function placeGuide(extra) {
+  const vw = video.videoWidth || 640, vh = video.videoHeight || 480, p = last;
+  G = { cx: vw / 2, cy: p ? p[1].y : vh / 2, d: p ? dist(p[P.eyeOut[0]], p[P.eyeOut[1]]) : Math.min(vw, vh) * 0.2, t0: null, trail: [], ...extra };
+  return G;
+}
 // 練習（記録しない・1周ずつ）を先に1回できる（2026-10-14 宮崎さん「8の字は一回練習のセクションを入れる」）
 async function stepEight(practiced) {
   practiced = practiced === true;   // ボタンから呼ばれると押した出来事が渡ってくるので、true のときだけ練習後とみなす
   show(2, '2. 首の8の字');
-  cue(`${DEMO}${practiced ? '練習おわり。次は本番です' : '白い「∞」の線を<br>鼻先でなぞります'}<small>黄色い点が1周${LAP / 1000}秒で進むので、鼻先（赤い点）で追いかけてください。${LAPS}周したら「反対回り」の合図で逆向きに${LAPS}周。肩は動かさず首だけで。痛みが出たら止めてください</small>`);
+  placeGuide({ dir: 1, dir0: 1, per: LAP, arrow: true }); G.path = th => gPos(G, th); G.pos = e => gPos(G, G.dir * 2 * Math.PI * e / LAP);
+  const nt = `黄色い点が1周${LAP / 1000}秒で進むので、鼻先（赤い点）で追いかけてください。${LAPS}周したら「反対回り」の合図で逆向きに${LAPS}周。肩は動かさず首だけで。痛みが出たら止めてください`;
+  const hd = practiced ? '練習おわり。次は本番です' : '白い「∞」の線を<br>鼻先でなぞります';
+  cue(`${DEMO}${hd}`, 'top', `${hd}<br>${nt}`); note(nt);
   demo('eight');
   btn(practiced ? 'もう一度練習する' : 'まず練習する（1周ずつ・記録しない）', () => runEight(true), 'sub');
   btn(practiced ? '本番を始める' : '練習せずに始める', () => runEight(false));
 }
 async function runEight(practice) {
   {
-    const my = tok, laps = practice ? 1 : LAPS; clearBtns();
-    cue('顔をまっすぐ向けて<br>そのまま…');
+    const my = tok, laps = practice ? 1 : LAPS; clearBtns(); note('');
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepEight, '顔が見つかりませんでした');
-    const s0 = await record(700);
-    const src = s0.length ? s0 : [{ pts: last }];
-    G = { cx: med(src.map(f => f.pts[1].x)), cy: med(src.map(f => f.pts[1].y)), d: med(src.map(f => dist(f.pts[P.eyeOut[0]], f.pts[P.eyeOut[1]]))), t0: null, dir: 1, dir0: 1, trail: [], per: LAP, arrow: true };
-    G.path = th => gPos(G, th); G.pos = e => gPos(G, G.dir * 2 * Math.PI * e / LAP);
-    for (let i = 3; i > 0 && my === tok; i--) { cue(`矢印の向きへ動き出します　<span style="font-size:1.5em">${i}</span>`, 'low'); await sleep(1000); }   // 矢印を隠さないよう、案内は下に出す
+    G.dir = 1; G.t0 = null;
+    for (let i = 3; i > 0 && my === tok; i--) { cue(`鼻先を∞の真ん中に置いて<br>矢印の向きへ動き出します　<span style="font-size:1.5em">${i}</span>`, 'low'); await sleep(1000); }   // 矢印を隠さないよう、案内は下に出す
     cue('');
     const seg = [];
     for (const [k, dir] of [['fwd', 1], ['rev', -1]]) {
@@ -684,16 +711,14 @@ const LPER = 6000, LCYC = 3, AH = 0.7, AV = 0.4;   // 横・たての半幅（�
 const lPos = (g, ph) => g.ax === 'H' ? { x: g.cx - AH * g.d * Math.sin(ph), y: g.cy } : { x: g.cx, y: g.cy - AV * g.d * Math.sin(ph) };   // 最初は本人の右・上へ
 async function stepNeck() {
   show(3, '3. 首の左右・上下');
-  cue(`${DEMO}白い線の上を動く点を<br>鼻先で追います<small>はじめに左右へ${LCYC}往復、次に上下へ${LCYC}往復。1往復${LPER / 1000}秒です。肩は動かさず首だけで。痛みが出たら止めてください</small>`);
+  placeGuide({ per: LPER, ax: 'H' }); G.path = th => lPos(G, -Math.PI / 2 + th / 2); G.pos = e => lPos(G, 2 * Math.PI * e / LPER);
+  const nt = `はじめに左右へ${LCYC}往復、次に上下へ${LCYC}往復。1往復${LPER / 1000}秒です。肩は動かさず首だけで。痛みが出たら止めてください`;
+  cue(`${DEMO}白い線の上を動く点を<br>鼻先で追います`, 'top', `白い線の上を動く点を<br>鼻先で追います<br>${nt}`); note(nt);
   demo('neck');
   btn('始める', async () => {
-    const my = tok; clearBtns();
-    cue('顔をまっすぐ向けて<br>そのまま…');
+    const my = tok; clearBtns(); note('');
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepNeck, '顔が見つかりませんでした');
-    const s0 = await record(700), src = s0.length ? s0 : [{ pts: last }];
-    G = { cx: med(src.map(f => f.pts[1].x)), cy: med(src.map(f => f.pts[1].y)), d: med(src.map(f => dist(f.pts[P.eyeOut[0]], f.pts[P.eyeOut[1]]))), t0: null, trail: [], per: LPER, ax: 'H' };
-    G.path = th => lPos(G, -Math.PI / 2 + th / 2); G.pos = e => lPos(G, 2 * Math.PI * e / LPER);
     const seg = [];
     for (const [ax, lab] of [['H', '左右'], ['V', '上下']]) {
       if (my !== tok) return;
@@ -1494,6 +1519,7 @@ $('bCopyAll').onclick = () => copyText(localStorage.getItem('fntcc_runs') || '[]
 $('bAgain').onclick = () => { newRun(); CAL = null; $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepAlign(); };
 
 $('bStart').onclick = async () => {
+  try { VA.muted = true; VA.src = 'voice/unlock.mp3'; VA.play().then(() => { VA.pause(); VA.muted = false; }).catch(() => { VA.muted = false; }); } catch (e) {}   // スマホは、押したときに一度鳴らしておかないと後で音が出ない
   $('bStart').disabled = true;
   const startTry = async () => { for (let i = 0; ; i++) { try { return await startCam(); } catch (e) { if (i >= 4 || !/NotReadable|Abort|TrackStart/.test(e.name)) throw e; await sleep(1000); } } };   // 前のページがカメラを手放すまで少し待って、やり直す
   try { await Promise.race([startTry(), sleep(10000).then(() => { throw { name: '時間切れ。ほかのアプリやタブでカメラを使っていないか確かめて、ページを読み込み直してください' }; })]); }
