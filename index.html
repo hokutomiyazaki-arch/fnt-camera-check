@@ -898,8 +898,11 @@ function pursuitHTML(o) {
   return `追従の点数（向きごと。100＝ぴったり）<br>${DIRS.map(cell).join('<br>')}<br><span class="small">（ ）＝目の速さ÷点の速さ・追いつくために跳んだ割合。まばたき等で除いたコマ ${Math.round(o.blinkFrac * 100)}%・${o.fps}コマ/秒</span>${judgeHTML()}`;
 }
 // 内部の判定（お客さんには見せない）。しきい値は仮（2026-10-14 宮崎さん：判定のしかたは後で伝える）
-// ・右／右上／右下へ ついていけない → 右の皮質　・左／左上／左下 → 左の皮質　・上下 → 中脳
-const JTH = 15;
+// ・右／右上／右下へ ついていけない（カクつく）→ 右の皮質　・左／左上／左下 → 左の皮質（同側の皮質。アドバンス教材 §7.1 で確定 2026-10-14）
+// ・上下は記録のみ（判定保留）。「上下 → 中脳」は教材に根拠が無いので、宮崎さんの返事を待つ
+// ・点を見つめる：揺れ・外れが多い → 小脳（教材「固視＝小脳」「固視中の微小な揺れ＝スクエアウェーブジャーク」）。側は宮崎さんの返事待ち
+const JTH = 15, FIX_SD = 0.08, FIX_INT = 3;   // 見つめる：揺れ（よこ・たての大きい方）・外れた回数のしきい値（仮）
+const fixFlag = x => x && x.ok && (Math.max(x.sdX, x.sdY) >= FIX_SD || x.intrusions >= FIX_INT) ? `点を見つめている間の揺れ よこ${f2(x.sdX)}・たて${f2(x.sdY)}・外れ${x.intrusions}回（しきい値 揺れ${FIX_SD}・外れ${FIX_INT}回）` : null;
 function judge() {
   const J = [], d = RUN.pursuit && RUN.pursuit.dir;
   for (const H of [RUN.eightJudge, RUN.neckJudge]) if (H) {
@@ -914,15 +917,16 @@ function judge() {
       if (qL - qR >= JTH) J.push({ k: '右の皮質', why: `右方向（右・右上・右下）の追従 ${qR} が、左方向 ${qL} より ${qL - qR} 低い` });
       if (qR - qL >= JTH) J.push({ k: '左の皮質', why: `左方向（左・左上・左下）の追従 ${qL} が、右方向 ${qR} より ${qR - qL} 低い` });
     }
-    if (qV != null && qH != null && qH - qV >= JTH) J.push({ k: '中脳', why: `上下の追従 ${qV} が、左右 ${qH} より ${qH - qV} 低い` });
-    RUN.pursuitGroups = { right: qR, left: qL, vertical: qV, horizontal: qH, threshold: JTH, note: 'しきい値は仮' };
+    RUN.pursuitGroups = { right: qR, left: qL, vertical: qV, horizontal: qH, threshold: JTH, note: 'しきい値は仮。上下は記録のみ（判定保留）' };
   }
-  if (RUN.saccade && RUN.saccade.ok) for (const j of saccJudge(RUN.saccade)) J.push({ k: j.k, why: `${j.why}［サッカードの読みは提案中］` });
+  if (RUN.saccade && RUN.saccade.ok) for (const j of saccJudge(RUN.saccade)) J.push(j);
+  const ff = fixFlag(RUN.fixation); if (ff) J.push({ k: '小脳（側は未判定）', why: ff });
   RUN.judge = J;
 }
 function judgeHTML() {
   const J = RUN.judge || [];
-  return `<div class="res judge">内部の判定（仮・お客さんには出ない）：${J.length ? J.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : '<br>目立った差なし'}${RUN.judgeNote ? '<br>※' + RUN.judgeNote : ''}</div>`;
+  const G = RUN.pursuitGroups, ud = G && G.vertical != null ? `<br><span class="small">追従の上下：記録のみ（判定保留）— 上下 ${G.vertical}・左右 ${G.horizontal}</span>` : '';
+  return `<div class="res judge">内部の判定（仮・お客さんには出ない）：${J.length ? J.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : '<br>目立った差なし'}${RUN.judgeNote ? '<br>※' + RUN.judgeNote : ''}${ud}</div>`;
 }
 
 // ════ 5. サッカード（跳ぶ点を見る）：8方向へ跳んで、真ん中へ戻る。間はばらばら（1.0〜1.6秒）にして先読みを防ぐ
@@ -947,7 +951,7 @@ async function stepSacc() {
     RUN.saccade = out;
     if (!out.ok) return fail(stepSacc, '目の動きを読み取れませんでした');
     const SJ = CAL && !CAL.reliable ? [] : saccJudge(out);
-    staff(saccHTML(out) + `<div class="res judge">内部の読み（提案中・宮崎さんの OK 待ち）：${SJ.length ? SJ.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : '<br>目立った行き過ぎ・届かないなし'}<br><span class="small">BDC「サッカード」：届かない向きと反対の皮質・行き過ぎる向きと同じ側の小脳</span></div>` + calWarn());
+    staff(saccHTML(out) + `<div class="res judge">内部の読み：${SJ.length ? SJ.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : '<br>目立った行き過ぎ・届かないなし'}<br><span class="small">届かない（ハイポメトリア）→ 反対側の皮質・行き過ぎる（ハイパーメトリア）→ 同じ側の小脳（アドバンス教材 §7.1・BDC「サッカード」）。跳ぶまでの遅さ・速さの左右差は記録のみ</span></div>` + calWarn());
     recorded(stepSacc, stepFix, '次へ（点を見つめる）');
   });
 }
@@ -988,7 +992,7 @@ function analyzeSaccSeries(fr, jumps) {
   const metria = { right: met(['R', 'UR', 'DR']), left: met(['L', 'UL', 'DL']), up: met(['U']), down: met(['D']) };
   return { ok: each.filter(o => o.ok).length >= 6, dir, groups: { right: grp(['R', 'UR', 'DR']), left: grp(['L', 'UL', 'DL']), vertical: grp(['U', 'D']) }, metria, each, valid: each.filter(o => o.ok).length, total: each.length };
 }
-// サッカードの読み（提案中・宮崎さんの OK 待ち。BDC「サッカード」ページID 3980 の読み方に沿う）
+// サッカードの読み（2026-10-14 アドバンス教材 §7.1 で確定。BDC「サッカード」ページID 3980 とも同じ）。跳ぶまでの遅さ・速さの左右差は教材に判定が無いので記録のみ
 // ・ある向きへ届かない（ハイポ）→ 跳ぶ向きと反対の皮質（皮質が目を押し出す）。右へ届かない → 左の皮質
 // ・ある向きへ行き過ぎる（ハイパー）→ 跳ぶ向きと同じ側の小脳（反対側の小脳が止める）。右へ行き過ぎ → 右の小脳
 // ・右へ届かない＋左へ行き過ぎる → 左の小脳のかたち（BDC：左小脳＝右のハイポ・左のハイパー）なので、皮質ではなく左の小脳と読む
@@ -1002,7 +1006,7 @@ function saccJudge(o) {
     const g = M[to], h = to === 'right' ? M.left : M.right;
     const hypo = rep(g, 'hypo'), oppHyper = rep(h, 'hyper');
     if (hypo && oppHyper) J.push({ k: `${opp}の小脳`, src: 'サッカード', why: `${from}へ届かない（${cnt(g, 'hypo')}）＋${opp}へ行き過ぎる（${cnt(h, 'hyper')}）＝${opp}の小脳のかたち` });
-    else if (hypo) J.push({ k: `${opp}の皮質`, src: 'サッカード', why: `${from}へ跳ぶと届かない＝ハイポメトリア（${cnt(g, 'hypo')}）。BDC では「まだ半々」で、${opp}の小脳の可能性も残る` });
+    else if (hypo) J.push({ k: `${opp}の皮質`, src: 'サッカード', why: `${from}へ跳ぶと届かない＝ハイポメトリア（${cnt(g, 'hypo')}）→ 反対側の皮質` });
     if (rep(g, 'hyper') && !(rep(h, 'hypo'))) J.push({ k: `${from}の小脳`, src: 'サッカード', why: `${from}へ跳ぶと行き過ぎる＝ハイパーメトリア（${cnt(g, 'hyper')}）` });
   }
   return J;
@@ -1028,7 +1032,8 @@ async function stepFix() {
     out.gate = g; out.fps = fpsOf(fr, 10000);
     RUN.fixation = out;
     if (!out.ok) return fail(stepFix, '目が見えている時間が短すぎました');
-    staff(`見つめている間の目の揺れ：よこ <b>${f2(out.sdX)}</b>・たて <b>${f2(out.sdY)}</b>（ばらつき）<br>揺れの広さ（68%が入る楕円）<b>${f2(out.bcea)}</b>・いちばん離れた所 <b>${f2(out.maxDev)}</b><br>ゆっくり流れた量 <b>${f2(out.drift)}</b>・点から外れた回数 <b>${out.intrusions}</b>${calWarn()}<br><span class="small">単位は画面の半分の幅＝1。まばたき等で除いたコマ ${Math.round(out.blinkFrac * 100)}%・${out.fps}コマ/秒</span>`);
+    staff(`見つめている間の目の揺れ：よこ <b>${f2(out.sdX)}</b>・たて <b>${f2(out.sdY)}</b>（ばらつき）<br>揺れの広さ（68%が入る楕円）<b>${f2(out.bcea)}</b>・いちばん離れた所 <b>${f2(out.maxDev)}</b><br>ゆっくり流れた量 <b>${f2(out.drift)}</b>・点から外れた回数 <b>${out.intrusions}</b>${calWarn()}
+    <div class="res judge">内部の読み（仮）：${fixFlag(out) ? '<b>小脳の働きの低下の可能性（側は未判定）</b> — ' + fixFlag(out) : '目立った揺れ・外れなし'}<br><span class="small">固視＝小脳・固視中の微小な揺れ＝スクエアウェーブジャーク（アドバンス教材 §7.1）。左右どちらの小脳かは宮崎さんの返事待ち</span></div><br><span class="small">単位は画面の半分の幅＝1。まばたき等で除いたコマ ${Math.round(out.blinkFrac * 100)}%・${out.fps}コマ/秒</span>`);
     recorded(stepFix, stepConv, '次へ（寄り目）');
   });
 }
@@ -1310,13 +1315,13 @@ function mitate() {
   if (M.vest) L.push(`<b>${M.vest.side}の前庭器官</b> — ${M.vest.why}`);
   for (const s of pmS) L.push(`<b>${s}の PMRF</b> — ${M.pmrf.filter(p => p.side === s).map(p => p.why).join('・')}`);
   if (M.pain) L.push(`<b>痛み</b>：${M.pain}`);
-  const cb = J.filter(j => /小脳|半規管|前庭/.test(j.k)); if (cb.length) L.push(`<b>小脳・前庭</b>：${[...new Set(cb.map(j => j.k))].join('・')}（首の検査・サッカードから）`);
+  const cb = J.filter(j => /小脳|半規管|前庭/.test(j.k)); if (cb.length) L.push(`<b>小脳・前庭</b>：${[...new Set(cb.map(j => j.k))].join('・')}（首の検査・サッカード・見つめる検査から）`);
   RUN.mitate = { cortex: cx, cn: cn.map(({ n, side, why, read }) => ({ n, side, why, read })), vest: M.vest, pmrf: M.pmrf, pain: M.pain && M.pain.replace(/<\/?b>/g, ''), lines: L.map(x => x.replace(/<\/?b>/g, '')) };
   return L;
 }
 function mitateHTML() {
   const L = mitate();
-  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。サッカードの読みは提案中（宮崎さんの OK 待ち）</span></div>`;
+  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。追従の上下と、見つめる検査の小脳の側は判定保留</span></div>`;
 }
 
 // ════ まとめ：記録はこの端末に残す（内部用）。お客さんには判定を見せない
