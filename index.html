@@ -899,7 +899,7 @@ function pursuitHTML(o) {
 }
 // 内部の判定（お客さんには見せない）。しきい値は仮（2026-10-14 宮崎さん：判定のしかたは後で伝える）
 // ・右／右上／右下へ ついていけない（カクつく）→ 右の皮質　・左／左上／左下 → 左の皮質（同側の皮質。アドバンス教材 §7.1 で確定 2026-10-14）
-// ・上下は記録のみ（判定保留）。「上下 → 中脳」は教材に根拠が無いので、宮崎さんの返事を待つ
+// ・上下（上・下）だけ ついていけない → 中脳（2026-10-14 宮崎さん確定）。左右より JTH 以上低いとき
 // ・点を見つめる：揺れ・外れが多い → 小脳（教材「固視＝小脳」「固視中の微小な揺れ＝スクエアウェーブジャーク」）。側は宮崎さんの返事待ち
 const JTH = 15, FIX_SD = 0.08, FIX_INT = 3;   // 見つめる：揺れ（よこ・たての大きい方）・外れた回数のしきい値（仮）
 const fixFlag = x => x && x.ok && (Math.max(x.sdX, x.sdY) >= FIX_SD || x.intrusions >= FIX_INT) ? `点を見つめている間の揺れ よこ${f2(x.sdX)}・たて${f2(x.sdY)}・外れ${x.intrusions}回（しきい値 揺れ${FIX_SD}・外れ${FIX_INT}回）` : null;
@@ -917,7 +917,8 @@ function judge() {
       if (qL - qR >= JTH) J.push({ k: '右の皮質', why: `右方向（右・右上・右下）の追従 ${qR} が、左方向 ${qL} より ${qL - qR} 低い` });
       if (qR - qL >= JTH) J.push({ k: '左の皮質', why: `左方向（左・左上・左下）の追従 ${qL} が、右方向 ${qR} より ${qR - qL} 低い` });
     }
-    RUN.pursuitGroups = { right: qR, left: qL, vertical: qV, horizontal: qH, threshold: JTH, note: 'しきい値は仮。上下は記録のみ（判定保留）' };
+    if (qV != null && qH != null && qH - qV >= JTH) J.push({ k: '中脳', why: `上下の追従 ${qV} が、左右 ${qH} より ${qH - qV} 低い` });
+    RUN.pursuitGroups = { right: qR, left: qL, vertical: qV, horizontal: qH, threshold: JTH, note: 'しきい値は仮' };
   }
   if (RUN.saccade && RUN.saccade.ok) for (const j of saccJudge(RUN.saccade)) J.push(j);
   const ff = fixFlag(RUN.fixation); if (ff) J.push({ k: '小脳（側は未判定）', why: ff });
@@ -925,7 +926,7 @@ function judge() {
 }
 function judgeHTML() {
   const J = RUN.judge || [];
-  const G = RUN.pursuitGroups, ud = G && G.vertical != null ? `<br><span class="small">追従の上下：記録のみ（判定保留）— 上下 ${G.vertical}・左右 ${G.horizontal}</span>` : '';
+  const G = RUN.pursuitGroups, ud = G && G.vertical != null ? `<br><span class="small">追従の上下 ${G.vertical}・左右 ${G.horizontal}（上下が左右より ${JTH} 以上低い → 中脳）</span>` : '';
   return `<div class="res judge">内部の判定（仮・お客さんには出ない）：${J.length ? J.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : '<br>目立った差なし'}${RUN.judgeNote ? '<br>※' + RUN.judgeNote : ''}${ud}</div>`;
 }
 
@@ -1283,6 +1284,8 @@ async function stepAsk() {
 // ・脳神経の側と、眼球運動で出た皮質の側が同じ → その側の皮質の問題。逆 → 脳神経の問題
 // ・瞳孔が大きい側・痛みが出やすい側 → その側の PMRF。いまの痛みが PMRF と同じ側 → PMRF の問題。さらに皮質の低下とも同じ側 → 皮質の低下が影響している PMRF の問題
 // ・首が傾いている側 → その側の前庭器官
+// ・動眼神経は中脳として読む。寄り目と上下の目の動きの両方が弱い → 中脳の働き低下（2026-10-14 宮崎さん）
+// ・首の8の字で「気持ち悪い」（少し・かなり）→ 前庭の問題を疑う（2026-10-14 宮崎さん）
 const sideOfAns = a => !a ? null : a.startsWith('右') ? '右' : a.startsWith('左') ? '左' : null;
 function convWorse(c) {   // 寄りが悪い側：先に外へ逃げた目。逃げなければ、寄った量が15%以上少ない目
   if (!c || !c.eyes) return null;
@@ -1297,10 +1300,10 @@ function mitate() {
   const cn = M.cn, t = RUN.tongue, fc = RUN.face && RUN.face.cn7, pu = RUN.pupil, cw = convWorse(RUN.conv), hr = sideOfAns(RUN.ask && RUN.ask.hearing);
   if (t && /本人の(右|左)/.test(t.side)) { const s = t.side.replace('本人の', ''); cn.push({ n: '舌下神経', side: s, why: `舌が${s}へ寄った` }); }
   if (fc && fc.side) cn.push({ n: '顔面神経', side: fc.side, why: fc.items.filter(i => i.side === fc.side).map(i => i.why).join('・') });
-  if (cw) cn.push({ n: '動眼神経', side: cw.side, why: cw.why });
-  if (pu && pu.big) cn.push({ n: '動眼神経', side: pu.big, why: `瞳孔が${pu.big}のほうが大きい` });
+  if (cw) cn.push({ n: '動眼神経（中脳）', side: cw.side, why: cw.why });
+  if (pu && pu.big) cn.push({ n: '動眼神経（中脳）', side: pu.big, why: `瞳孔が${pu.big}のほうが大きい` });
   if (hr) cn.push({ n: '内耳神経', side: hr, why: `${hr}の耳が聞こえにくい（質問）` });
-  for (const c of cn) c.read = cortex ? (c.side === cortex ? `${cortex}の皮質の問題と読む（眼球運動で出た皮質の側と同じ）` : `${c.n}（脳神経）の問題と読む（眼球運動で出た皮質＝${cortex}と逆の側）`)
+  for (const c of cn) c.read = cortex ? (c.side === cortex ? `${cortex}の皮質の問題と読む（眼球運動で出た皮質の側と同じ）` : `${/中脳/.test(c.n) ? '動眼神経＝中脳' : c.n + '（脳神経）'}の問題と読む（眼球運動で出た皮質＝${cortex}と逆の側）`)
     : cx.length > 1 ? `${c.n}の問題の可能性（皮質は左右両方に出ているので、側で比べていない）` : `${c.n}の問題の可能性（眼球運動で皮質の側が出ていないので、比べていない）`;
   if (RUN.tilt && RUN.tilt.side) M.vest = { side: RUN.tilt.side, why: RUN.tilt.why };
   if (pu && pu.big) M.pmrf.push({ side: pu.big, why: '瞳孔が大きい側' });
@@ -1312,16 +1315,20 @@ function mitate() {
   if (cx.length) L.push(`<b>皮質</b>：${cx.map(s => s + 'の皮質').join('・')}の働き低下（眼球運動：${J.filter(j => /の皮質/.test(j.k)).map(j => j.why.replace(/［.*?］/, '')).join('／')}）`);
   else L.push('<b>皮質</b>：眼球運動で目立った左右差なし');
   for (const c of cn) L.push(`<b>${c.side}の${c.n}</b> — ${c.why} → ${c.read}`);
+  const mb = J.find(j => j.k === '中脳');
+  if (mb && cw) L.push(`<b>中脳</b>の働き低下 — 寄り目も上下の目の動きも弱い（${cw.why}／${mb.why}）`);
+  else if (mb) L.push(`<b>中脳</b>の働き低下の可能性 — ${mb.why}（寄り目では目立った差なし）`);
   if (M.vest) L.push(`<b>${M.vest.side}の前庭器官</b> — ${M.vest.why}`);
+  const nz = RUN.eight && RUN.eight.nausea; if (nz && nz !== 'いいえ') { M.nausea = nz; L.push(`<b>前庭</b>の問題を疑う — 首の8の字で気持ち悪さ「${nz}」`); }
   for (const s of pmS) L.push(`<b>${s}の PMRF</b> — ${M.pmrf.filter(p => p.side === s).map(p => p.why).join('・')}`);
   if (M.pain) L.push(`<b>痛み</b>：${M.pain}`);
   const cb = J.filter(j => /小脳|半規管|前庭/.test(j.k)); if (cb.length) L.push(`<b>小脳・前庭</b>：${[...new Set(cb.map(j => j.k))].join('・')}（首の検査・サッカード・見つめる検査から）`);
-  RUN.mitate = { cortex: cx, cn: cn.map(({ n, side, why, read }) => ({ n, side, why, read })), vest: M.vest, pmrf: M.pmrf, pain: M.pain && M.pain.replace(/<\/?b>/g, ''), lines: L.map(x => x.replace(/<\/?b>/g, '')) };
+  RUN.mitate = { cortex: cx, cn: cn.map(({ n, side, why, read }) => ({ n, side, why, read })), vest: M.vest, nausea: M.nausea || null, midbrain: !!mb, pmrf: M.pmrf, pain: M.pain && M.pain.replace(/<\/?b>/g, ''), lines: L.map(x => x.replace(/<\/?b>/g, '')) };
   return L;
 }
 function mitateHTML() {
   const L = mitate();
-  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。追従の上下と、見つめる検査の小脳の側は判定保留</span></div>`;
+  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。動眼神経＝中脳、寄り目と上下の追従が両方弱い＝中脳。8の字で気持ち悪い＝前庭。見つめる検査の小脳の側は判定保留</span></div>`;
 }
 
 // ════ まとめ：記録はこの端末に残す（内部用）。お客さんには判定を見せない
