@@ -164,12 +164,32 @@ const EYE_OK = [0.13, 0.20];   // 目のチェックで「OK」とする目の�
 
 // ── カメラ
 async function startCam() {
+  if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
   const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60 } }, audio: false });
   video.srcObject = s;
   await video.play();
+  s.getVideoTracks()[0].addEventListener('ended', () => reviveCam('ended'));
+  wake();
   RUN.cam = { w: video.videoWidth, h: video.videoHeight, screen: [innerWidth, innerHeight, window.devicePixelRatio || 1], fpsSetting: s.getVideoTracks()[0]?.getSettings?.().frameRate || null, settings: (() => { const g = s.getVideoTracks()[0]?.getSettings?.() || {}; return { w: g.width, h: g.height }; })() };
-  loop();
+  if (!looping) { looping = true; loop(); }
 }
+// しばらく置くと、画面が消えたり別のアプリに移ったりしてカメラが止まる（2026-10-14 宮崎さん「しばらく放置したらカメラが起動しなくなった」）。
+// 戻ってきたとき・映像が2秒止まったとき・カメラが切れたときに、カメラを開き直す。測っている段はそのまま続く
+let looping = false, reviving = false, stillSince = 0, wl = null;
+async function wake() { try { if (navigator.wakeLock && !wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } } catch (e) {} }   // 使っている間は画面を消さない
+async function reviveCam(why) {
+  if (reviving || !video.srcObject || document.hidden) return;
+  reviving = true; window.__revive = (window.__revive || 0) + 1; window.__reviveWhy = why;
+  for (let i = 0; i < 3; i++) { try { await startCam(); break; } catch (e) { await sleep(800); } }
+  if (!video.srcObject || !video.srcObject.active) { $('loadState').textContent = 'カメラが止まりました。ページを読み込み直してください。'; cue('カメラが止まりました<small>ページを読み込み直してください</small>'); }
+  stillSince = 0; reviving = false;
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !video.srcObject) return;
+  wake();
+  const tr = video.srcObject.getVideoTracks()[0];
+  if (!tr || tr.readyState === 'ended' || tr.muted) reviveCam('back'); else video.play().catch(() => reviveCam('play'));
+});
 // 顔の点のキャンバスを画面の大きさ（×画素密度）にして、映像の画素の座標で描けるように変換をかける。
 // 映像は object-fit:contain＋鏡写しで出ているので、同じ位置・同じ倍率・左右反転にそろえる
 let OVU = 1;
@@ -234,6 +254,12 @@ function loop() {
     window.__frames = (window.__frames || 0) + 1;
     window.__faceSeen = (window.__faceSeen || 0) + (last ? 1 : 0);
   }
+  // カメラが切れた・止まったまま（映像が止まっても currentTime は進むことがあるので、カメラそのものの状態を見る）
+  const tr = video.srcObject && !document.hidden && video.srcObject.getVideoTracks()[0];
+  if (tr && (tr.readyState === 'ended' || tr.muted || video.paused || video.readyState < 2)) {
+    const now = performance.now(); if (!stillSince) stillSince = now;
+    if (now - stillSince > 2000) reviveCam(tr.readyState === 'ended' ? 'ended' : tr.muted ? 'muted' : 'still');
+  } else if (tr) stillSince = 0;
   requestAnimationFrame(loop);
 }
 
@@ -246,7 +272,7 @@ function brightness() {
 }
 
 // ── 画面の部品
-const NSTEP = 13;
+const NSTEP = 12;
 $('steps').innerHTML = '<span></span>'.repeat(NSTEP);
 let tok = 0;                       // 段を移ったら増える（前の段の待ちを止めるため）
 function show(step, title) {
@@ -442,6 +468,14 @@ function drawGuide(t, pts) {
   oc.strokeStyle = 'rgba(255,255,255,.75)'; oc.setLineDash([g.d * 0.08, g.d * 0.06]); oc.beginPath();
   for (let i = 0; i <= 120; i++) { const p = g.path(i / 120 * 2 * Math.PI); i ? oc.lineTo(p.x, p.y) : oc.moveTo(p.x, p.y); }
   oc.stroke(); oc.setLineDash([]);
+  if (g.t0 == null && g.arrow) {   // 始まる前：真ん中から、点が動き始める向きへ黄色い矢印（2026-10-14 宮崎さん）
+    const A = []; for (let i = 0; i <= 20; i++) A.push(g.path(g.dir * i / 20 * 0.4 * Math.PI));
+    oc.strokeStyle = '#ffcc00'; oc.lineWidth = g.d * 0.06; oc.lineCap = 'round'; oc.beginPath(); A.forEach((p, i) => i ? oc.lineTo(p.x, p.y) : oc.moveTo(p.x, p.y)); oc.stroke();
+    const z = A[20], y = A[17], ang = Math.atan2(z.y - y.y, z.x - y.x), L = g.d * 0.22;
+    oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.moveTo(z.x + Math.cos(ang) * L * 0.5, z.y + Math.sin(ang) * L * 0.5);
+    oc.lineTo(z.x + Math.cos(ang + 2.4) * L, z.y + Math.sin(ang + 2.4) * L); oc.lineTo(z.x + Math.cos(ang - 2.4) * L, z.y + Math.sin(ang - 2.4) * L); oc.fill();
+    oc.beginPath(); oc.arc(g.cx, g.cy, g.d * 0.09, 0, 7); oc.fill(); oc.lineCap = 'butt';
+  }
   if (g.t0 != null) {
     const e = Math.max(0, t - g.t0), p = g.pos(e);
     oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(p.x, p.y, g.d * 0.09, 0, 7); oc.fill();
@@ -461,13 +495,14 @@ async function stepEight() {
     if (!last) return fail(stepEight, '顔が見つかりませんでした');
     const s0 = await record(700);
     const src = s0.length ? s0 : [{ pts: last }];
-    G = { cx: med(src.map(f => f.pts[1].x)), cy: med(src.map(f => f.pts[1].y)), d: med(src.map(f => dist(f.pts[P.eyeOut[0]], f.pts[P.eyeOut[1]]))), t0: null, dir: 1, dir0: 1, trail: [], per: LAP };
+    G = { cx: med(src.map(f => f.pts[1].x)), cy: med(src.map(f => f.pts[1].y)), d: med(src.map(f => dist(f.pts[P.eyeOut[0]], f.pts[P.eyeOut[1]]))), t0: null, dir: 1, dir0: 1, trail: [], per: LAP, arrow: true };
     G.path = th => gPos(G, th); G.pos = e => gPos(G, G.dir * 2 * Math.PI * e / LAP);
-    await countdown(3, '白い線の上に<br>鼻先を置いて');
+    for (let i = 3; i > 0 && my === tok; i--) { cue(`矢印の向きへ動き出します　<span style="font-size:1.5em">${i}</span>`, 'low'); await sleep(1000); }   // 矢印を隠さないよう、案内は下に出す
+    cue('');
     const seg = [];
     for (const [k, dir] of [['fwd', 1], ['rev', -1]]) {
       if (my !== tok) return;
-      if (k === 'rev') { G.t0 = null; cue('反対回り', 'huge'); await sleep(2200); }
+      if (k === 'rev') { G.t0 = null; G.dir = dir; cue('<b>反対回り</b>　矢印の向きへ', 'low'); await sleep(2500); }
       G.dir = dir; G.t0 = performance.now();
       const r = await record(LAP * LAPS, p => { const lap = Math.min(LAPS, Math.floor(p * LAPS) + 1); cue(`${k === 'fwd' ? '' : '反対回り・'}${lap}周目／${LAPS}${last ? '' : '<small>顔が見えません</small>'}`, 'thin low'); });
       seg.push({ k, dir, t0: G.t0, r });
@@ -994,7 +1029,7 @@ async function stepFix() {
     RUN.fixation = out;
     if (!out.ok) return fail(stepFix, '目が見えている時間が短すぎました');
     staff(`見つめている間の目の揺れ：よこ <b>${f2(out.sdX)}</b>・たて <b>${f2(out.sdY)}</b>（ばらつき）<br>揺れの広さ（68%が入る楕円）<b>${f2(out.bcea)}</b>・いちばん離れた所 <b>${f2(out.maxDev)}</b><br>ゆっくり流れた量 <b>${f2(out.drift)}</b>・点から外れた回数 <b>${out.intrusions}</b>${calWarn()}<br><span class="small">単位は画面の半分の幅＝1。まばたき等で除いたコマ ${Math.round(out.blinkFrac * 100)}%・${out.fps}コマ/秒</span>`);
-    recorded(stepFix, stepPupil, '次へ（瞳孔の大きさ）');
+    recorded(stepFix, stepConv, '次へ（寄り目）');
   });
 }
 function analyzeFixSeries(fr) {
@@ -1008,7 +1043,9 @@ function analyzeFixSeries(fr) {
   return { ok: true, sdX: r3(sx), sdY: r3(sy), bcea: r3(2 * 1.14 * Math.PI * sx * sy * Math.sqrt(Math.max(0, 1 - rho * rho))), maxDev: r3(Math.max(...dx.map((v, i) => Math.hypot(v, dy[i])))), drift: r3(drift), intrusions: intr, blinkFrac: r3(1 - g.length / fr.length) };
 }
 
-// ════ 9. 瞳孔の大きさ：スマホを近づけて上の点を見つめ、黒目（虹彩）の中の暗い丸（瞳孔）の大きさを左右で比べる
+// ════ （外した）瞳孔の大きさ：2026-10-14 宮崎さん「ちゃんと測れないなら測らなくても大丈夫」で流れから外した。
+// スマホの前のカメラ（ふつうの光）では、日本人に多い濃い茶色の黒目だと瞳孔との境が写らず、近づけても測れない人が多いため。下の部品は残してある
+// 瞳孔の大きさ：スマホを近づけて上の点を見つめ、黒目（虹彩）の中の暗い丸（瞳孔）の大きさを左右で比べる
 // 大きい側の PMRF・動眼神経の働きを疑う（2026-10-14 宮崎さん。BDC「CN3 対光反射と瞳孔」も同じ）。
 // 瞳孔÷黒目 の比で比べるので、スマホとの距離に左右されない。黒目の色が濃くて瞳孔との境が見えないコマは使わない
 const PUP_TH = 0.07, PUP_CON = 6;   // 瞳孔÷黒目 の左右差・瞳孔と黒目の明るさの差（仮）
@@ -1088,15 +1125,22 @@ function drawPupil({ img, pts }, m) {   // 両目を大きく切り出して、�
 }
 
 // ════ 7. 寄り目：画面の上（カメラのすぐ下）に出した点を見たまま、スマホを鼻先へ近づける
+function endBeep() {   // 終わりの合図（目を的から離さずに分かるように、音と振動）
+  try { navigator.vibrate && navigator.vibrate([200, 80, 200]); } catch (e) {}
+  try { const A = window.AudioContext || window.webkitAudioContext, a = endBeep.a || (endBeep.a = new A()), o = a.createOscillator(), g = a.createGain();
+    o.frequency.value = 1000; g.gain.value = 0.25; o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + 0.25); } catch (e) {}
+}
 async function stepConv() {
-  show(10, '10. 寄り目');
+  show(9, '9. 寄り目');
   dark(true); placeDot(0, 1.25);
-  near('この<b>黄色い点</b>を見たまま<br>スマホを<b>鼻先へ</b>近づけます<small>スマホを腕をのばした所に持ってから「始める」。10秒かけてゆっくり近づけます（カメラが上にあるので、画面の真ん中を鼻先に向けて）</small>', '始める', async () => {
+  near('この<b>黄色い点</b>を見たまま<br>スマホを<b>鼻先へ</b>近づけます<small>① スマホを<b>腕をのばした所</b>に持って「始める」<br>② 3・2・1 のあと、<b>10秒かけて</b>ゆっくり近づけ、<b>鼻先から指2本分（約5cm）</b>の所で止めます<br>③ 点が2つに見えたら、そこで止めてかまいません<br>④ <b>「ピッ」と鳴って画面が震えたら終わり</b>です（カメラが上にあるので、画面の真ん中を鼻先に向けて）</small>', '始める', async () => {
     const my = tok;
+    try { const A = window.AudioContext || window.webkitAudioContext; endBeep.a = endBeep.a || new A(); endBeep.a.resume(); } catch (e) {}   // 音はボタンを押したときに用意しないと鳴らない端末がある
     for (const i of [3, 2, 1]) { near(`点を見たまま　<span style="font-size:1.4em">${i}</span>`); await sleep(700); if (my !== tok) return; }
     near(null);   // 測っている間は、的のほかに何も出さない
     const fr = await record(11000);
     if (my !== tok) return;
+    endBeep();
     hideDot(); dark(false); cue('');
     analyzeConv(fr);
   });
@@ -1125,7 +1169,7 @@ function analyzeConv(r) {
 
 // ════ 8. 舌：写真のコマから舌の先を見つけて、顔の中心線からどちらへ寄ったかを自動で出す
 async function stepTongue() {
-  show(11, '11. 舌の出方');
+  show(10, '10. 舌の出方');
   cue('合図で、舌を<br><b>まっすぐ思い切り前に</b><br>出して、そのまま3秒<small>スマホを顔の正面に。写真は端末の外へ送りません</small>');
   btn('始める', async () => {
     const my = tok; clearBtns(); dark(false);
@@ -1213,14 +1257,14 @@ function drawTongue(fr, o) {
   $('photoWrap').style.display = 'block';
 }
 
-// ════ 12. 最後の質問：痛みの出やすい側・いまの痛み・聞こえ（2026-10-14 宮崎さん）
+// ════ 11. 最後の質問：痛みの出やすい側・いまの痛み・聞こえ（2026-10-14 宮崎さん）
 const QS = [
   { k: 'painSide', q: '痛みが出ることが多いのは<br>体のどちら側ですか？', a: ['右半身', '左半身', 'どちらも同じくらい', '痛みはあまり出ない'] },
   { k: 'painNow', q: 'いま気になっている痛みは<br>どちら側にありますか？', a: ['右側', '左側', '両側・真ん中', 'いまは無い'] },
   { k: 'hearing', q: '左右の耳で<br>聞こえにくい側はありますか？', a: ['右が聞こえにくい', '左が聞こえにくい', 'どちらも同じ'] },
 ];
 async function stepAsk() {
-  const my = show(12, '12. 最後にいくつか質問');
+  const my = show(11, '11. 最後にいくつか質問');
   RUN.ask = {};
   for (const Q of QS) {
     const a = await new Promise(res => { $('btns').innerHTML = ''; cue(Q.q); for (const t of Q.a) btn(t, () => res(t)); });
@@ -1272,7 +1316,7 @@ function mitate() {
 }
 function mitateHTML() {
   const L = mitate();
-  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。瞳孔が大きい側・痛みが出やすい側＝その側の PMRF。サッカードの読みは提案中（宮崎さんの OK 待ち）</span></div>`;
+  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。サッカードの読みは提案中（宮崎さんの OK 待ち）</span></div>`;
 }
 
 // ════ まとめ：記録はこの端末に残す（内部用）。お客さんには判定を見せない
@@ -1287,9 +1331,9 @@ function summaryLines() {
   if (s && s.dir) L.push(`7. サッカード（反応ms／速さ）：${DIRS.map(k => `${DJ[k]}${s.dir[k] ? `${s.dir[k].lat ?? '—'}/${f2(s.dir[k].pv)}` : '—'}`).join('・')}${s.metria ? `／行き過ぎ・届かない 右へ${s.metria.right.hyper}・${s.metria.right.hypo}／${s.metria.right.n}回・左へ${s.metria.left.hyper}・${s.metria.left.hypo}／${s.metria.left.n}回` : ''}`);
   if (x && x.ok) L.push(`8. 注視：揺れ よこ${f2(x.sdX)}・たて${f2(x.sdY)}／広さ${f2(x.bcea)}／外れ${x.intrusions}回`);
   if (RUN.pupil) L.push(`9. 瞳孔÷黒目：${RUN.pupil.r0 != null ? `右${f2(RUN.pupil.r0)}・左${f2(RUN.pupil.r1)}` : '判定できず'}`);
-  if (c) L.push(`10. 寄り目：右${f2(c.eyes[0].gain)}・左${f2(c.eyes[1].gain)}／先に逃げた目 ${c.first || 'なし'}`);
-  if (t) L.push(`11. 舌（自動）：${t.side}${t.off != null ? `（ずれ${f2(t.off)}）` : ''}`);
-  if (RUN.ask) L.push(`12. 質問：痛みが出やすい側 ${RUN.ask.painSide || '—'}／いまの痛み ${RUN.ask.painNow || '—'}／聞こえにくい耳 ${RUN.ask.hearing || '—'}`);
+  if (c) L.push(`9. 寄り目：右${f2(c.eyes[0].gain)}・左${f2(c.eyes[1].gain)}／先に逃げた目 ${c.first || 'なし'}`);
+  if (t) L.push(`10. 舌（自動）：${t.side}${t.off != null ? `（ずれ${f2(t.off)}）` : ''}`);
+  if (RUN.ask) L.push(`11. 質問：痛みが出やすい側 ${RUN.ask.painSide || '—'}／いまの痛み ${RUN.ask.painNow || '—'}／聞こえにくい耳 ${RUN.ask.hearing || '—'}`);
   return L;
 }
 function saveRun() {
@@ -1312,7 +1356,7 @@ $('bAgain').onclick = () => { newRun(); CAL = null; $('sEnd').classList.add('hid
 
 $('bStart').onclick = async () => {
   $('bStart').disabled = true;
-  try { await startCam(); }
+  try { await Promise.race([startCam(), sleep(10000).then(() => { throw { name: '時間切れ。ほかのアプリやタブでカメラを使っていないか確かめて、ページを読み込み直してください' }; })]); }
   catch (e) { $('loadState').textContent = 'カメラを起動できませんでした（' + e.name + '）。ブラウザの設定でカメラを許可してください。'; $('bStart').disabled = false; return; }
   $('sIntro').classList.add('hide'); $('sMain').classList.remove('hide');
   stepAlign();
