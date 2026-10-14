@@ -51,6 +51,7 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 #msg{font-size:12.5px;color:#aab;text-align:center;min-height:0}
 #photoWrap{position:absolute;inset:0;display:none;z-index:4;background:#000}
 #photo{width:100%;height:100%;object-fit:contain}
+#camFix{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:30;width:auto;background:#e8590c}
 .badge{position:fixed;right:8px;top:calc(6px + env(safe-area-inset-top));font-size:11px;background:#7a3cff;color:#fff;border-radius:6px;padding:1px 6px;z-index:20}
 </style>
 </head>
@@ -163,7 +164,9 @@ const eyeSize = pts => (dist(pts[P.eyeOut[0]], pts[P.eyeIn[0]]) + dist(pts[P.eye
 const EYE_OK = [0.13, 0.20];   // 目のチェックで「OK」とする目の大きさ（仮。宮崎さんの端末の記録で詰める）
 
 // ── カメラ
+let camWanted = false, camErr = '';   // 一度つけたら、このページを閉じるまでカメラを保つ
 async function startCam() {
+  camWanted = true;
   if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
   const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60 } }, audio: false });
   video.srcObject = s;
@@ -177,18 +180,29 @@ async function startCam() {
 // 戻ってきたとき・映像が2秒止まったとき・カメラが切れたときに、カメラを開き直す。測っている段はそのまま続く
 let looping = false, reviving = false, stillSince = 0, wl = null;
 async function wake() { try { if (navigator.wakeLock && !wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } } catch (e) {} }   // 使っている間は画面を消さない
+// 2026-10-14 2回目「カメラが起動しなくなった」：開き直しが3回とも失敗すると、映像が空のまま二度と開き直さず、
+// 「読み込み直して」としか出なかった（Android は画面に戻った直後や、押す操作なしではカメラを開けないことがある）。
+// 失敗したら「カメラをつけ直す」ボタンを出し、押せばその場で開き直して、測っている段から続ける。戻ってきたときにも再挑戦する
+const camOK = () => { const t = video.srcObject && video.srcObject.getVideoTracks()[0]; return !!(t && t.readyState === 'live' && !t.muted); };
+function camFixBtn(show) {
+  let b = $('camFix');
+  if (!show) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement('button'); b.id = 'camFix'; document.body.appendChild(b);
+    b.onclick = async () => { b.disabled = true; b.textContent = 'カメラをつけています…'; try { await startCam(); camErr = ''; camFixBtn(false); } catch (e) { camErr = e.name || String(e); camFixBtn(true); } }; }
+  b.disabled = false; b.textContent = 'カメラが止まりました。ここを押してつけ直す' + (camErr ? `（${camErr}）` : '');
+}
 async function reviveCam(why) {
-  if (reviving || !video.srcObject || document.hidden) return;
+  if (reviving || !camWanted || document.hidden) return;
   reviving = true; window.__revive = (window.__revive || 0) + 1; window.__reviveWhy = why;
-  for (let i = 0; i < 3; i++) { try { await startCam(); break; } catch (e) { await sleep(800); } }
-  if (!video.srcObject || !video.srcObject.active) { $('loadState').textContent = 'カメラが止まりました。ページを読み込み直してください。'; cue('カメラが止まりました<small>ページを読み込み直してください</small>'); }
+  let ok = false;
+  for (let i = 0; i < 3 && !ok; i++) { try { await startCam(); camErr = ''; ok = true; } catch (e) { camErr = e.name || String(e); window.__camErr = camErr; await sleep(1000); } }
+  camFixBtn(!ok);
   stillSince = 0; reviving = false;
 }
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden || !video.srcObject) return;
-  wake();
-  const tr = video.srcObject.getVideoTracks()[0];
-  if (!tr || tr.readyState === 'ended' || tr.muted) reviveCam('back'); else video.play().catch(() => reviveCam('play'));
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden || !camWanted) return;
+  wake(); await sleep(400);   // 戻った直後はカメラを開けない端末があるので、少し待つ
+  if (!camOK()) reviveCam('back'); else video.play().catch(() => reviveCam('play'));
 });
 // 顔の点のキャンバスを画面の大きさ（×画素密度）にして、映像の画素の座標で描けるように変換をかける。
 // 映像は object-fit:contain＋鏡写しで出ているので、同じ位置・同じ倍率・左右反転にそろえる
@@ -900,7 +914,7 @@ function pursuitHTML(o) {
 // 内部の判定（お客さんには見せない）。しきい値は仮（2026-10-14 宮崎さん：判定のしかたは後で伝える）
 // ・右／右上／右下へ ついていけない（カクつく）→ 右の皮質　・左／左上／左下 → 左の皮質（同側の皮質。アドバンス教材 §7.1 で確定 2026-10-14）
 // ・上下（上・下）だけ ついていけない → 中脳（2026-10-14 宮崎さん確定）。左右より JTH 以上低いとき
-// ・点を見つめる：揺れ・外れが多い → 小脳（教材「固視＝小脳」「固視中の微小な揺れ＝スクエアウェーブジャーク」）。側は宮崎さんの返事待ち
+// ・点を見つめる：揺れ・外れ（スクエアウェーブジャーク）が多い → 小脳虫部（両側）（2026-10-14 宮崎さん確定）。ほかの検査の小脳・前庭の所見は加算材料として見立てで数える
 const JTH = 15, FIX_SD = 0.08, FIX_INT = 3;   // 見つめる：揺れ（よこ・たての大きい方）・外れた回数のしきい値（仮）
 const fixFlag = x => x && x.ok && (Math.max(x.sdX, x.sdY) >= FIX_SD || x.intrusions >= FIX_INT) ? `点を見つめている間の揺れ よこ${f2(x.sdX)}・たて${f2(x.sdY)}・外れ${x.intrusions}回（しきい値 揺れ${FIX_SD}・外れ${FIX_INT}回）` : null;
 function judge() {
@@ -921,7 +935,7 @@ function judge() {
     RUN.pursuitGroups = { right: qR, left: qL, vertical: qV, horizontal: qH, threshold: JTH, note: 'しきい値は仮' };
   }
   if (RUN.saccade && RUN.saccade.ok) for (const j of saccJudge(RUN.saccade)) J.push(j);
-  const ff = fixFlag(RUN.fixation); if (ff) J.push({ k: '小脳（側は未判定）', why: ff });
+  const ff = fixFlag(RUN.fixation); if (ff) J.push({ k: '小脳虫部（両側）', why: ff });
   RUN.judge = J;
 }
 function judgeHTML() {
@@ -1284,6 +1298,8 @@ async function stepAsk() {
 // ・脳神経の側と、眼球運動で出た皮質の側が同じ → その側の皮質の問題。逆 → 脳神経の問題
 // ・瞳孔が大きい側・痛みが出やすい側 → その側の PMRF。いまの痛みが PMRF と同じ側 → PMRF の問題。さらに皮質の低下とも同じ側 → 皮質の低下が影響している PMRF の問題
 // ・首が傾いている側 → その側の前庭器官
+// ・結果を総合して、同じ所に重なった所見の数を「重なり」として多い順に出す（2026-10-14 宮崎さん「重なりが多い項目に問題がありそう」）
+// ・見つめる検査の揺れ＝小脳虫部（両側）。ほかの検査の小脳・前庭の所見（半規管・サッカードの小脳・首の傾き・8の字の気持ち悪さ）は加算材料
 // ・動眼神経は中脳として読む。寄り目と上下の目の動きの両方が弱い → 中脳の働き低下（2026-10-14 宮崎さん）
 // ・首の8の字で「気持ち悪い」（少し・かなり）→ 前庭の問題を疑う（2026-10-14 宮崎さん）
 const sideOfAns = a => !a ? null : a.startsWith('右') ? '右' : a.startsWith('左') ? '左' : null;
@@ -1322,13 +1338,30 @@ function mitate() {
   const nz = RUN.eight && RUN.eight.nausea; if (nz && nz !== 'いいえ') { M.nausea = nz; L.push(`<b>前庭</b>の問題を疑う — 首の8の字で気持ち悪さ「${nz}」`); }
   for (const s of pmS) L.push(`<b>${s}の PMRF</b> — ${M.pmrf.filter(p => p.side === s).map(p => p.why).join('・')}`);
   if (M.pain) L.push(`<b>痛み</b>：${M.pain}`);
-  const cb = J.filter(j => /小脳|半規管|前庭/.test(j.k)); if (cb.length) L.push(`<b>小脳・前庭</b>：${[...new Set(cb.map(j => j.k))].join('・')}（首の検査・サッカード・見つめる検査から）`);
-  RUN.mitate = { cortex: cx, cn: cn.map(({ n, side, why, read }) => ({ n, side, why, read })), vest: M.vest, nausea: M.nausea || null, midbrain: !!mb, pmrf: M.pmrf, pain: M.pain && M.pain.replace(/<\/?b>/g, ''), lines: L.map(x => x.replace(/<\/?b>/g, '')) };
+  // 小脳・前庭：見つめる検査（小脳虫部・両側）を軸に、ほかの検査の小脳・前庭の所見を加算材料として並べる
+  const vermis = J.find(j => j.k === '小脳虫部（両側）');
+  const cbv = [...new Set(J.filter(j => j !== vermis && /小脳|半規管|前庭/.test(j.k)).map(j => j.k))];
+  if (M.vest) cbv.push(`${M.vest.side}の前庭器官（首の傾き）`);
+  if (M.nausea) cbv.push(`前庭（8の字で気持ち悪さ「${M.nausea}」）`);
+  if (vermis) L.push(`<b>小脳虫部（両側）</b>の働き低下 — ${vermis.why}${cbv.length ? `<br>　加算材料（ほかの検査の小脳・前庭の所見 ${cbv.length}件）：${cbv.join('・')}` : '（ほかの検査に小脳・前庭の所見なし）'}`);
+  else if (cbv.length) L.push(`<b>小脳・前庭</b>：${[...new Set(cbv)].join('・')}（首の検査・サッカードから）`);
+  // 重なり：同じ所に何件の所見が重なったか（多い順）
+  const O = {}, add = (k, src) => (O[k] = O[k] || []).push(src);
+  for (const j of J) { const m = j.k.match(/^(右|左)の皮質/); if (m) add(`${m[1]}の皮質`, j.src || (/追従/.test(j.why) ? '点を目で追う' : '眼球運動')); }
+  for (const c of cn) if (cortex && c.side === cortex) add(`${cortex}の皮質`, `${c.side}の${c.n.replace('（中脳）', '')}`);
+  if (mb) add('中脳', '上下の追従');
+  for (const c of cn) if (/中脳/.test(c.n) && !(cortex && c.side === cortex)) add('中脳', `${c.side}の動眼神経（${c.why}）`);
+  if (vermis || cbv.length) { if (vermis) add('小脳虫部・前庭', '見つめる検査'); for (const k of cbv) add('小脳虫部・前庭', k); }
+  for (const s of pmS) for (const p of M.pmrf.filter(p => p.side === s)) add(`${s}の PMRF`, p.why);
+  const OL = Object.entries(O).sort((a, b) => b[1].length - a[1].length);
+  M.overlap = OL.map(([k, v]) => ({ k, n: v.length, from: v }));
+  if (OL.length) L.unshift(`<b>重なり</b>（多い順）：${OL.map(([k, v]) => `${k} ${v.length}件`).join('／')}`);
+  RUN.mitate = { cortex: cx, cn: cn.map(({ n, side, why, read }) => ({ n, side, why, read })), vest: M.vest, nausea: M.nausea || null, midbrain: !!mb, overlap: M.overlap, pmrf: M.pmrf, pain: M.pain && M.pain.replace(/<\/?b>/g, ''), lines: L.map(x => x.replace(/<\/?b>/g, '')) };
   return L;
 }
 function mitateHTML() {
   const L = mitate();
-  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。動眼神経＝中脳、寄り目と上下の追従が両方弱い＝中脳。8の字で気持ち悪い＝前庭。見つめる検査の小脳の側は判定保留</span></div>`;
+  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。動眼神経＝中脳、寄り目と上下の追従が両方弱い＝中脳。8の字で気持ち悪い＝前庭。見つめる検査の揺れ＝小脳虫部（両側）で、ほかの小脳・前庭の所見は加算材料。重なりが多い所ほど問題がありそうと読む</span></div>`;
 }
 
 // ════ まとめ：記録はこの端末に残す（内部用）。お客さんには判定を見せない
