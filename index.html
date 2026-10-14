@@ -33,6 +33,9 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 .steps{display:flex;gap:3px;margin:0 0 4px}.steps span{flex:1;height:4px;border-radius:2px;background:#2b2f38}.steps span.on{background:#2a6df4}
 #cue{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,520px);text-align:center;font-weight:800;font-size:clamp(23px,6.6vw,34px);line-height:1.45;padding:16px 16px;border-radius:18px;background:rgba(0,0,0,.62);text-shadow:0 2px 8px #000;pointer-events:none;z-index:5}
 #cue:empty{display:none}
+/* 的のすぐ下に出す案内とボタン（寄り目）。始めたらすぐ消す */
+#near{position:absolute;left:50%;transform:translateX(-50%);width:min(92vw,520px);text-align:center;font-weight:800;font-size:clamp(19px,5.4vw,26px);line-height:1.45;padding:12px 14px 8px;border-radius:16px;background:rgba(0,0,0,.72);z-index:9;display:none}
+#near small{display:block;font-size:15px;font-weight:600;color:#dfe3ea;margin-top:6px;line-height:1.5}
 #cue.thin{background:none}
 #cue.low{top:68%}
 #cue.huge{font-size:clamp(60px,22vw,110px)}
@@ -89,6 +92,7 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
   </div>
   <div id="top"><div class="steps" id="steps"></div><div id="title"></div></div>
   <div id="cue"></div>
+  <div id="near"></div>
   <div id="bottom"><div id="result"></div><div id="btns"></div><div id="msg"></div></div>
 </div>
 
@@ -239,7 +243,7 @@ function brightness() {
 }
 
 // ── 画面の部品
-const NSTEP = 9;
+const NSTEP = 10;
 $('steps').innerHTML = '<span></span>'.repeat(NSTEP);
 let tok = 0;                       // 段を移ったら増える（前の段の待ちを止めるため）
 function show(step, title) {
@@ -247,7 +251,7 @@ function show(step, title) {
   [...$('steps').children].forEach((e, i) => e.classList.toggle('on', i <= step));
   $('title').textContent = title;
   $('result').innerHTML = ''; $('btns').innerHTML = ''; $('msg').textContent = ''; cue('');
-  $('photoWrap').style.display = 'none'; dark(false); hideDot();
+  $('photoWrap').style.display = 'none'; dark(false); hideDot(); near(null);
   gc.clearRect(0, 0, gd.width, gd.height);
   G = null; rec = null; grab = null;
   return tok;
@@ -278,6 +282,14 @@ function recorded(again, next, nextLabel) { if (!STAFF) cue('記録しました'
 const dot = $('dot');
 function placeDot(x, y, cls = '') { const st = $('stage'); dot.className = 'tgt ' + cls; dot.style.display = 'block'; dot.style.left = (st.clientWidth * (0.5 + 0.40 * x)) + 'px'; dot.style.top = (st.clientHeight * (0.47 - 0.33 * y)) + 'px'; }
 function hideDot() { dot.style.display = 'none'; }
+// 的（点）のすぐ下に案内を出す。目を的から離さずに読めて、ボタンも文字のすぐ下にある（2026-10-14 宮崎さん）
+function near(html, label, fn) {
+  const n = $('near'); n.innerHTML = '';
+  if (html == null) { n.style.display = 'none'; return; }
+  n.innerHTML = html;
+  if (label) { const b = document.createElement('button'); b.textContent = label; b.onclick = fn; n.appendChild(b); }
+  n.style.display = 'block'; n.style.top = (parseFloat(dot.style.top) + 24) + 'px';
+}
 const DIRS = ['R', 'UR', 'U', 'UL', 'L', 'DL', 'D', 'DR'];
 const DJ = { R: '右', UR: '右上', U: '上', UL: '左上', L: '左', DL: '左下', D: '下', DR: '右下' };
 const DV = { R: [1, 0], UR: [1, 1], U: [0, 1], UL: [-1, 1], L: [-1, 0], DL: [-1, -1], D: [0, -1], DR: [1, -1] };
@@ -315,20 +327,65 @@ async function stepAlign() {
   }
 }
 
+// ── 首の検査（8の字・左右・上下）の読み。右・左は本人から見た向き（2026-10-14 宮崎さん）
+// 8の字：真ん中→左下＝右の前半規管、→右上＝右の後半規管、→右下＝左の前半規管、→左上＝左の後半規管（左上は宮崎さんの文が途中で切れていたので、ほかの3つから当てはめた）
+// 左右：左→右でずれる＝右の水平半規管、右→左＝左の水平半規管。上下：上＝両方の後半規管、下＝両方の前半規管
+// 「右」の半規管は右の小脳、「左」は左の小脳と結びつけて読む
+const CANAL = { UR: '右の後半規管', UL: '左の後半規管', DR: '左の前半規管', DL: '右の前半規管', toR: '右の水平半規管', toL: '左の水平半規管', up: '両方の後半規管', down: '両方の前半規管' };
+const LEGJ = { UR: '真ん中→右上', UL: '真ん中→左上', DR: '真ん中→右下', DL: '真ん中→左下', toR: '左→右', toL: '右→左', up: '下→上', down: '上→下' };
+const cereb = c => c.startsWith('右') ? '右の小脳' : c.startsWith('左') ? '左の小脳' : '左右の小脳';
+const OFF_MIN = 35, OFF_GAP = 15, SPD_GAP = 15, TOLF = 0.2;   // しきい値は仮（ずれの割合・速さの差は％ポイント）
+function fitTrack(rs, at, d) {   // 人の遅れ（0〜1.2秒）と体ごとのずれを探して差し引く
+  let best = { lag: 0, ox: 0, oy: 0, e: Infinity }; const sub = rs.filter((_, i) => i % 3 === 0);
+  for (let lag = 0; lag <= 1200; lag += 100) { const gp = sub.map(r => at(r, lag));
+    for (let i = -4; i <= 4; i++) for (let j = -4; j <= 4; j++) { const ox = i * 0.1 * d, oy = j * 0.1 * d; let e = 0;
+      sub.forEach((r, k) => { e += Math.min(dist(gp[k], { x: r.n.x + ox, y: r.n.y + oy }) / d, 1); });
+      if (e < best.e) best = { lag, ox, oy, e }; } }
+  return best;
+}
+function addLeg(legs, k, lap, off) { const L = legs[k] || (legs[k] = { n: 0, off: 0, laps: {} }); L.n++; L.off += off; const q = L.laps[lap] || (L.laps[lap] = { n: 0, off: 0 }); q.n++; q.off += off; }
+function legSummary(legs) {   // 向きごとの「ずれた割合」と「何回くり返しずれたか」
+  const o = {};
+  for (const k in legs) { const L = legs[k], ls = Object.values(L.laps).filter(v => v.n >= 5);
+    o[k] = { n: L.n, off: Math.round(L.off / L.n * 100), lapsOff: ls.filter(v => v.off / v.n * 100 >= OFF_MIN).length, laps: ls.length }; }
+  return o;
+}
+// くり返しずれた向き → その半規管。ずれが 35% 以上・2回以上くり返し・比べる相手より 15 ポイント以上悪い
+// （全部の向きが同じように悪いときは、半規管ではなく「小脳虫部・前庭機能」として読む）
+function legFlags(S, ref) {
+  const J = [];
+  for (const k in S) { const v = S[k], r = ref(k); if (v.n < 10) continue;
+    if (v.off >= OFF_MIN && v.lapsOff >= 2 && r != null && v.off - r >= OFF_GAP)
+      J.push({ k: CANAL[k], cb: cereb(CANAL[k]), leg: k, why: `${LEGJ[k]} で鼻先がずれた ${v.off}%（比べる相手 ${r ?? '—'}%）・${v.laps}回中${v.lapsOff}回くり返し` }); }
+  return J;
+}
+// 首の検査のあとに、気持ち悪くなったかを聞く（記録だけ。お客さんには判定を出さない）
+function askNausea(key, then) {
+  $('btns').innerHTML = '';
+  cue('気持ち悪くなったり<br>目が回ったりしましたか？');
+  for (const [v, cls] of [['いいえ', ''], ['少し', 'sub'], ['かなり', 'sub']]) btn(v, async () => {
+    if (RUN[key]) RUN[key].nausea = v;
+    $('btns').innerHTML = '';
+    if (v !== 'いいえ') { cue('少し休んでから<br>次へ進んでください<small>気分が戻らないときは、ここでやめてください</small>'); await sleep(2500); }
+    cue(''); then();
+  }, cls);
+}
+
 // ════ 1. 首の8の字（画面の ∞ のガイドを、鼻先でなぞる）
-// ガイド：横向きの ∞（x＝sinθ・y＝sin2θ）。1周 5秒で3周 → 反対回りで3周。
-const LAP = 5000, LAPS = 3, GA = 0.6, GB = 0.3;   // 横の半幅・縦の半幅（d を1として）
+// ガイド：横向きの ∞（x＝sinθ・y＝sin2θ）。1周 8秒で3周 → 反対回りで3周（2026-10-14 宮崎さん「もう少しゆっくり」で 5秒→8秒）。
+const LAP = 8000, LAPS = 3, GA = 0.6, GB = 0.3;   // 横の半幅・縦の半幅（d を1として）
 let G = null;                                      // 描いている最中のガイド { cx, cy, d, t0, dir, trail }
 const gPos = (g, th) => ({ x: g.cx - g.dir0 * GA * g.d * Math.sin(th), y: g.cy - GB * g.d * Math.sin(2 * th) });   // dir0=1：画面の右上へ出る
+// g.path(th)：線の形（th＝0〜2π）、g.pos(e)：始めてから e ミリ秒後の黄色い点の位置、g.per：1周（1往復）のミリ秒
 function drawGuide(t, pts) {
   const g = G; oc.lineWidth = Math.max(3, g.d * 0.05);
   oc.strokeStyle = 'rgba(255,255,255,.75)'; oc.setLineDash([g.d * 0.08, g.d * 0.06]); oc.beginPath();
-  for (let i = 0; i <= 120; i++) { const p = gPos(g, i / 120 * 2 * Math.PI); i ? oc.lineTo(p.x, p.y) : oc.moveTo(p.x, p.y); }
+  for (let i = 0; i <= 120; i++) { const p = g.path(i / 120 * 2 * Math.PI); i ? oc.lineTo(p.x, p.y) : oc.moveTo(p.x, p.y); }
   oc.stroke(); oc.setLineDash([]);
   if (g.t0 != null) {
-    const th = g.dir * 2 * Math.PI * Math.max(0, t - g.t0) / LAP, p = gPos(g, th);
+    const e = Math.max(0, t - g.t0), p = g.pos(e);
     oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(p.x, p.y, g.d * 0.09, 0, 7); oc.fill();
-    const q = gPos(g, th + g.dir * 0.35); oc.strokeStyle = '#ffcc00'; oc.lineWidth = g.d * 0.03; oc.beginPath(); oc.moveTo(p.x, p.y); oc.lineTo(q.x, q.y); oc.stroke();
+    const q = g.pos(e + g.per * 0.056); if (dist(p, q) > g.d * 0.02) { oc.strokeStyle = '#ffcc00'; oc.lineWidth = g.d * 0.03; oc.beginPath(); oc.moveTo(p.x, p.y); oc.lineTo(q.x, q.y); oc.stroke(); }
   }
   if (pts) { const n = pts[1]; g.trail.push(n); if (g.trail.length > 40) g.trail.shift();
     oc.strokeStyle = 'rgba(255,90,90,.8)'; oc.lineWidth = g.d * 0.03; oc.beginPath(); g.trail.forEach((p, i) => i ? oc.lineTo(p.x, p.y) : oc.moveTo(p.x, p.y)); oc.stroke();
@@ -344,7 +401,8 @@ async function stepEight() {
     if (!last) return fail(stepEight, '顔が見つかりませんでした');
     const s0 = await record(700);
     const src = s0.length ? s0 : [{ pts: last }];
-    G = { cx: med(src.map(f => f.pts[1].x)), cy: med(src.map(f => f.pts[1].y)), d: med(src.map(f => dist(f.pts[P.eyeOut[0]], f.pts[P.eyeOut[1]]))), t0: null, dir: 1, dir0: 1, trail: [] };
+    G = { cx: med(src.map(f => f.pts[1].x)), cy: med(src.map(f => f.pts[1].y)), d: med(src.map(f => dist(f.pts[P.eyeOut[0]], f.pts[P.eyeOut[1]]))), t0: null, dir: 1, dir0: 1, trail: [], per: LAP };
+    G.path = th => gPos(G, th); G.pos = e => gPos(G, G.dir * 2 * Math.PI * e / LAP);
     await countdown(3, '白い線の上に<br>鼻先を置いて');
     const seg = [];
     for (const [k, dir] of [['fwd', 1], ['rev', -1]]) {
@@ -361,15 +419,10 @@ function analyzeEight(seg, g) {
   const all = seg.flatMap(s => s.r);
   if (all.length < 30) return fail(stepEight, '顔が見えている時間が短すぎました');
   const N = 240, curve = []; for (let i = 0; i < N; i++) curve.push(gPos(g, i / N * 2 * Math.PI));
-  const TOL = 0.15, TOLF = 0.2;
+  const TOL = 0.15;
   const rows = seg.flatMap(s => s.r.map(({ t, pts }) => ({ s, t, n: pts[1] })));
   const at = (r, lag) => gPos(g, r.s.dir * 2 * Math.PI * (r.t - lag - r.s.t0) / LAP);
-  const fit = rs => { let best = { lag: 0, ox: 0, oy: 0, e: Infinity }; const sub = rs.filter((_, i) => i % 3 === 0);
-    for (let lag = 0; lag <= 1200; lag += 100) { const gp = sub.map(r => at(r, lag));
-      for (let i = -4; i <= 4; i++) for (let j = -4; j <= 4; j++) { const ox = i * 0.1 * g.d, oy = j * 0.1 * g.d; let e = 0;
-        sub.forEach((r, k) => { e += Math.min(dist(gp[k], { x: r.n.x + ox, y: r.n.y + oy }) / g.d, 1); });
-        if (e < best.e) best = { lag, ox, oy, e }; } }
-    return best; };
+  const fit = rs => fitTrack(rs, at, g.d);
   const fits = {}; for (const s of seg) fits[s.k] = fit(rows.filter(r => r.s === s));
   const best = fits.fwd;
   const out = {};
@@ -380,8 +433,23 @@ function analyzeEight(seg, g) {
     const xs = n.map(p => (g.cx - p.x) / (GA * g.d));
     out[s.k] = { lag: fb.lag, n: rs.length, follow: rs.length ? Math.round(on / rs.length * 100) : 0, covR: cov(1), covL: cov(-1), wR: r3(Math.max(0, ...xs)), wL: r3(Math.max(0, ...xs.map(v => -v))) };
   }
+  // 真ん中から外へ向かう所を、右上・左上・右下・左下に分けて、ずれた割合を数える
+  const legs = {};
+  for (const s of seg) { const fb = fits[s.k];
+    for (const r of rows.filter(r => r.s === s)) {
+      const e = r.t - fb.lag - s.t0; if (e < 0) continue;
+      const a = at(r, fb.lag), b = gPos(g, s.dir * 2 * Math.PI * (e + 60) / LAP);
+      const ux = g.cx - a.x, uy = g.cy - a.y, vx = a.x - b.x, vy = a.y - b.y;   // 本人の右・上が＋
+      if (ux * vx + uy * vy <= 0 || Math.hypot(ux, uy) < g.d * 0.03) continue;
+      addLeg(legs, (uy > 0 ? 'U' : 'D') + (ux > 0 ? 'R' : 'L'), Math.floor(e / LAP), dist(a, { x: r.n.x + fb.ox, y: r.n.y + fb.oy }) / g.d >= TOLF ? 1 : 0);
+    }
+  }
+  const S = legSummary(legs);
+  const others = k => { const v = Object.keys(S).filter(j => j !== k && S[j].n >= 10).map(j => S[j].off); return v.length ? Math.round(med(v)) : null; };
+  out.legs = S;
   RUN.eight = out;
-  const F = out.fwd, B = out.rev;
+  const F = out.fwd, B = out.rev, low = Math.min(F.follow, B.follow);
+  RUN.eightJudge = { overall: low < 60 ? `8の字で鼻先が線についていけた割合が低い（最初 ${F.follow}%・反対 ${B.follow}%）` : null, canals: legFlags(S, others) };
   if (STAFF) {   // 結果の絵（スタッフだけ）：ガイドの線と鼻先の通り道（緑＝線の上・赤＝外れ）
     const near = p => Math.min(...curve.map(c => dist(c, { x: p.x + best.ox, y: p.y + best.oy }))) / g.d;
     gd.width = gd.clientWidth * 2; gd.height = gd.clientHeight * 2;
@@ -396,14 +464,90 @@ function analyzeEight(seg, g) {
       gc.strokeStyle = near(s.r[i].pts[1]) < TOL ? (s.dir > 0 ? '#5ad18b' : '#4fc3f7') : '#ff6b6b';
       gc.beginPath(); gc.moveTo(a.x, a.y); gc.lineTo(b.x, b.y); gc.stroke();
     }
-    staff(`点について線の上：最初 <b>${F.follow}%</b>・反対 <b>${B.follow}%</b><br>なぞれた範囲 右の輪：<b>${F.covR}%</b>・<b>${B.covR}%</b>　左の輪：<b>${F.covL}%</b>・<b>${B.covL}%</b><br>届いた横幅 右 <b>${f2(Math.max(F.wR, B.wR))}</b>・左 <b>${f2(Math.max(F.wL, B.wL))}</b><br><span class="small">緑＝最初の向き・水色＝反対回りで線の上、赤＝外れ。遅れ ${(F.lag / 1000).toFixed(1)}／${(B.lag / 1000).toFixed(1)}秒。${F.n + B.n}コマ</span>`);
+    staff(`点について線の上：最初 <b>${F.follow}%</b>・反対 <b>${B.follow}%</b><br>なぞれた範囲 右の輪：<b>${F.covR}%</b>・<b>${B.covR}%</b>　左の輪：<b>${F.covL}%</b>・<b>${B.covL}%</b><br>届いた横幅 右 <b>${f2(Math.max(F.wR, B.wR))}</b>・左 <b>${f2(Math.max(F.wL, B.wL))}</b><br><span class="small">緑＝最初の向き・水色＝反対回りで線の上、赤＝外れ。遅れ ${(F.lag / 1000).toFixed(1)}／${(B.lag / 1000).toFixed(1)}秒。${F.n + B.n}コマ</span>
+    <br>真ん中から外へ向かう所でずれた割合：${['UR', 'UL', 'DR', 'DL'].map(k => `${LEGJ[k].slice(4)} <b>${S[k] ? S[k].off + '%' : '—'}</b>${S[k] ? `（${S[k].laps}回中${S[k].lapsOff}回）` : ''}`).join('・')}
+    ${headJudgeHTML(RUN.eightJudge)}`);
   }
-  recorded(stepEight, stepFace, '次へ（表情）');
+  askNausea('eight', () => recorded(stepEight, stepNeck, '次へ（首の左右・上下）'));
 }
 
-// ════ 2. 表情の左右差
+function headJudgeHTML(H) {
+  const L = []; if (H.overall) L.push(`<b>小脳虫部・前庭機能</b>の働き低下の可能性 — ${H.overall}`);
+  for (const c of H.canals) L.push(`<b>${c.k}</b>（→ ${c.cb}）の問題の可能性 — ${c.why}`);
+  return `<div class="res judge">内部の読み（仮・お客さんには出ない）：<br>${L.length ? L.join('<br>') : '目立ったずれなし'}</div>`;
+}
+
+// ════ 2. 首の左右・上下（線の上を動く点を、鼻先で追う）。1往復 6秒で左右3往復 → 上下3往復
+const LPER = 6000, LCYC = 3, AH = 0.7, AV = 0.4;   // 横・たての半幅（目じりの間を1として）
+const lPos = (g, ph) => g.ax === 'H' ? { x: g.cx - AH * g.d * Math.sin(ph), y: g.cy } : { x: g.cx, y: g.cy - AV * g.d * Math.sin(ph) };   // 最初は本人の右・上へ
+async function stepNeck() {
+  show(2, '2. 首の左右・上下');
+  cue(`白い線の上を動く点を<br>鼻先で追います<small>はじめに左右へ${LCYC}往復、次に上下へ${LCYC}往復。1往復${LPER / 1000}秒です。肩は動かさず首だけで。痛みが出たら止めてください</small>`);
+  btn('始める', async () => {
+    const my = tok; clearBtns();
+    cue('顔をまっすぐ向けて<br>そのまま…');
+    let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
+    if (!last) return fail(stepNeck, '顔が見つかりませんでした');
+    const s0 = await record(700), src = s0.length ? s0 : [{ pts: last }];
+    G = { cx: med(src.map(f => f.pts[1].x)), cy: med(src.map(f => f.pts[1].y)), d: med(src.map(f => dist(f.pts[P.eyeOut[0]], f.pts[P.eyeOut[1]]))), t0: null, trail: [], per: LPER, ax: 'H' };
+    G.path = th => lPos(G, -Math.PI / 2 + th / 2); G.pos = e => lPos(G, 2 * Math.PI * e / LPER);
+    const seg = [];
+    for (const [ax, lab] of [['H', '左右'], ['V', '上下']]) {
+      if (my !== tok) return;
+      G.ax = ax; G.t0 = null; G.trail = [];
+      if (ax === 'V') { cue('次は上下', 'huge'); await sleep(1800); }
+      await countdown(3, '白い線の上に<br>鼻先を置いて');
+      if (my !== tok) return;
+      G.t0 = performance.now();
+      const r = await record(LPER * LCYC, p => cue(`${lab}・${Math.min(LCYC, Math.floor(p * LCYC) + 1)}往復目／${LCYC}${last ? '' : '<small>顔が見えません</small>'}`, 'thin low'));
+      seg.push({ ax, t0: G.t0, r });
+    }
+    const g = { ...G }; G = null; analyzeNeck(seg, g);
+  });
+}
+function analyzeNeck(seg, g0) {
+  if (seg.reduce((a, s) => a + s.r.length, 0) < 30) return fail(stepNeck, '顔が見えている時間が短すぎました');
+  const out = {}, legs = {}, spd = {};
+  for (const s of seg) {
+    const g = { ...g0, ax: s.ax };
+    const rs = s.r.map(({ t, pts }) => ({ t, n: pts[1] }));
+    const at = (r, lag) => lPos(g, 2 * Math.PI * (r.t - lag - s.t0) / LPER);
+    const fb = fitTrack(rs, at, g.d); let on = 0;
+    // 向きごとの速さ：鼻先の速さ ÷ 点の速さ（点が速く動いている所だけ）。片方の向きだけ遅い＝その向きについていけない
+    const A = (s.ax === 'H' ? AH : AV) * g.d, U = r => s.ax === 'H' ? g.cx - r.n.x : g.cy - r.n.y;
+    for (let i = 3; i < rs.length - 3; i++) {
+      const dt = rs[i + 3].t - rs[i - 3].t; if (dt <= 0) continue;
+      const e = rs[i].t - fb.lag - s.t0, c = Math.cos(2 * Math.PI * e / LPER); if (e < 0 || Math.abs(c) < 0.5) continue;
+      const ratio = (U(rs[i + 3]) - U(rs[i - 3])) / dt / (A * 2 * Math.PI / LPER * c);
+      const k = s.ax === 'H' ? (c > 0 ? 'toR' : 'toL') : (c > 0 ? 'up' : 'down'), lap = Math.floor(e / LPER);
+      const L = spd[k] || (spd[k] = { n: 0, sum: 0, laps: {} }); L.n++; L.sum += clamp(ratio, -1, 2);
+      const q = L.laps[lap] || (L.laps[lap] = { n: 0, sum: 0 }); q.n++; q.sum += clamp(ratio, -1, 2);
+    }
+    for (const r of rs) {
+      const e = r.t - fb.lag - s.t0, off = dist(at(r, fb.lag), { x: r.n.x + fb.ox, y: r.n.y + fb.oy }) / g.d >= TOLF ? 1 : 0; on += 1 - off;
+      const c = Math.cos(2 * Math.PI * e / LPER); if (e < 0 || Math.abs(c) < 0.3) continue;   // 折り返しの所は、向きが決まらないので数えない
+      addLeg(legs, s.ax === 'H' ? (c > 0 ? 'toR' : 'toL') : (c > 0 ? 'up' : 'down'), Math.floor(e / LPER), off);
+    }
+    out[s.ax] = { lag: fb.lag, n: rs.length, follow: rs.length ? Math.round(on / rs.length * 100) : 0 };
+  }
+  const S = legSummary(legs), OPP = { toR: 'toL', toL: 'toR', up: 'down', down: 'up' };
+  const V = {}; for (const k in spd) { const L = spd[k]; V[k] = { n: L.n, pct: Math.round(L.sum / L.n * 100), laps: Object.values(L.laps).filter(q => q.n >= 3).map(q => Math.round(q.sum / q.n * 100)) }; }
+  for (const k in S) if (V[k]) S[k].speed = V[k].pct;
+  out.legs = S; RUN.neck = out;
+  const canals = legFlags(S, k => S[OPP[k]] ? S[OPP[k]].off : null);
+  for (const k in V) { const v = V[k], o = V[OPP[k]]; if (!o || v.n < 10 || o.pct < 60 || canals.some(c => c.leg === k)) continue;   // 反対向きも追えていないときは、向きの差として読まない
+    const slow = v.laps.filter(x => x <= o.pct - SPD_GAP).length;
+    if (o.pct - v.pct >= SPD_GAP && slow >= 2) canals.push({ k: CANAL[k], cb: cereb(CANAL[k]), leg: k, why: `${LEGJ[k]} の鼻先の速さが点の ${v.pct}%（反対向き ${o.pct}%）・${v.laps.length}回中${slow}回くり返し遅い` }); }
+  const low = Math.min(out.H?.follow ?? 100, out.V?.follow ?? 100);
+  RUN.neckJudge = { overall: low < 60 ? `首の左右・上下で鼻先が線についていけた割合が低い（左右 ${out.H?.follow ?? '—'}%・上下 ${out.V?.follow ?? '—'}%）` : null, canals };
+  const c = k => `${LEGJ[k]} <b>${S[k] ? S[k].off + '%' : '—'}</b>${S[k] ? `（速さ${S[k].speed ?? '—'}%）` : ''}`;
+  staff(`点について線の上：左右 <b>${out.H?.follow ?? '—'}%</b>・上下 <b>${out.V?.follow ?? '—'}%</b><br>向きごとにずれた割合（速さ＝鼻先÷点）：${c('toR')}・${c('toL')}<br>${c('up')}・${c('down')}<br><span class="small">遅れ 左右${((out.H?.lag || 0) / 1000).toFixed(1)}／上下${((out.V?.lag || 0) / 1000).toFixed(1)}秒</span>${headJudgeHTML(RUN.neckJudge)}`);
+  askNausea('neck', () => recorded(stepNeck, stepFace, '次へ（表情）'));
+}
+
+// ════ 3. 表情の左右差
 async function stepFace() {
-  show(2, '2. 表情の左右差');
+  show(3, '3. 表情の左右差');
   cue('画面の真ん中に出る合図どおりに<br>顔を動かします<small>真顔 → 思い切り笑う → 眉を上げる → 目をギュッと閉じる（目を閉じている間は、合図の代わりに音はありません。3秒で終わります）</small>');
   btn('始める', async () => {
     const my = tok; clearBtns(); await countdown();
@@ -544,8 +688,8 @@ async function eyeStepStart(again) {
 
 // ════ 3. 目の準備（近づける → 合わせる）
 async function stepEyePrep() {
-  show(3, '3. 目のチェックの準備');
-  cue('ここからは目のチェックです<small>スマホを手に持って、顔に近づけます。ちょうどいい近さになると「OK ✓」が出ます。そのあと、5か所に出る点を目だけで見て合わせます</small>');
+  show(4, '4. 目の準備（測る前の合わせ）');
+  cue('ここからは目のチェックです<small>これは検査ではなく、<b>目の動きを正しく測るための準備</b>です。スマホを手に持って顔に近づけ、「OK ✓」が出たら、5か所に出る点を目だけで見てください。人によって黒目の見え方が違うので、黒目の位置と画面の位置を一人ずつ対応させます</small>');
   btn('始める', async () => {
     clearBtns(); CAL = null;
     const g = await gate();
@@ -563,7 +707,7 @@ async function stepEyePrep() {
 const PT = 3200, PC = 2;
 const PUR = [{ k: 'よこ', v: [1, 0] }, { k: 'たて', v: [0, 1] }, { k: 'ななめ（右上↔左下）', v: [1, 1] }, { k: 'ななめ（左上↔右下）', v: [-1, 1] }];
 async function stepPursuit() {
-  show(4, '4. 点を目で追う');
+  show(5, '5. 点を目で追う');
   cue('ゆっくり動く点を<br><b>頭を動かさずに目だけで</b><br>追ってください<small>よこ → たて → ななめ → ななめ の順。約35秒</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
@@ -624,8 +768,12 @@ function pursuitHTML(o) {
 const JTH = 15;
 function judge() {
   const J = [], d = RUN.pursuit && RUN.pursuit.dir;
-  if (d && RUN.calib && !RUN.calib.reliable) { RUN.judge = []; RUN.judgeNote = '目の合わせが不安定（見分け ' + CAL_MIN + ' 未満）なので、判定していない'; return; }
+  for (const H of [RUN.eightJudge, RUN.neckJudge]) if (H) {
+    if (H.overall) J.push({ k: '小脳虫部・前庭機能', why: H.overall });
+    for (const c of H.canals) J.push({ k: `${c.k}（→ ${c.cb}）`, why: c.why });
+  }
   RUN.judgeNote = null;
+  if (d && RUN.calib && !RUN.calib.reliable) { RUN.judge = J; RUN.judgeNote = '目の追従は、目の合わせが不安定（見分け ' + CAL_MIN + ' 未満）なので判定していない'; return; }
   if (d) {
     const qR = grpQ(d, ['R', 'UR', 'DR']), qL = grpQ(d, ['L', 'UL', 'DL']), qV = grpQ(d, ['U', 'D']), qH = grpQ(d, ['R', 'L']);
     if (qR != null && qL != null) {
@@ -639,13 +787,12 @@ function judge() {
 }
 function judgeHTML() {
   const J = RUN.judge || [];
-  if (RUN.judgeNote) return `<div class="res judge">内部の判定：${RUN.judgeNote}</div>`;
-  return `<div class="res judge">内部の判定（仮・お客さんには出ない）：${J.length ? J.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : '<br>目立った差なし'}</div>`;
+  return `<div class="res judge">内部の判定（仮・お客さんには出ない）：${J.length ? J.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : '<br>目立った差なし'}${RUN.judgeNote ? '<br>※' + RUN.judgeNote : ''}</div>`;
 }
 
 // ════ 5. サッカード（跳ぶ点を見る）：8方向へ跳んで、真ん中へ戻る。間はばらばら（1.0〜1.6秒）にして先読みを防ぐ
 async function stepSacc() {
-  show(5, '5. 跳ぶ点を見る');
+  show(6, '6. 跳ぶ点を見る');
   cue('点がパッと跳びます<br>跳んだら<b>すぐに目だけで</b><br>その点を見てください<small>頭は動かさずに。約25秒</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
@@ -701,7 +848,7 @@ function saccHTML(o) {
 
 // ════ 6. 注視（真ん中の点をじっと見つめる）：10秒
 async function stepFix() {
-  show(6, '6. 点を見つめる');
+  show(7, '7. 点を見つめる');
   cue('真ん中の点を<br><b>じっと見つめて</b>ください<small>10秒。まばたきは、なるべくがまん</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
@@ -731,13 +878,14 @@ function analyzeFixSeries(fr) {
 
 // ════ 7. 寄り目：画面の上（カメラのすぐ下）に出した点を見たまま、スマホを鼻先へ近づける
 async function stepConv() {
-  show(7, '7. 寄り目');
-  cue('スマホを<b>腕をのばした所</b>に<br>持ってください<small>合図のあと、画面の上に出る点を見たまま、10秒かけてスマホを<b>鼻先へ</b>ゆっくり近づけます（カメラが上にあるので、画面の真ん中を鼻先に向けて）</small>');
-  btn('始める', async () => {
-    const my = tok; clearBtns();
-    dark(true); placeDot(0, 1.25); await countdown(3, '上の点を見て');
+  show(8, '8. 寄り目');
+  dark(true); placeDot(0, 1.25);
+  near('この<b>黄色い点</b>を見たまま<br>スマホを<b>鼻先へ</b>近づけます<small>スマホを腕をのばした所に持ってから「始める」。10秒かけてゆっくり近づけます（カメラが上にあるので、画面の真ん中を鼻先に向けて）</small>', '始める', async () => {
+    const my = tok;
+    for (const i of [3, 2, 1]) { near(`点を見たまま　<span style="font-size:1.4em">${i}</span>`); await sleep(700); if (my !== tok) return; }
+    near(null);   // 測っている間は、的のほかに何も出さない
+    const fr = await record(11000);
     if (my !== tok) return;
-    const fr = await record(11000, p => cue(`点を見たまま<br>スマホを鼻先へ<small>ゆっくり　あと${Math.ceil(11 * (1 - p))}秒</small>`, 'thin'));
     hideDot(); dark(false); cue('');
     analyzeConv(fr);
   });
@@ -766,7 +914,7 @@ function analyzeConv(r) {
 
 // ════ 8. 舌：写真のコマから舌の先を見つけて、顔の中心線からどちらへ寄ったかを自動で出す
 async function stepTongue() {
-  show(8, '8. 舌の出方');
+  show(9, '9. 舌の出方');
   cue('合図で、舌を<br><b>まっすぐ思い切り前に</b><br>出して、そのまま3秒<small>スマホを顔の正面に。写真は端末の外へ送りません</small>');
   btn('始める', async () => {
     const my = tok; clearBtns(); dark(false);
@@ -856,15 +1004,16 @@ function drawTongue(fr, o) {
 
 // ════ まとめ：記録はこの端末に残す（内部用）。お客さんには判定を見せない
 function summaryLines() {
-  const L = [], e = RUN.eight, f = RUN.face, p = RUN.pursuit, s = RUN.saccade, x = RUN.fixation, c = RUN.conv, t = RUN.tongue;
-  if (e) L.push(`1. 首の8の字：点について線の上 最初${e.fwd.follow}%・反対${e.rev.follow}%／なぞれた範囲 右の輪 ${e.fwd.covR}%・${e.rev.covR}%／左の輪 ${e.fwd.covL}%・${e.rev.covL}%`);
-  if (f) L.push(`2. 表情：口角 右${f2(f.m0)}・左${f2(f.m1)}／眉 右${f2(f.b0)}・左${f2(f.b1)}／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%`);
-  if (RUN.calib) L.push(`3. 目の合わせ：横 ${RUN.calib.x?.nm}（見分け${RUN.calib.x?.sep}）・たて ${RUN.calib.y?.nm}（見分け${RUN.calib.y?.sep}）・近さ ${f2(RUN.eyeGate?.eye)}`);
-  if (p && p.dir) L.push(`4. 追従：${DIRS.map(k => `${DJ[k]}${p.dir[k] ? p.dir[k].q : '—'}`).join('・')}`);
-  if (s && s.dir) L.push(`5. サッカード（反応ms／速さ）：${DIRS.map(k => `${DJ[k]}${s.dir[k] ? `${s.dir[k].lat ?? '—'}/${f2(s.dir[k].pv)}` : '—'}`).join('・')}`);
-  if (x && x.ok) L.push(`6. 注視：揺れ よこ${f2(x.sdX)}・たて${f2(x.sdY)}／広さ${f2(x.bcea)}／外れ${x.intrusions}回`);
-  if (c) L.push(`7. 寄り目：右${f2(c.eyes[0].gain)}・左${f2(c.eyes[1].gain)}／先に逃げた目 ${c.first || 'なし'}`);
-  if (t) L.push(`8. 舌（自動）：${t.side}${t.off != null ? `（ずれ${f2(t.off)}）` : ''}`);
+  const L = [], e = RUN.eight, nk = RUN.neck, f = RUN.face, p = RUN.pursuit, s = RUN.saccade, x = RUN.fixation, c = RUN.conv, t = RUN.tongue;
+  if (e) L.push(`1. 首の8の字：点について線の上 最初${e.fwd.follow}%・反対${e.rev.follow}%／なぞれた範囲 右の輪 ${e.fwd.covR}%・${e.rev.covR}%／左の輪 ${e.fwd.covL}%・${e.rev.covL}%／ずれた割合 ${['UR', 'UL', 'DR', 'DL'].map(k => `${LEGJ[k].slice(4)}${e.legs?.[k]?.off ?? '—'}%`).join('・')}／気持ち悪さ ${e.nausea || '—'}`);
+  if (nk) L.push(`2. 首の左右・上下：線の上 左右${nk.H?.follow ?? '—'}%・上下${nk.V?.follow ?? '—'}%／ずれた割合 ${['toR', 'toL', 'up', 'down'].map(k => `${LEGJ[k]}${nk.legs?.[k]?.off ?? '—'}%（速さ${nk.legs?.[k]?.speed ?? '—'}%）`).join('・')}／気持ち悪さ ${nk.nausea || '—'}`);
+  if (f) L.push(`3. 表情：口角 右${f2(f.m0)}・左${f2(f.m1)}／眉 右${f2(f.b0)}・左${f2(f.b1)}／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%`);
+  if (RUN.calib) L.push(`4. 目の準備（検査ではない・測るための合わせ）：横 ${RUN.calib.x?.nm}（見分け${RUN.calib.x?.sep}）・たて ${RUN.calib.y?.nm}（見分け${RUN.calib.y?.sep}）・近さ ${f2(RUN.eyeGate?.eye)}`);
+  if (p && p.dir) L.push(`5. 追従：${DIRS.map(k => `${DJ[k]}${p.dir[k] ? p.dir[k].q : '—'}`).join('・')}`);
+  if (s && s.dir) L.push(`6. サッカード（反応ms／速さ）：${DIRS.map(k => `${DJ[k]}${s.dir[k] ? `${s.dir[k].lat ?? '—'}/${f2(s.dir[k].pv)}` : '—'}`).join('・')}`);
+  if (x && x.ok) L.push(`7. 注視：揺れ よこ${f2(x.sdX)}・たて${f2(x.sdY)}／広さ${f2(x.bcea)}／外れ${x.intrusions}回`);
+  if (c) L.push(`8. 寄り目：右${f2(c.eyes[0].gain)}・左${f2(c.eyes[1].gain)}／先に逃げた目 ${c.first || 'なし'}`);
+  if (t) L.push(`9. 舌（自動）：${t.side}${t.off != null ? `（ずれ${f2(t.off)}）` : ''}`);
   return L;
 }
 function saveRun() {
@@ -877,7 +1026,7 @@ function finish() {
   if (STAFF) {
     $('staffEnd').classList.remove('hide');
     $('endList').innerHTML = summaryLines().map(s => `<div class="res">${s}</div>`).join('') + judgeHTML() + `<p class="small">この端末に残っている記録：${n}件</p>`;
-    $('endText').value = 'カメラでチェック（試し版）の記録\n' + summaryLines().join('\n') + '\n内部の判定（仮）：' + (RUN.judgeNote || (RUN.judge || []).map(j => j.k + '（' + j.why + '）').join('／') || '目立った差なし') + '\n\n' + JSON.stringify(RUN);
+    $('endText').value = 'カメラでチェック（試し版）の記録\n' + summaryLines().join('\n') + '\n内部の判定（仮）：' + ((RUN.judge || []).map(j => j.k + '（' + j.why + '）').join('／') || '目立った差なし') + (RUN.judgeNote ? '／※' + RUN.judgeNote : '') + '\n\n' + JSON.stringify(RUN);
   } else { $('staffEnd').classList.add('hide'); $('endList').innerHTML = '<div class="res">記録しました。結果は担当者からお伝えします。</div>'; }
 }
 async function copyText(t, b) { let ok = false; try { await navigator.clipboard.writeText(t); ok = true; } catch (e) { const a = $('endText'); a.value = t; a.select(); try { ok = document.execCommand('copy'); } catch (_) {} } b.textContent = ok ? 'コピーしました' : '上の枠を長押しでコピー'; }
@@ -893,7 +1042,7 @@ $('bStart').onclick = async () => {
   stepAlign();
 };
 // 確かめ用（自動の試験から各段を直接呼ぶ）
-window.__steps = { analyzeEight, gPos, finish, stepAlign, stepEight, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue,
+window.__steps = { analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue,
   analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, get RUN() { return RUN; }, setCAL: c => { CAL = c; }, PT, DV };
 </script>
 </body>
