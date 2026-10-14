@@ -3,77 +3,92 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>カメラで5つのチェック（試し版）</title>
+<title>カメラでチェック（試し版）</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;background:#0f1115;color:#f2f2f2;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;line-height:1.6;-webkit-text-size-adjust:100%}
 main{max-width:560px;margin:0 auto;padding:12px 14px 40px}
 h1{font-size:19px;margin:6px 0}
-h2{font-size:17px;margin:4px 0 6px}
 p{margin:6px 0;font-size:15px}
 .small{font-size:12.5px;color:#aab}
-.stage{position:relative;width:100%;aspect-ratio:3/4;background:#000;border-radius:14px;overflow:hidden;margin:8px 0}
-.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;transform:scaleX(-1)}
-#guide{position:absolute;inset:0;pointer-events:none;transform:none}
-#msg{position:absolute;left:0;right:0;bottom:0;padding:10px 12px;background:rgba(0,0,0,.55);font-size:16px;font-weight:700;text-align:center}
-#big{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:72px;font-weight:800;text-shadow:0 2px 8px #000;pointer-events:none}
-#dot{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#ffcc00;box-shadow:0 0 12px #ffcc00;display:none;pointer-events:none}
-button{font:inherit;font-size:17px;font-weight:700;border:0;border-radius:12px;padding:14px;width:100%;margin:6px 0;background:#2a6df4;color:#fff;cursor:pointer}
+button{font:inherit;font-size:17px;font-weight:700;border:0;border-radius:12px;padding:14px;width:100%;margin:5px 0;background:#2a6df4;color:#fff;cursor:pointer}
 button.sub{background:#2b2f38}
 button:disabled{opacity:.4}
-.row{display:flex;gap:8px}.row button{flex:1}
-.res{background:#1b1f27;border-radius:12px;padding:10px 12px;margin:8px 0;font-size:15px}
+.res{background:#1b1f27;border-radius:12px;padding:10px 12px;margin:8px 0;font-size:14px}
 .res b{color:#ffd166}
-.steps{display:flex;gap:4px;margin:6px 0}.steps span{flex:1;height:5px;border-radius:3px;background:#2b2f38}.steps span.on{background:#2a6df4}
-.chk{font-size:15px;margin:2px 0}.chk.ok{color:#5ad18b}.chk.ng{color:#ff8a65}
-#photoWrap{position:relative;width:100%;border-radius:12px;overflow:hidden;margin:8px 0;display:none}
-#photo{width:100%;display:block}
-textarea{width:100%;height:150px;background:#1b1f27;color:#eee;border:1px solid #333;border-radius:8px;font-size:13px;padding:8px}
-.hide{display:none}
+.judge{background:#3a1f24;border:1px solid #ff8a65}
+textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid #333;border-radius:8px;font-size:12px;padding:8px}
+.hide{display:none!important}
+/* テストの画面：画面いっぱい。指示はいつも真ん中に太く大きく */
+#sMain{position:fixed;inset:0;background:#000;overflow:hidden}
+#stage{position:absolute;inset:0}
+#stage video,#overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;transform:scaleX(-1);transition:opacity .3s}
+#stage.dark video{opacity:.10}#stage.dark #overlay{opacity:0}
+#sMain.dark #top{opacity:.25}
+#guide{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#top{position:absolute;left:0;right:0;top:0;padding:calc(6px + env(safe-area-inset-top)) 12px 14px;background:linear-gradient(rgba(0,0,0,.65),transparent);z-index:6;pointer-events:none}
+#title{font-size:14px;font-weight:700;color:#cfd3dc}
+.steps{display:flex;gap:3px;margin:0 0 4px}.steps span{flex:1;height:4px;border-radius:2px;background:#2b2f38}.steps span.on{background:#2a6df4}
+#cue{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,520px);text-align:center;font-weight:800;font-size:clamp(23px,6.6vw,34px);line-height:1.45;padding:16px 16px;border-radius:18px;background:rgba(0,0,0,.62);text-shadow:0 2px 8px #000;pointer-events:none;z-index:5}
+#cue:empty{display:none}
+#cue.thin{background:none}
+#cue.low{top:68%}
+#cue.huge{font-size:clamp(60px,22vw,110px)}
+#cue small{display:block;font-size:16px;font-weight:600;color:#dfe3ea;margin-top:8px;line-height:1.5}
+#cue .ok{display:inline-block;color:#5ad18b;font-size:1.5em}
+.meter{position:relative;height:16px;border-radius:8px;background:#2b2f38;margin:12px 4px 2px;overflow:hidden}
+.meter i{position:absolute;top:0;bottom:0;background:rgba(90,209,139,.45)}
+.meter b{position:absolute;top:-2px;width:6px;height:20px;margin-left:-3px;background:#fff;border-radius:3px}
+.tgt{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;background:#ffcc00;box-shadow:0 0 14px #ffcc00;display:none;pointer-events:none;z-index:7}
+.tgt.fix{width:22px;height:22px;margin:-11px 0 0 -11px;background:radial-gradient(#000 0 22%,#ffcc00 24%)}
+#bottom{position:absolute;left:0;right:0;bottom:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,.75) 30%);z-index:8;max-height:62vh;overflow:auto}
+#bottom:not(:has(*:not(:empty))){background:none}
+#msg{font-size:12.5px;color:#aab;text-align:center;min-height:0}
+#photoWrap{position:absolute;inset:0;display:none;z-index:4;background:#000}
+#photo{width:100%;height:100%;object-fit:contain}
+.badge{position:fixed;right:8px;top:calc(6px + env(safe-area-inset-top));font-size:11px;background:#7a3cff;color:#fff;border-radius:6px;padding:1px 6px;z-index:20}
 </style>
 </head>
 <body>
 <main>
 <div id="sIntro">
-  <h1>カメラで5つのチェック（試し版）</h1>
-  <p>カメラで顔の動きを読み取って、5つの気づきを数字で出します。カメラで本当に取れるかを確かめるための、試しの画面です。</p>
+  <h1>カメラでチェック（試し版）</h1>
+  <p>カメラで顔と目の動きを読み取ります。画面の真ん中に出る指示のとおりに、顔や目を動かしてください。</p>
   <div class="res small">
     ・映像も写真も、この端末の外へは送りません（端末の中で数字にするだけです）。<br>
     ・医療の検査ではありません。痛み・めまい・気分の悪さが出たら、すぐにやめてください。<br>
-    ・明るい所で、スマホを顔の正面に立てて置くとやりやすいです。
+    ・明るい所でやってください。目のチェックでは、スマホを顔に近づけて持ちます。
   </div>
   <p id="loadState" class="small">読み込み中…</p>
   <button id="bStart" disabled>カメラを起動する</button>
 </div>
 
-<div id="sMain" class="hide">
-  <div class="steps" id="steps"><span></span><span></span><span></span><span></span><span></span><span></span></div>
-  <h2 id="title"></h2>
-  <p id="desc"></p>
-  <div class="stage" id="stage">
-    <video id="video" playsinline muted autoplay></video>
-    <canvas id="overlay"></canvas>
-    <canvas id="guide"></canvas>
-    <div id="dot"></div>
-    <div id="big"></div>
-    <div id="msg"></div>
-  </div>
-  <div id="photoWrap"><canvas id="photo"></canvas></div>
-  <div id="checks"></div>
-  <div id="result"></div>
-  <div id="btns"></div>
-</div>
-
 <div id="sEnd" class="hide">
-  <h1>5つのチェックの結果</h1>
-  <p class="small">数字はどれも試し版の目安です。左右の差は、誰の顔や体にも普通にあります。</p>
+  <h1>おつかれさまでした</h1>
+  <p id="endLead">すべてのチェックが終わりました。</p>
   <div id="endList"></div>
-  <p>この結果をそのまま送るときは、下の［コピー］を押して、オフィスのチャットに貼ってください。</p>
-  <textarea id="endText" readonly></textarea>
-  <button id="bCopy">コピー</button>
+  <div id="staffEnd" class="hide">
+    <p class="small">ここから下はスタッフ用です（お客さんの画面には出ません）。下の［コピー］で記録をそのままチャットに貼れます。</p>
+    <textarea id="endText" readonly></textarea>
+    <button id="bCopy">コピー</button>
+    <button class="sub" id="bCopyAll">この端末に残っている記録を全部コピー</button>
+  </div>
   <button class="sub" id="bAgain">最初からもう一度</button>
 </div>
 </main>
+
+<div id="sMain" class="hide">
+  <div id="stage">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="overlay"></canvas>
+    <canvas id="guide"></canvas>
+    <div id="photoWrap"><canvas id="photo"></canvas></div>
+    <div class="tgt" id="dot"></div>
+  </div>
+  <div id="top"><div class="steps" id="steps"></div><div id="title"></div></div>
+  <div id="cue"></div>
+  <div id="bottom"><div id="result"></div><div id="btns"></div><div id="msg"></div></div>
+</div>
 
 <script type="module">
 import { FilesetResolver, FaceLandmarker } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.0/vision_bundle.mjs';
@@ -82,21 +97,25 @@ const MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/f
 
 const $ = id => document.getElementById(id);
 const video = $('video'), ov = $('overlay'), oc = ov.getContext('2d'), gd = $('guide'), gc = gd.getContext('2d');
-let lm = null, last = null, lastT = -1, rec = null;   // last = 直近の顔の点（画素）
-const R = {};                                       // 結果
+let lm = null, last = null, lastBs = null, lastT = -1, rec = null, grab = null;   // last = 直近の顔の点（画素）
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// スタッフ表示（?staff=1）：判定と数字を出す。お客さんの画面（ふつうの URL）には判定も数字も出さず、記録だけ残す（2026-10-14 宮崎さん）
+const STAFF = /[?&]staff\b/.test(location.search);
+if (STAFF) document.body.insertAdjacentHTML('beforeend', '<div class="badge">スタッフ表示</div>');
+let RUN = {};                                       // この回の記録（内部用）。最後に端末へ保存する
+const newRun = () => { RUN = { v: 2, started: new Date().toISOString(), ua: navigator.userAgent }; };
+newRun();
 
 // ── 顔の点の番号（右・左は本人から見た向き。起動後に実際の位置で確かめて入れ替える）
 let P = { eyeOut: [33, 263], eyeIn: [133, 362], mouth: [61, 291], brow: [105, 334], lidUp: [159, 386], lidDn: [145, 374], iris: [468, 473], cheek: [234, 454] };
 let sideChecked = false;
-// GPU で顔の点が取れない端末がある（Android の Chrome で、顔が映っていても点が出ず「顔が見えている時間が短すぎました」になった）。
-// 取れない・エラーが続いたら CPU に切り替える
-let delegate = '', toCPU = async () => {}, switching = false, gpuMiss = 0, everSeen = false;
+const BSN = ['eyeLookInLeft', 'eyeLookOutLeft', 'eyeLookUpLeft', 'eyeLookDownLeft', 'eyeLookInRight', 'eyeLookOutRight', 'eyeLookUpRight', 'eyeLookDownRight', 'eyeBlinkLeft', 'eyeBlinkRight', 'jawOpen', 'tongueOut'];
+// GPU で顔の点が取れない端末がある（Android の Chrome で、顔が映っていても点が出なかった）。取れない・エラーが続いたら CPU に切り替える
+let delegate = '', toCPU = async () => {}, switching = false, gpuMiss = 0;
 
-// ── 読み込み（GPU が使えなければ CPU）
 async function load() {
   const fs = await FilesetResolver.forVisionTasks(WASM);
-  const opt = d => ({ baseOptions: { modelAssetPath: MODEL, delegate: d }, runningMode: 'VIDEO', numFaces: 1 });
+  const opt = d => ({ baseOptions: { modelAssetPath: MODEL, delegate: d }, runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true });
   try { lm = await FaceLandmarker.createFromOptions(fs, opt('GPU')); delegate = 'GPU'; }
   catch (e) { lm = await FaceLandmarker.createFromOptions(fs, opt('CPU')); delegate = 'CPU'; }
   toCPU = async () => { if (delegate === 'CPU' || switching) return; switching = true; try { lm = await FaceLandmarker.createFromOptions(fs, opt('CPU')); delegate = 'CPU'; } finally { switching = false; } };
@@ -106,30 +125,46 @@ async function load() {
 }
 load().catch(e => { $('loadState').textContent = '読み込みに失敗しました：' + e.message; window.__loadError = e.message; });
 
-// ── 画素の座標に直す
+// ── 計算の道具
 function px(l) { return { x: l.x * video.videoWidth, y: l.y * video.videoHeight }; }
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN;
+const med = a => { if (!a.length) return NaN; const v = [...a].sort((x, y) => x - y), n = v.length >> 1; return v.length % 2 ? v[n] : (v[n - 1] + v[n]) / 2; };
+const mad = a => { const m = med(a); return med(a.map(x => Math.abs(x - m))); };
+const sd = a => { const m = mean(a); return Math.sqrt(mean(a.map(x => (x - m) ** 2))); };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const pct = (a, b) => { const m = Math.max(Math.abs(a), Math.abs(b)); return m < 1e-6 ? 0 : Math.round(Math.abs(a - b) / m * 100); };
+const f2 = v => Number.isFinite(v) ? (Math.round(v * 100) / 100).toFixed(2) : '—';
+const r0 = v => Number.isFinite(v) ? Math.round(v) : null;
+const r3 = v => Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
+function sideWord(r, l, big = '大きい') { if (Math.max(r, l) < 0.02) return '動きが小さく、比べられませんでした'; if (pct(r, l) < 15) return '左右ほぼ同じ'; return (r > l ? '右' : '左') + 'のほうが' + big; }
 
-// 目の線を水平に回して、目の間の長さを1にした座標（顔の傾き・カメラとの距離に左右されない）
+// 目の線を水平に回して、目の間の長さを1にした座標（顔の傾き・カメラとの距離に左右されない）。
+// x は「本人の右 → 本人の左」が＋（写っている映像のまま。鏡にしていない）
 function frame(pts) {
   const a = pts[P.eyeOut[0]], b = pts[P.eyeOut[1]];
   const c = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, d = dist(a, b);
   let ang = Math.atan2(b.y - a.y, b.x - a.x);
-  if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;   // 左右の点の並びが逆の端末でも、傾きを 0 付近にそろえる（逆のままだと 180° と出て「まっすぐ」にならなかった）
+  if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
   const cs = Math.cos(-ang), sn = Math.sin(-ang);
   const f = p => { const x = p.x - c.x, y = p.y - c.y; return { x: (x * cs - y * sn) / d, y: (x * sn + y * cs) / d }; };
-  return { f, d, ang, c };
+  const ci = Math.cos(ang), si = Math.sin(ang);
+  const inv = q => ({ x: c.x + (q.x * ci - q.y * si) * d, y: c.y + (q.x * si + q.y * ci) * d });
+  return { f, inv, d, ang, c };
 }
+// 目の大きさ（目じり〜目がしらの長さ）を、映像の短い辺で割った値。スマホを顔に近づけるほど大きくなる
+const eyeSize = pts => (dist(pts[P.eyeOut[0]], pts[P.eyeIn[0]]) + dist(pts[P.eyeOut[1]], pts[P.eyeIn[1]])) / 2 / Math.min(video.videoWidth, video.videoHeight);
+const EYE_OK = [0.13, 0.20];   // 目のチェックで「OK」とする目の大きさ（仮。宮崎さんの端末の記録で詰める）
 
 // ── カメラ
 async function startCam() {
-  const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+  const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60 } }, audio: false });
   video.srcObject = s;
   await video.play();
-  $('stage').style.aspectRatio = video.videoWidth + '/' + video.videoHeight;   // 映像の縦横に枠を合わせる（切らずに全部見せる）
+  RUN.cam = { w: video.videoWidth, h: video.videoHeight, fpsSetting: s.getVideoTracks()[0]?.getSettings?.().frameRate || null };
   loop();
 }
-
+const grabC = document.createElement('canvas'), grabX = grabC.getContext('2d', { willReadFrequently: true });
 function loop() {
   if (video.readyState >= 2 && video.currentTime !== lastT) {
     lastT = video.currentTime;
@@ -137,7 +172,6 @@ function loop() {
     let r = null;
     if (!switching) { try { r = lm.detectForVideo(video, t); } catch (e) { window.__detErr = e.message; toCPU(); } }
     const got = !!(r && r.faceLandmarks && r.faceLandmarks[0]);
-    if (got) everSeen = true;
     gpuMiss = got ? 0 : gpuMiss + 1;
     if (delegate === 'GPU' && gpuMiss > 45) toCPU();   // GPU で約3秒続けて顔が取れなければ、CPU に切り替える（一度だけ）
     window.__delegate = delegate;
@@ -149,21 +183,27 @@ function loop() {
         if (pts[33].x > pts[263].x) for (const k in P) P[k] = [P[k][1], P[k][0]];
         sideChecked = true;
       }
-      last = pts; window.__last = pts;
+      let bs = null;
+      const cat = r.faceBlendshapes && r.faceBlendshapes[0] && r.faceBlendshapes[0].categories;
+      if (cat) { bs = {}; for (const c of cat) if (BSN.includes(c.categoryName)) bs[c.categoryName] = c.score; }
+      last = pts; lastBs = bs; window.__last = pts;
       oc.fillStyle = 'rgba(90,209,139,.9)';
       for (let i = 0; i < pts.length; i += 2) oc.fillRect(pts[i].x - 1.2, pts[i].y - 1.2, 2.4, 2.4);
       oc.fillStyle = '#ffcc00';
       for (const i of [...P.iris, 1]) { oc.beginPath(); oc.arc(pts[i].x, pts[i].y, 3.5, 0, 7); oc.fill(); }
-      if (rec) rec.push({ t, pts });
+      if (rec) rec.push({ t, pts, bs });
+      if (grab && t - grab.lastT >= 200) {   // 舌：写真のコマを取っておく（端末の中だけ）
+        grabC.width = video.videoWidth; grabC.height = video.videoHeight; grabX.drawImage(video, 0, 0);
+        grab.fr.push({ t, pts, bs, img: grabX.getImageData(0, 0, grabC.width, grabC.height) }); grab.lastT = t;
+      }
       if (G) drawGuide(t, pts);
-    } else { last = null; if (G) drawGuide(t, null); }
+    } else { last = null; lastBs = null; if (G) drawGuide(t, null); }
     window.__frames = (window.__frames || 0) + 1;
     window.__faceSeen = (window.__faceSeen || 0) + (last ? 1 : 0);
   }
   requestAnimationFrame(loop);
 }
 
-// ── 明るさ（顔の周りの平均）
 const bc = document.createElement('canvas'), bx = bc.getContext('2d', { willReadFrequently: true });
 function brightness() {
   bc.width = 32; bc.height = 24; bx.drawImage(video, 0, 0, 32, 24);
@@ -173,62 +213,84 @@ function brightness() {
 }
 
 // ── 画面の部品
-function show(step, title, desc) {
+const NSTEP = 9;
+$('steps').innerHTML = '<span></span>'.repeat(NSTEP);
+let tok = 0;                       // 段を移ったら増える（前の段の待ちを止めるため）
+function show(step, title) {
+  tok++;
   [...$('steps').children].forEach((e, i) => e.classList.toggle('on', i <= step));
-  $('title').textContent = title; $('desc').innerHTML = desc;
-  $('result').innerHTML = ''; $('btns').innerHTML = ''; $('checks').innerHTML = ''; $('msg').textContent = '';
-  $('photoWrap').style.display = 'none'; $('stage').style.display = '';
+  $('title').textContent = title;
+  $('result').innerHTML = ''; $('btns').innerHTML = ''; $('msg').textContent = ''; cue('');
+  $('photoWrap').style.display = 'none'; dark(false); hideDot();
   gc.clearRect(0, 0, gd.width, gd.height);
-  G = null;
+  G = null; rec = null; grab = null;
+  return tok;
 }
+// 指示は画面の真ん中に太く大きく出す（2026-10-14 宮崎さん「常に画面の真ん中に指示が出て、その通りに目や顔を動かす」）
+function cue(html, cls = '') { const c = $('cue'); c.className = cls; c.innerHTML = html; }
+function dark(on) { $('stage').classList.toggle('dark', on); $('sMain').classList.toggle('dark', on); }
 function btn(label, fn, cls = '') { const b = document.createElement('button'); b.textContent = label; b.className = cls; b.onclick = fn; $('btns').appendChild(b); return b; }
-async function countdown(n = 3) { for (let i = n; i > 0; i--) { $('big').textContent = i; await sleep(800); } $('big').textContent = ''; }
+const clearBtns = () => { $('btns').innerHTML = ''; $('result').innerHTML = ''; };
+function staff(html) { $('result').innerHTML = STAFF ? `<div class="res">${html}</div>` : ''; }
+const calWarn = () => CAL && !CAL.reliable ? '<br><span style="color:#ff8a65">※目の合わせが不安定なので、この数字は信用しない</span>' : '';
+async function countdown(n = 3, pre = '') { for (let i = n; i > 0; i--) { cue(pre ? `${pre}<br><span style="font-size:1.8em">${i}</span>` : String(i), pre ? '' : 'huge'); await sleep(800); } cue(''); }
 async function record(ms, onTick) {
   rec = []; const t0 = performance.now();
   while (performance.now() - t0 < ms) { if (onTick) onTick((performance.now() - t0) / ms); await sleep(16); }
   const r = rec; rec = null; return r;
 }
-const pct = (a, b) => { const m = Math.max(Math.abs(a), Math.abs(b)); return m < 1e-6 ? 0 : Math.round(Math.abs(a - b) / m * 100); };
-const f2 = v => (Math.round(v * 100) / 100).toFixed(2);
-function sideWord(r, l, big = '大きい') { if (Math.max(r, l) < 0.02) return '動きが小さく、比べられませんでした'; if (pct(r, l) < 15) return '左右ほぼ同じ'; return (r > l ? '右' : '左') + 'のほうが' + big; }
+const fpsOf = (r, ms) => Math.round(r.length / (ms / 1000));
+function fail(again, why) {
+  cue(`${why}<small>顔を画面に入れて、もう一度どうぞ</small>`);
+  if (STAFF) staff(`<span class="small">確かめ用：顔の点の読み取り ${delegate}・${window.__faceSeen || 0}／${window.__frames || 0}コマ${window.__detErr ? '・' + window.__detErr : ''}</span>`);
+  btn('もう一度', again);
+}
+// お客さんの画面：判定も数字も出さず「記録しました」だけ
+function recorded(again, next, nextLabel) { if (!STAFF) cue('記録しました'); btn('もう一度', again, 'sub'); btn(nextLabel, next); }
+
+// ── 目の的（点）。画面の座標：x は −1（左）〜 +1（右）、y は −1（下）〜 +1（上）。右・左は画面を見ている本人の右・左
+const dot = $('dot');
+function placeDot(x, y, cls = '') { const st = $('stage'); dot.className = 'tgt ' + cls; dot.style.display = 'block'; dot.style.left = (st.clientWidth * (0.5 + 0.40 * x)) + 'px'; dot.style.top = (st.clientHeight * (0.47 - 0.33 * y)) + 'px'; }
+function hideDot() { dot.style.display = 'none'; }
+const DIRS = ['R', 'UR', 'U', 'UL', 'L', 'DL', 'D', 'DR'];
+const DJ = { R: '右', UR: '右上', U: '上', UL: '左上', L: '左', DL: '左下', D: '下', DR: '右下' };
+const DV = { R: [1, 0], UR: [1, 1], U: [0, 1], UL: [-1, 1], L: [-1, 0], DL: [-1, -1], D: [0, -1], DR: [1, -1] };
+const dirOf = (x, y) => DIRS[((Math.round(Math.atan2(y, x) * 180 / Math.PI / 45) % 8) + 8) % 8];
 
 // ════ 0. 位置合わせ
 async function stepAlign() {
-  show(0, '最初に：顔の位置を合わせる', '顔をまっすぐカメラに向けて、明るい所で。3つが緑になったら次へ進めます。<br><span class="small">顔が写っていれば、緑にならなくても5秒たつと「このまま進む」が押せます。</span>');
-  const b = btn('次へ（8の字）', stepEight); b.disabled = true;
+  const my = show(0, '最初に：顔の位置を合わせる');
+  const b = btn('次へ（首の8の字）', stepEight); b.disabled = true;
   const skip = btn('このまま進む', stepEight, 'sub'); skip.style.display = 'none';
   const t0 = performance.now();
   let okCount = 0, unlocked = false;
-  while (!$('sMain').classList.contains('hide') && $('title').textContent.startsWith('最初に')) {
+  while (my === tok) {
     const items = [];
     if (!last) items.push(['顔が見つかりません。カメラに顔を向けてください', false]);
     else {
-      const { d } = frame(last), w = video.videoWidth;
+      const { d, f, ang } = frame(last), w = video.videoWidth;
       const nose = last[1], cl = last[P.cheek[0]], cr = last[P.cheek[1]];
-      const { f } = frame(last);
-      const yaw = (f(nose).x - f(cl).x) / (f(cr).x - f(cl).x);   // 0.5 で正面。傾きを戻した座標で取る（首をかしげただけで「正面に向けて」と出ないように）
-      const roll = Math.abs(frame(last).ang * 180 / Math.PI);
-      const size = d / w;
-      items.push([size < 0.10 ? 'もう少し近づいてください' : size > 0.50 ? 'もう少し離れてください' : '距離：ちょうどいい', size >= 0.10 && size <= 0.50]);
+      const yaw = (f(nose).x - f(cl).x) / (f(cr).x - f(cl).x);   // 0.5 で正面。傾きを戻した座標で取る
+      const roll = Math.abs(ang * 180 / Math.PI), size = d / w;
+      items.push([size < 0.10 ? 'もう少し近づいて' : size > 0.50 ? 'もう少し離れて' : '距離：ちょうどいい', size >= 0.10 && size <= 0.50]);
       const yOk = Math.abs(yaw - 0.5) <= 0.12, rOk = roll <= 12;
-      items.push([yOk && rOk ? '向き：まっすぐ' : !yOk ? '顔をまっすぐ正面に向けてください' : '頭の傾き（首をかしげる向き）をまっすぐに', yOk && rOk]);
+      items.push([yOk && rOk ? '向き：まっすぐ' : !yOk ? '顔をまっすぐ正面に' : '首のかしげをまっすぐに', yOk && rOk]);
       const br = brightness();
       items.push([br < 45 ? '暗いです。明るい所へ' : '明るさ：OK', br >= 45]);
     }
-    $('checks').innerHTML = items.map(([t, ok]) => `<div class="chk ${ok ? 'ok' : 'ng'}">${ok ? '●' : '○'} ${t}</div>`).join('');
     const all = items.length === 3 && items.every(i => i[1]);
-    okCount = all ? okCount + 1 : Math.max(0, okCount - 1);   // 顔が少し揺れても数え直しにしない
+    okCount = all ? okCount + 1 : Math.max(0, okCount - 1);
     if (okCount >= 5) unlocked = true;                          // 一度そろえば、次へは押せたままにする
     b.disabled = !unlocked;
-    skip.style.display = !unlocked && last && performance.now() - t0 > 5000 ? '' : 'none';   // 顔が写っていないときは出さない（先の段で何も取れないため）
-    $('msg').textContent = all ? 'OK。次へ進めます' : '位置を合わせています…';
+    skip.style.display = !unlocked && last && performance.now() - t0 > 5000 ? '' : 'none';   // 顔が写っていないときは出さない
+    const head = all || unlocked ? '<span class="ok">OK ✓</span><br>下の「次へ」を押してください' : '顔の位置を合わせます';
+    cue(`${head}<small>${items.map(([t, ok]) => `<span style="color:${ok ? '#5ad18b' : '#ff8a65'}">${ok ? '●' : '○'} ${t}</span>`).join('<br>')}</small>`);
     await sleep(150);
   }
 }
 
 // ════ 1. 首の8の字（画面の ∞ のガイドを、鼻先でなぞる）
 // ガイド：横向きの ∞（x＝sinθ・y＝sin2θ）。1周 5秒で3周 → 反対回りで3周。
-// 位置と大きさは、始める直前の鼻先の位置と目の間の長さ（d）に合わせる。座標は写っている映像のまま（画面は鏡なので x の向きが逆）
 const LAP = 5000, LAPS = 3, GA = 0.6, GB = 0.3;   // 横の半幅・縦の半幅（d を1として）
 let G = null;                                      // 描いている最中のガイド { cx, cy, d, t0, dir, trail }
 const gPos = (g, th) => ({ x: g.cx - g.dir0 * GA * g.d * Math.sin(th), y: g.cy - GB * g.d * Math.sin(2 * th) });   // dir0=1：画面の右上へ出る
@@ -240,7 +302,6 @@ function drawGuide(t, pts) {
   if (g.t0 != null) {
     const th = g.dir * 2 * Math.PI * Math.max(0, t - g.t0) / LAP, p = gPos(g, th);
     oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(p.x, p.y, g.d * 0.09, 0, 7); oc.fill();
-    // 進む向きの矢印（少し先の位置へ）
     const q = gPos(g, th + g.dir * 0.35); oc.strokeStyle = '#ffcc00'; oc.lineWidth = g.d * 0.03; oc.beginPath(); oc.moveTo(p.x, p.y); oc.lineTo(q.x, q.y); oc.stroke();
   }
   if (pts) { const n = pts[1]; g.trail.push(n); if (g.trail.length > 40) g.trail.shift();
@@ -248,23 +309,23 @@ function drawGuide(t, pts) {
     oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, g.d * 0.06, 0, 7); oc.fill(); }
 }
 async function stepEight() {
-  show(1, '1. 首の8の字', `画面に出る白い「∞」の線を、鼻先（赤い点）でなぞります。<br>黄色い点が1周 ${LAP / 1000}秒で進むので、鼻先で追いかけてください。<b>3周 → 「反対回り」の合図で逆向きに3周</b>（合わせて約${LAP * LAPS * 2 / 1000 + 3}秒）。<br><span class="small">痛みが出たら止めてください。肩は動かさず、首だけで。</span>`);
+  show(1, '1. 首の8の字');
+  cue(`白い「∞」の線を<br>鼻先でなぞります<small>黄色い点が1周${LAP / 1000}秒で進むので、鼻先（赤い点）で追いかけてください。3周したら「反対回り」の合図で逆向きに3周。肩は動かさず首だけで。痛みが出たら止めてください</small>`);
   btn('始める', async () => {
-    $('btns').innerHTML = '';
-    // 鼻先の位置を取ってガイドを置く（顔が見えるまで待つ）
-    $('msg').textContent = '顔をまっすぐ向けて、そのまま…';
+    const my = tok; clearBtns();
+    cue('顔をまっすぐ向けて<br>そのまま…');
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepEight, '顔が見つかりませんでした');
     const s0 = await record(700);
     const src = s0.length ? s0 : [{ pts: last }];
-    const md = a => { const v = [...a].sort((x, y) => x - y); return v[v.length >> 1]; };
-    G = { cx: md(src.map(f => f.pts[1].x)), cy: md(src.map(f => f.pts[1].y)), d: md(src.map(f => dist(f.pts[P.eyeOut[0]], f.pts[P.eyeOut[1]]))), t0: null, dir: 1, dir0: 1, trail: [] };
-    $('msg').textContent = '白い線の上に、鼻先（赤い点）を置いてください'; await countdown();
+    G = { cx: med(src.map(f => f.pts[1].x)), cy: med(src.map(f => f.pts[1].y)), d: med(src.map(f => dist(f.pts[P.eyeOut[0]], f.pts[P.eyeOut[1]]))), t0: null, dir: 1, dir0: 1, trail: [] };
+    await countdown(3, '白い線の上に<br>鼻先を置いて');
     const seg = [];
     for (const [k, dir] of [['fwd', 1], ['rev', -1]]) {
-      if (k === 'rev') { G.t0 = null; $('big').textContent = '反対回り'; $('msg').textContent = 'ここから逆向きに3周'; await sleep(2200); $('big').textContent = ''; }
+      if (my !== tok) return;
+      if (k === 'rev') { G.t0 = null; cue('反対回り', 'huge'); await sleep(2200); }
       G.dir = dir; G.t0 = performance.now();
-      const r = await record(LAP * LAPS, p => { const lap = Math.min(LAPS, Math.floor(p * LAPS) + 1); $('msg').textContent = `${k === 'fwd' ? '' : '反対回り・'}${lap}周目／${LAPS}　黄色い点を鼻先で追って${last ? '' : '（顔が見えません）'}`; });
+      const r = await record(LAP * LAPS, p => { const lap = Math.min(LAPS, Math.floor(p * LAPS) + 1); cue(`${k === 'fwd' ? '' : '反対回り・'}${lap}周目／${LAPS}${last ? '' : '<small>顔が見えません</small>'}`, 'thin low'); });
       seg.push({ k, dir, t0: G.t0, r });
     }
     const g = G; G = null; analyzeEight(seg, g);
@@ -274,8 +335,7 @@ function analyzeEight(seg, g) {
   const all = seg.flatMap(s => s.r);
   if (all.length < 30) return fail(stepEight, '顔が見えている時間が短すぎました');
   const N = 240, curve = []; for (let i = 0; i < N; i++) curve.push(gPos(g, i / N * 2 * Math.PI));
-  const TOL = 0.15, TOLF = 0.2;   // 線の上＝d の15%以内／点について＝遅れを差し引いた点の位置から d の20%以内
-  // 人は点より少し遅れて動くので、遅れ（0〜1.2秒・向きごと）と、体ごとのずれ（上下左右）を、いちばん合う値に合わせてから採点する
+  const TOL = 0.15, TOLF = 0.2;
   const rows = seg.flatMap(s => s.r.map(({ t, pts }) => ({ s, t, n: pts[1] })));
   const at = (r, lag) => gPos(g, r.s.dir * 2 * Math.PI * (r.t - lag - r.s.t0) / LAP);
   const fit = rs => { let best = { lag: 0, ox: 0, oy: 0, e: Infinity }; const sub = rs.filter((_, i) => i % 3 === 0);
@@ -285,196 +345,519 @@ function analyzeEight(seg, g) {
         if (e < best.e) best = { lag, ox, oy, e }; } }
     return best; };
   const fits = {}; for (const s of seg) fits[s.k] = fit(rows.filter(r => r.s === s));
-  const best = fits.fwd;   // 結果の絵は最初の向きのずれで描く
+  const best = fits.fwd;
   const out = {};
   for (const s of seg) {
     const fb = fits[s.k], rs = rows.filter(r => r.s === s), n = rs.map(r => ({ x: r.n.x + fb.ox, y: r.n.y + fb.oy }));
     const on = rs.filter((r, i) => dist(at(r, fb.lag), n[i]) / g.d < TOLF).length;
-    // なぞれた範囲：∞ の線の点のうち、鼻先が近くを通った点の割合（右の輪・左の輪）。止まったままだと上がらない
     const cov = side => { const cs = curve.filter(c => side * (g.cx - c.x) > 1e-6); const hit = cs.filter(c => n.some(p => dist(c, p) / g.d < TOL)).length; return cs.length ? Math.round(hit / cs.length * 100) : 0; };
     const xs = n.map(p => (g.cx - p.x) / (GA * g.d));
-    out[s.k] = { lag: fb.lag, n: rs.length, follow: rs.length ? Math.round(on / rs.length * 100) : 0, covR: cov(1), covL: cov(-1), wR: Math.max(0, ...xs), wL: Math.max(0, ...xs.map(v => -v)) };
+    out[s.k] = { lag: fb.lag, n: rs.length, follow: rs.length ? Math.round(on / rs.length * 100) : 0, covR: cov(1), covL: cov(-1), wR: r3(Math.max(0, ...xs)), wL: r3(Math.max(0, ...xs.map(v => -v))) };
   }
-  const near = p => Math.min(...curve.map(c => dist(c, { x: p.x + best.ox, y: p.y + best.oy }))) / g.d;
-  // 結果の絵：ガイドの線と鼻先の通り道（緑＝線の上・赤＝外れ）。鏡の向きに直して描く
-  gd.width = gd.clientWidth * 2; gd.height = gd.clientHeight * 2;
-  const sc = Math.min(gd.width / (2.8 * GA), gd.height / (2.8 * 2 * GB)) / g.d;
-  const T = (p, o = 0) => ({ x: gd.width / 2 - (p.x + o * best.ox - g.cx) * sc, y: gd.height / 2 + (p.y + o * best.oy - g.cy) * sc });
-  gc.fillStyle = 'rgba(0,0,0,.55)'; gc.fillRect(0, 0, gd.width, gd.height);
-  gc.lineWidth = 6; gc.strokeStyle = 'rgba(255,255,255,.6)'; gc.setLineDash([14, 10]); gc.beginPath();
-  curve.forEach((c, i) => { const p = T(c); i ? gc.lineTo(p.x, p.y) : gc.moveTo(p.x, p.y); }); gc.closePath(); gc.stroke(); gc.setLineDash([]);
-  gc.lineWidth = 4;
-  for (const s of seg) for (let i = 1; i < s.r.length; i++) {
-    const a = T(s.r[i - 1].pts[1], 1), b = T(s.r[i].pts[1], 1);
-    gc.strokeStyle = near(s.r[i].pts[1]) < TOL ? (s.dir > 0 ? '#5ad18b' : '#4fc3f7') : '#ff6b6b';
-    gc.beginPath(); gc.moveTo(a.x, a.y); gc.lineTo(b.x, b.y); gc.stroke();
-  }
-  R.eight = out;
+  RUN.eight = out;
   const F = out.fwd, B = out.rev;
-  $('msg').textContent = '緑＝最初の向き・水色＝反対回りで線の上　赤＝線から外れた所';
-  $('result').innerHTML = `<div class="res">黄色い点について線の上を動けた割合：最初の向き <b>${F.follow}%</b>・反対回り <b>${B.follow}%</b>（d の${Math.round(TOLF * 100)}%以内）<br>
-  ∞をなぞれた範囲　あなたの右の輪：最初 <b>${F.covR}%</b>・反対 <b>${B.covR}%</b>　左の輪：最初 <b>${F.covL}%</b>・反対 <b>${B.covL}%</b><br>
-  鼻先が届いた横幅（線の端を1）：右 <b>${f2(Math.max(F.wR, B.wR))}</b>・左 <b>${f2(Math.max(F.wL, B.wL))}</b><br>
-  <span class="small">「線の上」＝鼻先が線から目の間の長さの${Math.round(TOL * 100)}%以内。点についての割合は、あなたの遅れ（最初 ${(F.lag / 1000).toFixed(1)}秒・反対 ${(B.lag / 1000).toFixed(1)}秒）を差し引いて数えています。${F.n + B.n}コマ読み取り。</span></div>`;
-  btn('もう一度', stepEight, 'sub'); btn('次へ（表情）', stepFace);
+  if (STAFF) {   // 結果の絵（スタッフだけ）：ガイドの線と鼻先の通り道（緑＝線の上・赤＝外れ）
+    const near = p => Math.min(...curve.map(c => dist(c, { x: p.x + best.ox, y: p.y + best.oy }))) / g.d;
+    gd.width = gd.clientWidth * 2; gd.height = gd.clientHeight * 2;
+    const sc = Math.min(gd.width / (2.8 * GA), gd.height / (2.8 * 2 * GB)) / g.d;
+    const T = (p, o = 0) => ({ x: gd.width / 2 - (p.x + o * best.ox - g.cx) * sc, y: gd.height / 2 + (p.y + o * best.oy - g.cy) * sc });
+    gc.fillStyle = 'rgba(0,0,0,.7)'; gc.fillRect(0, 0, gd.width, gd.height);
+    gc.lineWidth = 6; gc.strokeStyle = 'rgba(255,255,255,.6)'; gc.setLineDash([14, 10]); gc.beginPath();
+    curve.forEach((c, i) => { const p = T(c); i ? gc.lineTo(p.x, p.y) : gc.moveTo(p.x, p.y); }); gc.closePath(); gc.stroke(); gc.setLineDash([]);
+    gc.lineWidth = 4;
+    for (const s of seg) for (let i = 1; i < s.r.length; i++) {
+      const a = T(s.r[i - 1].pts[1], 1), b = T(s.r[i].pts[1], 1);
+      gc.strokeStyle = near(s.r[i].pts[1]) < TOL ? (s.dir > 0 ? '#5ad18b' : '#4fc3f7') : '#ff6b6b';
+      gc.beginPath(); gc.moveTo(a.x, a.y); gc.lineTo(b.x, b.y); gc.stroke();
+    }
+    staff(`点について線の上：最初 <b>${F.follow}%</b>・反対 <b>${B.follow}%</b><br>なぞれた範囲 右の輪：<b>${F.covR}%</b>・<b>${B.covR}%</b>　左の輪：<b>${F.covL}%</b>・<b>${B.covL}%</b><br>届いた横幅 右 <b>${f2(Math.max(F.wR, B.wR))}</b>・左 <b>${f2(Math.max(F.wL, B.wL))}</b><br><span class="small">緑＝最初の向き・水色＝反対回りで線の上、赤＝外れ。遅れ ${(F.lag / 1000).toFixed(1)}／${(B.lag / 1000).toFixed(1)}秒。${F.n + B.n}コマ</span>`);
+  }
+  recorded(stepEight, stepFace, '次へ（表情）');
 }
-function fail(again, why) { $('result').innerHTML = `<div class="res">${why}。顔を画面に入れて、もう一度どうぞ。<br><span class="small">（確かめ用：顔の点の読み取り ${delegate}・${window.__faceSeen || 0}／${window.__frames || 0}コマ${window.__detErr ? '・' + window.__detErr : ''}）</span></div>`; btn('もう一度', again); }
 
 // ════ 2. 表情の左右差
 async function stepFace() {
-  show(2, '2. 表情の左右差', '画面の合図どおりに顔を動かしてください。「真顔 → 思い切り笑う → 眉を上げる → 目をギュッと閉じる」の順です。');
+  show(2, '2. 表情の左右差');
+  cue('画面の真ん中に出る合図どおりに<br>顔を動かします<small>真顔 → 思い切り笑う → 眉を上げる → 目をギュッと閉じる（目を閉じている間は、合図の代わりに音はありません。3秒で終わります）</small>');
   btn('始める', async () => {
-    $('btns').innerHTML = ''; await countdown();
+    const my = tok; clearBtns(); await countdown();
     const seg = {};
-    for (const [k, label, ms] of [['base', '真顔のまま', 2000], ['smile', '思い切り笑って！', 3000], ['rest1', '真顔に戻して', 1500], ['brow', '眉を思い切り上げて！', 3000], ['rest2', '真顔に戻して', 1500], ['eye', '目をギュッと閉じて！', 3000]]) {
-      $('msg').textContent = label; $('big').textContent = k === 'base' || k.startsWith('rest') ? '' : '！';
-      seg[k] = await record(ms);
+    for (const [k, label, ms] of [['base', '真顔のまま', 2000], ['smile', '思い切り<br>笑って！', 3000], ['rest1', '真顔に戻して', 1500], ['brow', '眉を思い切り<br>上げて！', 3000], ['rest2', '真顔に戻して', 1500], ['eye', '目をギュッと<br>閉じて！', 3000]]) {
+      if (my !== tok) return;
+      cue(label); seg[k] = await record(ms);
     }
-    $('big').textContent = ''; $('msg').textContent = '終わりました'; analyzeFace(seg);
+    cue('終わりました'); analyzeFace(seg);
   });
 }
 function analyzeFace(seg) {
   if (seg.base.length < 8 || seg.smile.length < 8) return fail(stepFace, '顔が見えている時間が短すぎました');
   const avg = (arr, fn) => arr.reduce((s, x) => s + fn(x), 0) / arr.length;
   const F = ({ pts }) => frame(pts).f;
-  // 目の線からの縦の位置（上が小さい）。回して長さをそろえた座標で取る
   const cornerY = (fr, s) => F(fr)(fr.pts[P.mouth[s]]).y;
   const browY = (fr, s) => F(fr)(fr.pts[P.brow[s]]).y;
   const lid = (fr, s) => { const f = F(fr); return f(fr.pts[P.lidDn[s]]).y - f(fr.pts[P.lidUp[s]]).y; };
   const res = {};
   for (const s of [0, 1]) {
     const b = avg(seg.base, fr => cornerY(fr, s));
-    res['m' + s] = b - Math.min(...seg.smile.map(fr => cornerY(fr, s)));           // 口角がどれだけ上がったか
+    res['m' + s] = r3(b - Math.min(...seg.smile.map(fr => cornerY(fr, s))));
     const bb = avg(seg.base, fr => browY(fr, s));
-    res['b' + s] = seg.brow.length ? bb - Math.min(...seg.brow.map(fr => browY(fr, s))) : 0;
+    res['b' + s] = r3(seg.brow.length ? bb - Math.min(...seg.brow.map(fr => browY(fr, s))) : 0);
     const lb = avg(seg.base, fr => lid(fr, s));
-    res['e' + s] = seg.eye.length && lb > 0 ? Math.max(0, 1 - Math.min(...seg.eye.map(fr => lid(fr, s))) / lb) : 0;
+    res['e' + s] = r3(seg.eye.length && lb > 0 ? Math.max(0, 1 - Math.min(...seg.eye.map(fr => lid(fr, s))) / lb) : 0);
   }
-  R.face = res;
-  $('result').innerHTML = `<div class="res">口角の上がり：右 <b>${f2(res.m0)}</b>・左 <b>${f2(res.m1)}</b> → ${sideWord(res.m0, res.m1, 'よく上がる')}（差 ${pct(res.m0, res.m1)}%）<br>
+  RUN.face = res;
+  staff(`口角の上がり：右 <b>${f2(res.m0)}</b>・左 <b>${f2(res.m1)}</b> → ${sideWord(res.m0, res.m1, 'よく上がる')}（差 ${pct(res.m0, res.m1)}%）<br>
   眉の上がり：右 <b>${f2(res.b0)}</b>・左 <b>${f2(res.b1)}</b> → ${sideWord(res.b0, res.b1, 'よく上がる')}（差 ${pct(res.b0, res.b1)}%）<br>
-  目の閉じ方：右 <b>${Math.round(res.e0 * 100)}%</b>・左 <b>${Math.round(res.e1 * 100)}%</b> → ${sideWord(res.e0, res.e1, 'よく閉じる')}<br>
-  <span class="small">右・左はあなたから見た向き。上がり幅は目の間の長さを1とした大きさ。</span></div>`;
-  btn('もう一度', stepFace, 'sub'); btn('次へ（目の動き）', stepEyes);
+  目の閉じ方：右 <b>${Math.round(res.e0 * 100)}%</b>・左 <b>${Math.round(res.e1 * 100)}%</b> → ${sideWord(res.e0, res.e1, 'よく閉じる')}`);
+  recorded(stepFace, stepEyePrep, '次へ（目の準備）');
 }
 
-// ════ 3. 目の動き（点を目だけで追う）
-async function stepEyes() {
-  show(3, '3. 目の動き', '黄色い点を、<b>頭を動かさずに目だけで</b>追ってください。左右に4往復します（12秒）。');
-  btn('始める', async () => {
-    $('btns').innerHTML = ''; await countdown();
-    const dot = $('dot'), st = $('stage'); dot.style.display = 'block';
-    const tx = [];
-    const r = await record(12000, p => {
-      const x = 0.5 + 0.42 * Math.sin(p * Math.PI * 2 * 4);          // 画面の左右いっぱい
-      dot.style.left = (x * st.clientWidth) + 'px'; dot.style.top = (st.clientHeight * 0.35) + 'px';
-      tx.push({ t: performance.now(), x });
-    });
-    dot.style.display = 'none'; analyzeEyes(r, tx);
+// ════ 目のチェックの共通部品
+// 近さの確認：目がどれだけ大きく映っているかで判定し、ちょうどいい近さで「OK ✓」を出す（2026-10-14 宮崎さん）
+async function gate() {
+  const my = tok, t0 = performance.now(); let ok = 0, skipped = false, done = false;
+  dark(false);
+  const sk = btn('この近さのまま進む', () => { skipped = true; }, 'sub'); sk.style.display = 'none';
+  while (my === tok && !done && !skipped) {
+    let html;
+    if (!last) html = '顔が見えません<small>スマホを顔の正面に持ってください</small>';
+    else {
+      const v = eyeSize(last), good = v >= EYE_OK[0] && v <= EYE_OK[1];
+      const lo = 0.04, hi = 0.26, pos = clamp((v - lo) / (hi - lo), 0, 1) * 100;
+      const zone = `<div class="meter"><i style="left:${(EYE_OK[0] - lo) / (hi - lo) * 100}%;width:${(EYE_OK[1] - EYE_OK[0]) / (hi - lo) * 100}%"></i><b style="left:${pos}%"></b></div>`;
+      html = (good ? '<span class="ok">OK ✓</span><br>この近さのまま' : v < EYE_OK[0] ? 'スマホを<br>顔に近づけて' : '少し<br>離して') + zone +
+        '<small>目が大きく映るまで近づけます（目安：顔から20〜25cm）。緑の帯に白い線が入ればOK</small>';
+      ok = good ? ok + 1 : 0;
+      if (ok >= 7) done = true;      // 150ms × 7 ≒ 1秒、続けて OK
+    }
+    cue(html);
+    sk.style.display = !done && last && performance.now() - t0 > 7000 ? '' : 'none';   // 止まり続けないように、7秒で逃げ道を出す
+    await sleep(150);
+  }
+  sk.remove();
+  if (done) { cue('<span class="ok">OK ✓</span><br>この近さのまま'); await sleep(800); }
+  return { eye: last ? r3(eyeSize(last)) : null, ok: done };
+}
+// 1コマから目の特徴を取る。右目（s=0）・左目（s=1）は本人の向き
+function eyeFeat(pts) {
+  const { f } = frame(pts), o = {};
+  for (const s of [0, 1]) {
+    const a = f(pts[P.eyeOut[s]]), b = f(pts[P.eyeIn[s]]), c = f(pts[P.iris[s]]), w = dist(a, b), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    o['hx' + s] = (c.x - m.x) / w;   // ＋＝本人の左へ
+    o['vy' + s] = (c.y - m.y) / w;   // ＋＝下へ
+    o['ap' + s] = (f(pts[P.lidDn[s]]).y - f(pts[P.lidUp[s]]).y) / w;
+  }
+  return o;
+}
+function feats({ pts, bs }) {
+  const e = eyeFeat(pts), b = k => (bs && Number.isFinite(bs[k])) ? bs[k] : NaN;
+  return {
+    hx: -(e.hx0 + e.hx1) / 2,                                                                                      // ＋＝本人の右を見る
+    bsX: (b('eyeLookOutRight') + b('eyeLookInLeft') - b('eyeLookInRight') - b('eyeLookOutLeft')) / 2,
+    vy: -(e.vy0 + e.vy1) / 2,                                                                                      // ＋＝上を見る
+    ap: (e.ap0 + e.ap1) / 2,
+    bsY: (b('eyeLookUpLeft') + b('eyeLookUpRight') - b('eyeLookDownLeft') - b('eyeLookDownRight')) / 2,
+    blinkBs: Math.min(b('eyeBlinkLeft'), b('eyeBlinkRight')),
+    e,
+  };
+}
+// 目の合わせ（5か所の点を見る）：一人ひとりの「黒目の位置 → 画面のどこを見ているか」の換算を作る。
+// 横・たてそれぞれ、いちばん見分けがつく特徴（黒目の位置／まぶたの開き／MediaPipe の視線の値）を選ぶ
+let CAL = null;
+const CAL_MIN = 2;
+function fitAxis(segs, negK, posK, names) {
+  let best = null;
+  for (const nm of names) {
+    const v = k => segs.filter(s => s.k === k || (k === 'C' && s.k === 'C2')).flatMap(s => s.F.map(f => f[nm])).filter(Number.isFinite);
+    const n = v(negK), p = v(posK), c = v('C');
+    if (n.length < 3 || p.length < 3 || c.length < 3) continue;
+    const mn = med(n), mp = med(p), mc = med(c), slope = (mp - mn) / 2;
+    const noise = (mad(n) + mad(p) + mad(c)) / 3 * 1.4826 + 1e-6;
+    let sep = Math.abs(mp - mn) / noise; const mono = (mc - mn) * (mp - mc) > 0; if (!mono) sep /= 2;
+    if (Math.abs(slope) > 1e-6 && (!best || sep > best.sep)) best = { nm, mc, slope, sep: Math.round(sep * 10) / 10, mono };
+  }
+  return best;
+}
+function fitCalib(segs) {
+  segs.forEach(s => { s.F = s.fr.map(feats); });
+  const x = fitAxis(segs, 'L', 'R', ['hx', 'bsX']), y = fitAxis(segs, 'D', 'U', ['vy', 'bsY', 'ap']);
+  const apRef = med(segs.filter(s => s.k[0] === 'C').flatMap(s => s.F.map(f => f.ap)));
+  // 見分けが 2 未満の向きは、目の位置の読み取りが不安定（その向きの数字・判定は信用しない）
+  return { ok: !!(x && y), reliable: !!(x && y && x.sep >= CAL_MIN && y.sep >= CAL_MIN), x, y, apRef, frames: segs.reduce((s, g) => s + g.fr.length, 0) };
+}
+function series(fr) {   // コマ → 画面上の視線（X 右＋・Y 上＋）
+  return fr.map(o => {
+    const F = feats(o), X = (F[CAL.x.nm] - CAL.x.mc) / CAL.x.slope, Y = (F[CAL.y.nm] - CAL.y.mc) / CAL.y.slope;
+    const bl = (F.blinkBs > 0.7) || F.ap < CAL.apRef * 0.35;
+    return { t: o.t, X, Y, bl, e: F.e };
   });
 }
-function irisRatio(pts, s) {
-  const f = frame(pts).f, o = f(pts[P.eyeOut[s]]), i = f(pts[P.eyeIn[s]]), c = f(pts[P.iris[s]]);
-  return (c.x - o.x) / (i.x - o.x);       // 0＝目じり側、1＝目がしら側
+async function calibrate() {
+  const my = tok; dark(true);
+  cue('出てくる点を<br><b>目だけで</b>見てください<small>頭は動かさずに。点が5か所に出ます</small>'); await sleep(2600); cue('');
+  const segs = [];
+  for (const [k, x, y] of [['C', 0, 0], ['R', 1, 0], ['L', -1, 0], ['U', 0, 1], ['D', 0, -1], ['C2', 0, 0]]) {
+    if (my !== tok) return null;
+    placeDot(x, y); await sleep(700); segs.push({ k, x, y, fr: await record(1100) });
+  }
+  hideDot();
+  const c = fitCalib(segs);
+  RUN.calib = { x: c.x, y: c.y, reliable: c.reliable, apRef: r3(c.apRef), frames: c.frames };
+  return c;
 }
-function analyzeEyes(r, tx) {
-  if (r.length < 30) return fail(stepEyes, '顔が見えている時間が短すぎました');
-  // 見ている向き（本人の右が＋）＝右目は目じりへ（比が下がる）、左目は目がしらへ（比が上がる）
-  const g = r.map(({ pts }) => (irisRatio(pts, 0) - irisRatio(pts, 1)) / -2);
-  const tgt = r.map(({ t }) => { let best = tx[0]; for (const v of tx) if (Math.abs(v.t - t) < Math.abs(best.t - t)) best = v; return best.x - 0.5; });
-  const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
-  const corr = (a, b) => { const ma = mean(a), mb = mean(b); let n = 0, da = 0, db = 0; a.forEach((x, i) => { n += (x - ma) * (b[i] - mb); da += (x - ma) ** 2; db += (b[i] - mb) ** 2; }); return da && db ? n / Math.sqrt(da * db) : 0; };
-  const c = corr(g, tgt);
-  // 頭の動き（鼻先の横の動きの幅・目の間の長さで割る）
-  const nx = r.map(({ pts }) => pts[1].x / dist(pts[P.eyeOut[0]], pts[P.eyeOut[1]]));
-  const head = Math.max(...nx) - Math.min(...nx);
-  // 頭の向きの変化も見る（鼻と両頬の比）
-  const yaw = r.map(({ pts }) => (pts[1].x - pts[P.cheek[0]].x) / (pts[P.cheek[1]].x - pts[P.cheek[0]].x));
-  const headYaw = Math.max(...yaw) - Math.min(...yaw);
-  // 跳んだ回数（1コマで大きく動いた回数）※仮の目安
-  const dg = g.slice(1).map((v, i) => Math.abs(v - g[i]));
-  const md = [...dg].sort((a, b) => a - b)[dg.length >> 1];
-  let jumps = 0; dg.forEach(v => { if (v > Math.max(0.03, md * 4)) jumps++; });
-  const range = Math.max(...g) - Math.min(...g);
-  const moved = head > 0.25 || headYaw > 0.12;
-  R.eyes = { c, head, headYaw, jumps, range };
-  $('result').innerHTML = `<div class="res">目が点についていけた度合い：<b>${Math.round(c * 100)}</b>（100 に近いほど、点と同じ向きに目が動いた）<br>
-  頭も一緒に動いた：<b>${moved ? 'はい' : 'ほぼ動いていない'}</b>（鼻先の横の動き ${f2(head)}・顔の向きの変化 ${f2(headYaw)}）<br>
-  目が途中で跳んだ回数：<b>${jumps}</b> 回（仮の目安）<br><span class="small">黒目の動いた幅 ${f2(range)}。スマホの画面は小さいので、目の動きも小さくなります。</span></div>`;
-  btn('もう一度', stepEyes, 'sub'); btn('次へ（寄り目）', stepConv);
+function velOf(w) {   // 数コマの位置から速さ（1秒あたり）を出す
+  const mt = mean(w.map(o => o.t)), mx = mean(w.map(o => o.X)), my = mean(w.map(o => o.Y)); let sxx = 0, sx = 0, sy = 0;
+  w.forEach(o => { const dt = o.t - mt; sxx += dt * dt; sx += dt * (o.X - mx); sy += dt * (o.Y - my); });
+  return sxx ? { x: sx / sxx * 1000, y: sy / sxx * 1000 } : { x: 0, y: 0 };
+}
+async function eyeStepStart(again) {
+  const g = await gate(); if (!g) return null;
+  if (!CAL || !CAL.ok) { CAL = await calibrate(); if (!CAL) return null; if (!CAL.ok) { fail(again, '目の位置を読み取れませんでした'); return null; } }
+  return g;
 }
 
-// ════ 4. 寄り目（黒目の寄り方の左右差）
-async function stepConv() {
-  show(4, '4. 寄り目', 'スマホを顔の正面に立てて置き、ペンを腕を伸ばした所に持ちます。合図が出たら、ペン先を見たまま<b>8秒かけてゆっくり鼻へ</b>近づけてください。<br><span class="small">ペンで顔が隠れないよう、カメラより少し下を通してください。</span>');
+// ════ 3. 目の準備（近づける → 合わせる）
+async function stepEyePrep() {
+  show(3, '3. 目のチェックの準備');
+  cue('ここからは目のチェックです<small>スマホを手に持って、顔に近づけます。ちょうどいい近さになると「OK ✓」が出ます。そのあと、5か所に出る点を目だけで見て合わせます</small>');
   btn('始める', async () => {
-    $('btns').innerHTML = ''; await countdown();
-    const r = await record(8000, p => { $('msg').textContent = `ペン先を見たまま、ゆっくり鼻へ（あと${Math.ceil(8 * (1 - p))}秒）`; });
-    analyzeConv(r);
+    clearBtns(); CAL = null;
+    const g = await gate();
+    CAL = await calibrate(); if (!CAL) return;
+    if (CAL.ok && !CAL.reliable) { cue('もう一度<br>合わせます<small>頭を動かさずに、目だけで点を見てください</small>'); await sleep(2200); const c2 = await calibrate(); if (!c2) return; if (c2.ok && (!CAL.ok || c2.x.sep + c2.y.sep > CAL.x.sep + CAL.y.sep)) CAL = c2; RUN.calib = { x: CAL.x, y: CAL.y, reliable: CAL.reliable, apRef: r3(CAL.apRef), frames: CAL.frames, retried: true }; }
+    RUN.eyeGate = g;
+    if (!CAL.ok) return fail(stepEyePrep, '目の位置を読み取れませんでした');
+    dark(false);
+    staff(`近さ（目の大きさ）<b>${f2(g.eye)}</b>${g.ok ? '' : '（OK になる前に進んだ）'}<br>横：<b>${CAL.x.nm}</b>（見分け ${CAL.x.sep}${CAL.x.mono ? '' : '・順番が崩れた'}）　たて：<b>${CAL.y.nm}</b>（見分け ${CAL.y.sep}${CAL.y.mono ? '' : '・順番が崩れた'}）<br><span class="small">見分けが ${CAL_MIN} 未満だと、目の位置の読み取りが不安定（そのときは判定しない）。もう一度やり直すと良くなることがあります</span>`);
+    recorded(stepEyePrep, stepPursuit, '次へ（点を目で追う）');
+  });
+}
+
+// ════ 4. 追従（スムーズパースート）：よこ・たて・ななめ2つ。1往復 3.2秒 × 2往復
+const PT = 3200, PC = 2;
+const PUR = [{ k: 'よこ', v: [1, 0] }, { k: 'たて', v: [0, 1] }, { k: 'ななめ（右上↔左下）', v: [1, 1] }, { k: 'ななめ（左上↔右下）', v: [-1, 1] }];
+async function stepPursuit() {
+  show(4, '4. 点を目で追う');
+  cue('ゆっくり動く点を<br><b>頭を動かさずに目だけで</b><br>追ってください<small>よこ → たて → ななめ → ななめ の順。約35秒</small>');
+  btn('始める', async () => {
+    const my = tok; clearBtns();
+    const g = await eyeStepStart(stepPursuit); if (!g) return;
+    dark(true); const segs = [];
+    for (const s of PUR) {
+      if (my !== tok) return;
+      placeDot(0, 0); cue(`次は<br><b>${s.k}</b>`, 'low'); await sleep(1800); cue('');
+      const t0 = performance.now();
+      const fr = await record(PT * PC, () => { const a = Math.sin(2 * Math.PI * (performance.now() - t0) / PT); placeDot(s.v[0] * a, s.v[1] * a); });
+      segs.push({ k: s.k, v: s.v, t0, fr });
+    }
+    hideDot(); dark(false);
+    const out = analyzePursuitSeries(segs.map(s => ({ k: s.k, v: s.v, t0: s.t0, fr: series(s.fr) })));
+    out.gate = g; out.fps = fpsOf(segs.flatMap(s => s.fr), PT * PC * PUR.length);
+    RUN.pursuit = out; judge();
+    if (!out.ok) return fail(stepPursuit, '目が見えている時間が短すぎました');
+    staff(pursuitHTML(out));
+    recorded(stepPursuit, stepSacc, '次へ（跳ぶ点を見る）');
+  });
+}
+// 追従の採点：点が速く動いている所（最高の速さの半分以上）だけを使い、点の向きごとに
+// ・ついていけた割合（目の速さ ÷ 点の速さ。1＝ぴったり）・途中で跳んで追いついた割合・位置のずれ を出す
+function analyzePursuitSeries(segs) {
+  const bins = {}, add = (b, o) => (bins[b] = bins[b] || []).push(o);
+  let used = 0, total = 0;
+  for (const s of segs) {
+    const fr = s.fr.filter(f => !f.bl && Number.isFinite(f.X) && Number.isFinite(f.Y)); total += s.fr.length; used += fr.length;
+    if (fr.length < 20) continue;
+    const w = 2 * Math.PI / PT, vpk = Math.hypot(...s.v) * w * 1000;
+    const T = t => { const a = Math.sin(w * (t - s.t0)); return { x: s.v[0] * a, y: s.v[1] * a }; };
+    const VT = t => { const c = Math.cos(w * (t - s.t0)) * w * 1000; return { x: s.v[0] * c, y: s.v[1] * c }; };
+    const ox = med(fr.map(f => f.X - T(f.t).x)), oy = med(fr.map(f => f.Y - T(f.t).y));
+    for (let i = 2; i < fr.length - 2; i++) {
+      const win = fr.slice(i - 2, i + 3); if (win[4].t - win[0].t > 260) continue;   // まばたきで抜けた所をまたがない
+      const vt = VT(fr[i].t), sp = Math.hypot(vt.x, vt.y); if (sp < 0.5 * vpk) continue;
+      const ve = velOf(win), u = { x: vt.x / sp, y: vt.y / sp };
+      const along = (ve.x * u.x + ve.y * u.y) / sp, sac = Math.hypot(ve.x, ve.y) > 2.5 * vpk;
+      const tp = T(fr[i].t);
+      add(dirOf(u.x, u.y), { along, sac, err: Math.hypot(fr[i].X - ox - tp.x, fr[i].Y - oy - tp.y) });
+    }
+  }
+  const dir = {};
+  for (const k of DIRS) {
+    const a = bins[k]; if (!a || a.length < 4) continue;
+    const sm = a.filter(o => !o.sac), gain = sm.length ? med(sm.map(o => o.along)) : 0, sacc = a.filter(o => o.sac).length / a.length;
+    dir[k] = { n: a.length, gain: r3(gain), sacc: r3(sacc), err: r3(med(a.map(o => o.err))), q: Math.round(100 * clamp(gain, 0, 1) * (1 - Math.min(1, 2 * sacc))) };
+  }
+  return { ok: Object.keys(dir).length >= 4, dir, blinkFrac: r3(total ? 1 - used / total : 1) };
+}
+const grpQ = (dir, ks) => { const v = ks.map(k => dir[k] && dir[k].q).filter(Number.isFinite); return v.length ? Math.round(mean(v)) : null; };
+function pursuitHTML(o) {
+  const d = o.dir, cell = k => d[k] ? `${DJ[k]} <b>${d[k].q}</b>（${f2(d[k].gain)}・跳び${Math.round(d[k].sacc * 100)}%）` : `${DJ[k]} —`;
+  return `追従の点数（向きごと。100＝ぴったり）<br>${DIRS.map(cell).join('<br>')}<br><span class="small">（ ）＝目の速さ÷点の速さ・追いつくために跳んだ割合。まばたき等で除いたコマ ${Math.round(o.blinkFrac * 100)}%・${o.fps}コマ/秒</span>${judgeHTML()}`;
+}
+// 内部の判定（お客さんには見せない）。しきい値は仮（2026-10-14 宮崎さん：判定のしかたは後で伝える）
+// ・右／右上／右下へ ついていけない → 右の皮質　・左／左上／左下 → 左の皮質　・上下 → 中脳
+const JTH = 15;
+function judge() {
+  const J = [], d = RUN.pursuit && RUN.pursuit.dir;
+  if (d && RUN.calib && !RUN.calib.reliable) { RUN.judge = []; RUN.judgeNote = '目の合わせが不安定（見分け ' + CAL_MIN + ' 未満）なので、判定していない'; return; }
+  RUN.judgeNote = null;
+  if (d) {
+    const qR = grpQ(d, ['R', 'UR', 'DR']), qL = grpQ(d, ['L', 'UL', 'DL']), qV = grpQ(d, ['U', 'D']), qH = grpQ(d, ['R', 'L']);
+    if (qR != null && qL != null) {
+      if (qL - qR >= JTH) J.push({ k: '右の皮質', why: `右方向（右・右上・右下）の追従 ${qR} が、左方向 ${qL} より ${qL - qR} 低い` });
+      if (qR - qL >= JTH) J.push({ k: '左の皮質', why: `左方向（左・左上・左下）の追従 ${qL} が、右方向 ${qR} より ${qR - qL} 低い` });
+    }
+    if (qV != null && qH != null && qH - qV >= JTH) J.push({ k: '中脳', why: `上下の追従 ${qV} が、左右 ${qH} より ${qH - qV} 低い` });
+    RUN.pursuitGroups = { right: qR, left: qL, vertical: qV, horizontal: qH, threshold: JTH, note: 'しきい値は仮' };
+  }
+  RUN.judge = J;
+}
+function judgeHTML() {
+  const J = RUN.judge || [];
+  if (RUN.judgeNote) return `<div class="res judge">内部の判定：${RUN.judgeNote}</div>`;
+  return `<div class="res judge">内部の判定（仮・お客さんには出ない）：${J.length ? J.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : '<br>目立った差なし'}</div>`;
+}
+
+// ════ 5. サッカード（跳ぶ点を見る）：8方向へ跳んで、真ん中へ戻る。間はばらばら（1.0〜1.6秒）にして先読みを防ぐ
+async function stepSacc() {
+  show(5, '5. 跳ぶ点を見る');
+  cue('点がパッと跳びます<br>跳んだら<b>すぐに目だけで</b><br>その点を見てください<small>頭は動かさずに。約25秒</small>');
+  btn('始める', async () => {
+    const my = tok; clearBtns();
+    const g = await eyeStepStart(stepSacc); if (!g) return;
+    dark(true); placeDot(0, 0); cue('真ん中の点を見て', 'low'); await sleep(1600); cue('');
+    const dirs = [...DIRS].sort(() => Math.random() - 0.5), jumps = []; let cur = [0, 0];
+    rec = []; const t0 = performance.now();
+    for (const k of dirs) {
+      if (my !== tok) { rec = null; return; }
+      const to = DV[k].map(v => v * 0.85);
+      await sleep(1000 + Math.random() * 600); placeDot(...to); jumps.push({ t: performance.now(), from: cur, to }); cur = to;
+      await sleep(1000 + Math.random() * 600); placeDot(0, 0); jumps.push({ t: performance.now(), from: cur, to: [0, 0] }); cur = [0, 0];
+    }
+    await sleep(900); const fr = rec; rec = null; hideDot(); dark(false);
+    const out = analyzeSaccSeries(series(fr), jumps);
+    out.gate = g; out.fps = fpsOf(fr, performance.now() - t0);
+    RUN.saccade = out;
+    if (!out.ok) return fail(stepSacc, '目の動きを読み取れませんでした');
+    staff(saccHTML(out) + calWarn());
+    recorded(stepSacc, stepFix, '次へ（点を見つめる）');
+  });
+}
+// 跳ぶたびに：動き出すまでの時間（反応）・動いている時間・いちばん速い速さ・届いた割合（1＝ぴったり）
+function analyzeSaccSeries(fr, jumps) {
+  const each = [];
+  for (let j = 0; j < jumps.length; j++) {
+    const J = jumps[j], tn = j + 1 < jumps.length ? jumps[j + 1].t : Infinity;
+    const dv = { x: J.to[0] - J.from[0], y: J.to[1] - J.from[1] }, L2 = dv.x ** 2 + dv.y ** 2, L = Math.sqrt(L2), dir = dirOf(dv.x, dv.y);
+    const w = fr.filter(f => !f.bl && Number.isFinite(f.X) && f.t >= J.t - 200 && f.t < Math.min(J.t + 800, tn))
+      .map(f => ({ t: f.t - J.t, p: ((f.X - J.from[0]) * dv.x + (f.Y - J.from[1]) * dv.y) / L2 }));
+    const base = w.filter(o => o.t <= 60), fin = w.filter(o => o.t >= 450);
+    if (base.length < 2 || fin.length < 3) { each.push({ dir, ok: false, why: 'コマ不足' }); continue; }
+    const p0 = med(base.map(o => o.p)), pf = med(fin.map(o => o.p)), amp = pf - p0;
+    if (amp < 0.35) { each.push({ dir, ok: false, why: '動きが見えない', amp: r3(amp) }); continue; }
+    const cross = fr0 => { const th = p0 + fr0 * amp; for (let i = 1; i < w.length; i++) { if (w[i].t <= 0) continue; if (w[i].p >= th && w[i - 1].p < th) return w[i - 1].t + (th - w[i - 1].p) / (w[i].p - w[i - 1].p) * (w[i].t - w[i - 1].t); } return null; };
+    const t10 = cross(0.1), t20 = cross(0.2), t90 = cross(0.9);
+    let pv = 0; for (let i = 1; i < w.length; i++) if (w[i].t > 0 && w[i].t < 500 && w[i].t > w[i - 1].t) pv = Math.max(pv, (w[i].p - w[i - 1].p) / (w[i].t - w[i - 1].t) * L * 1000);
+    each.push({ dir, ok: t20 != null, lat: r0(t20), dur: t10 != null && t90 != null ? r0(t90 - t10) : null, pv: r3(pv), gain: r3(amp) });
+  }
+  const dir = {};
+  for (const k of DIRS) {
+    const a = each.filter(o => o.dir === k && o.ok); if (!a.length) continue;
+    const m = key => { const v = a.map(o => o[key]).filter(Number.isFinite); return v.length ? med(v) : null; };
+    dir[k] = { n: a.length, lat: r0(m('lat')), dur: r0(m('dur')), pv: r3(m('pv')), gain: r3(m('gain')) };
+  }
+  const grp = ks => { const v = ks.map(k => dir[k]).filter(Boolean); return v.length ? { lat: r0(mean(v.map(o => o.lat).filter(Number.isFinite))), pv: r3(mean(v.map(o => o.pv))) } : null; };
+  return { ok: each.filter(o => o.ok).length >= 6, dir, groups: { right: grp(['R', 'UR', 'DR']), left: grp(['L', 'UL', 'DL']), vertical: grp(['U', 'D']) }, each, valid: each.filter(o => o.ok).length, total: each.length };
+}
+function saccHTML(o) {
+  const d = o.dir, cell = k => d[k] ? `${DJ[k]}：反応 <b>${d[k].lat ?? '—'}</b>ms・速さ <b>${f2(d[k].pv)}</b>・届いた <b>${f2(d[k].gain)}</b>` : `${DJ[k]} —`;
+  return `跳ぶ点への目の動き（向きごと）<br>${DIRS.map(cell).join('<br>')}<br><span class="small">速さ＝画面の半分の幅を1とした1秒あたりの動き。${o.fps}コマ/秒なので、速さは目安（カメラが遅いと低く出る）。反応にはカメラの遅れも入る。読めた跳び ${o.valid}／${o.total}</span>`;
+}
+
+// ════ 6. 注視（真ん中の点をじっと見つめる）：10秒
+async function stepFix() {
+  show(6, '6. 点を見つめる');
+  cue('真ん中の点を<br><b>じっと見つめて</b>ください<small>10秒。まばたきは、なるべくがまん</small>');
+  btn('始める', async () => {
+    const my = tok; clearBtns();
+    const g = await eyeStepStart(stepFix); if (!g) return;
+    dark(true); placeDot(0, 0, 'fix'); cue('点を見つめて', 'low'); await sleep(1500);
+    if (my !== tok) return;
+    const fr = await record(10000, p => cue(`見つめたまま<br>あと${Math.ceil(10 * (1 - p))}秒`, 'thin low'));
+    hideDot(); dark(false); cue('');
+    const out = analyzeFixSeries(series(fr));
+    out.gate = g; out.fps = fpsOf(fr, 10000);
+    RUN.fixation = out;
+    if (!out.ok) return fail(stepFix, '目が見えている時間が短すぎました');
+    staff(`見つめている間の目の揺れ：よこ <b>${f2(out.sdX)}</b>・たて <b>${f2(out.sdY)}</b>（ばらつき）<br>揺れの広さ（68%が入る楕円）<b>${f2(out.bcea)}</b>・いちばん離れた所 <b>${f2(out.maxDev)}</b><br>ゆっくり流れた量 <b>${f2(out.drift)}</b>・点から外れた回数 <b>${out.intrusions}</b>${calWarn()}<br><span class="small">単位は画面の半分の幅＝1。まばたき等で除いたコマ ${Math.round(out.blinkFrac * 100)}%・${out.fps}コマ/秒</span>`);
+    recorded(stepFix, stepConv, '次へ（寄り目）');
+  });
+}
+function analyzeFixSeries(fr) {
+  const g = fr.filter(f => !f.bl && Number.isFinite(f.X) && Number.isFinite(f.Y));
+  if (g.length < 30) return { ok: false };
+  const mx = med(g.map(f => f.X)), my = med(g.map(f => f.Y)), dx = g.map(f => f.X - mx), dy = g.map(f => f.Y - my);
+  const sx = sd(dx), sy = sd(dy), rho = sx && sy ? mean(dx.map((v, i) => (v - mean(dx)) * (dy[i] - mean(dy)))) / (sx * sy) : 0;
+  const t0 = g[0].t, t1 = g[g.length - 1].t, a = g.filter(f => f.t < t0 + 2000), b = g.filter(f => f.t > t1 - 2000);
+  const drift = Math.hypot(med(b.map(f => f.X)) - med(a.map(f => f.X)), med(b.map(f => f.Y)) - med(a.map(f => f.Y)));
+  const off = g.map((f, i) => Math.hypot(dx[i], dy[i]) > 0.2); let intr = 0; for (let i = 1; i < off.length; i++) if (off[i] && off[i - 1] && !(i >= 2 && off[i - 2])) intr++;
+  return { ok: true, sdX: r3(sx), sdY: r3(sy), bcea: r3(2 * 1.14 * Math.PI * sx * sy * Math.sqrt(Math.max(0, 1 - rho * rho))), maxDev: r3(Math.max(...dx.map((v, i) => Math.hypot(v, dy[i])))), drift: r3(drift), intrusions: intr, blinkFrac: r3(1 - g.length / fr.length) };
+}
+
+// ════ 7. 寄り目：画面の上（カメラのすぐ下）に出した点を見たまま、スマホを鼻先へ近づける
+async function stepConv() {
+  show(7, '7. 寄り目');
+  cue('スマホを<b>腕をのばした所</b>に<br>持ってください<small>合図のあと、画面の上に出る点を見たまま、10秒かけてスマホを<b>鼻先へ</b>ゆっくり近づけます（カメラが上にあるので、画面の真ん中を鼻先に向けて）</small>');
+  btn('始める', async () => {
+    const my = tok; clearBtns();
+    dark(true); placeDot(0, 1.25); await countdown(3, '上の点を見て');
+    if (my !== tok) return;
+    const fr = await record(11000, p => cue(`点を見たまま<br>スマホを鼻先へ<small>ゆっくり　あと${Math.ceil(11 * (1 - p))}秒</small>`, 'thin'));
+    hideDot(); dark(false); cue('');
+    analyzeConv(fr);
   });
 }
 function analyzeConv(r) {
   if (r.length < 20) return fail(stepConv, '顔が見えている時間が短すぎました');
-  const a = [0, 1].map(s => r.map(({ pts }) => irisRatio(pts, s)));
-  const n0 = Math.max(3, Math.round(r.length * 0.08));
+  const apRef = med(r.slice(0, 10).map(o => { const e = eyeFeat(o.pts); return (e.ap0 + e.ap1) / 2; }));
+  const rows = r.map(o => { const e = eyeFeat(o.pts); return { t: o.t, size: eyeSize(o.pts), in0: e.hx0, in1: -e.hx1, bl: (e.ap0 + e.ap1) / 2 < apRef * 0.35 }; }).filter(o => !o.bl);
+  const sm = a => a.map((_, i) => med(a.slice(Math.max(0, i - 2), i + 3)));   // 5コマの中央値でならす
+  const size = sm(rows.map(o => o.size)), n0 = Math.max(3, Math.round(rows.length * 0.08));
   const out = [0, 1].map(s => {
-    const v = a[s], base = v.slice(0, n0).reduce((x, y) => x + y, 0) / n0;
+    const v = sm(rows.map(o => o['in' + s])), base = med(v.slice(0, n0));
     let mi = 0; v.forEach((x, i) => { if (x > v[mi]) mi = i; });
-    const gain = v[mi] - base;
-    const after = v.slice(mi), back = gain > 0 ? (v[mi] - Math.min(...after)) / gain : 0;
-    return { gain, back, at: r[mi].t - r[0].t };
+    const gain = v[mi] - base; let esc = null;
+    if (gain > 0.04) for (let k = mi + 1; k < v.length - 2; k++) if (v[k] < v[mi] - 0.4 * gain && v[k + 1] < v[mi] - 0.4 * gain && v[k + 2] < v[mi] - 0.4 * gain && size[k] >= size[mi] * 0.98) { esc = k; break; }
+    return { gain: r3(gain), peakSize: r3(size[mi]), esc: esc != null, escT: esc != null ? r0(rows[esc].t - rows[0].t) : null, escSize: esc != null ? r3(size[esc]) : null };
   });
-  const esc = out.map(o => o.back > 0.4 && o.gain > 0.04);
-  R.conv = out.map((o, i) => ({ ...o, esc: esc[i] }));
-  const escWord = esc[0] && esc[1] ? '両目とも途中で外へ戻った' : esc[0] ? '<b>右目</b>が途中で外へ逃げた' : esc[1] ? '<b>左目</b>が途中で外へ逃げた' : '外へ逃げた目は見つからなかった';
-  $('result').innerHTML = `<div class="res">黒目が内へ寄った量：右 <b>${f2(out[0].gain)}</b>・左 <b>${f2(out[1].gain)}</b> → ${sideWord(out[0].gain, out[1].gain, 'よく寄る')}（差 ${pct(out[0].gain, out[1].gain)}%）<br>
-  ${escWord}<br><span class="small">寄った量は、目じりから目がしらまでを1とした黒目の移動。寄り目が強いと黒目をうまく拾えないことがあります。</span></div>`;
-  btn('もう一度', stepConv, 'sub'); btn('次へ（舌）', stepTongue);
+  const first = out[0].esc && out[1].esc ? (out[0].escT <= out[1].escT ? 0 : 1) : out[0].esc ? 0 : out[1].esc ? 1 : null;
+  RUN.conv = { eyes: out, first: first == null ? null : ['右目', '左目'][first], sizeStart: r3(med(size.slice(0, n0))), sizeMax: r3(Math.max(...size)), fps: fpsOf(r, 11000) };
+  const C = RUN.conv;
+  staff(`黒目が内へ寄った量：右 <b>${f2(out[0].gain)}</b>・左 <b>${f2(out[1].gain)}</b> → ${sideWord(out[0].gain, out[1].gain, 'よく寄る')}<br>
+  先に外へ逃げた目：<b>${C.first || 'なし'}</b>${first != null ? `（${(out[first].escT / 1000).toFixed(1)}秒・そのときの目の大きさ ${f2(out[first].escSize)}）` : ''}<br>
+  <span class="small">目の大きさ（近さ）：始め ${f2(C.sizeStart)} → いちばん近く ${f2(C.sizeMax)}。大きいほどスマホが近い</span>`);
+  recorded(stepConv, stepTongue, '次へ（舌）');
 }
 
-// ════ 5. 舌（写真に顔の中心線を重ねて、本人が見る）
+// ════ 8. 舌：写真のコマから舌の先を見つけて、顔の中心線からどちらへ寄ったかを自動で出す
 async function stepTongue() {
-  show(5, '5. 舌の出方', '合図で舌をまっすぐ、思い切り前に出してください。写真を1枚撮ります（写真は端末の外へ送りません）。');
-  btn('撮る', async () => {
-    $('btns').innerHTML = ''; $('msg').textContent = '舌を出す準備を'; await countdown();
-    $('msg').textContent = 'パシャ';
-    const pts = last;
-    const c = $('photo'), w = video.videoWidth, h = video.videoHeight;
-    c.width = w; c.height = h; const x = c.getContext('2d');
-    x.translate(w, 0); x.scale(-1, 1); x.drawImage(video, 0, 0, w, h); x.setTransform(1, 0, 0, 1, 0, 0);
-    if (pts) {
-      // 顔の中心線：眉間（168）とあご先（152）を通る線。鏡の向きに合わせて x を反転
-      const m = p => ({ x: w - p.x, y: p.y });
-      const a = m(pts[168]), b = m(pts[152]), dx = b.x - a.x, dy = b.y - a.y, L = 3;
-      x.strokeStyle = '#ffcc00'; x.lineWidth = Math.max(2, w / 220); x.setLineDash([12, 8]);
-      x.beginPath(); x.moveTo(a.x - dx * 0.6, a.y - dy * 0.6); x.lineTo(a.x + dx * L, a.y + dy * L); x.stroke();
-      x.setLineDash([]); x.fillStyle = '#fff'; x.font = `bold ${Math.round(w / 22)}px sans-serif`;
-      x.fillText('あなたの右 →', w * 0.62, h * 0.08); x.fillText('← あなたの左', w * 0.04, h * 0.08);
-    }
-    $('stage').style.display = 'none'; $('photoWrap').style.display = 'block';
-    $('desc').innerHTML = '黄色い点線が顔の中心です。舌の先は、どちらに寄っていますか？';
-    for (const [k, label] of [['R', 'あなたの右に寄っている'], ['L', 'あなたの左に寄っている'], ['C', 'ほぼまっすぐ'], ['?', '分からない']]) {
-      btn(label, () => { R.tongue = label; $('stage').style.display = ''; finish(); }, k === '?' ? 'sub' : '');
-    }
-    btn('撮り直す', stepTongue, 'sub');
+  show(8, '8. 舌の出方');
+  cue('合図で、舌を<br><b>まっすぐ思い切り前に</b><br>出して、そのまま3秒<small>スマホを顔の正面に。写真は端末の外へ送りません</small>');
+  btn('始める', async () => {
+    const my = tok; clearBtns(); dark(false);
+    await countdown(3, '舌を出す準備');
+    if (my !== tok) return;
+    cue('舌を出して！', 'thin low'); await sleep(600);
+    grab = { lastT: 0, fr: [] }; await sleep(2600); const g = grab; grab = null;
+    cue(STAFF ? '' : '戻してOK'); analyzeTongue(g.fr);
   });
 }
-
-// ════ まとめ
-function finish() {
-  const L = [];
-  const e = R.eight, f = R.face, y = R.eyes, c = R.conv;
-  if (e) L.push(`1. 首の8の字：点について線の上 最初${e.fwd.follow}%・反対${e.rev.follow}%／なぞれた範囲 右の輪 ${e.fwd.covR}%・${e.rev.covR}%／左の輪 ${e.fwd.covL}%・${e.rev.covL}%／届いた横幅 右${f2(Math.max(e.fwd.wR, e.rev.wR))}・左${f2(Math.max(e.fwd.wL, e.rev.wL))}`);
-  if (f) L.push(`2. 表情：口角 右${f2(f.m0)}・左${f2(f.m1)}（差${pct(f.m0, f.m1)}%）／眉 右${f2(f.b0)}・左${f2(f.b1)}（差${pct(f.b0, f.b1)}%）／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%`);
-  if (y) L.push(`3. 目の動き：ついていけた度合い${Math.round(y.c * 100)}・頭の動き${f2(y.head)}/${f2(y.headYaw)}・跳んだ${y.jumps}回`);
-  if (c) L.push(`4. 寄り目：右${f2(c[0].gain)}・左${f2(c[1].gain)}（差${pct(c[0].gain, c[1].gain)}%）・逃げた目 ${c[0].esc ? '右' : ''}${c[1].esc ? '左' : ''}${!c[0].esc && !c[1].esc ? 'なし' : ''}`);
-  if (R.tongue) L.push(`5. 舌：${R.tongue}`);
-  $('sMain').classList.add('hide'); $('sEnd').classList.remove('hide');
-  $('endList').innerHTML = L.map(s => `<div class="res">${s}</div>`).join('');
-  $('endText').value = 'カメラで5つのチェック（試し版）の結果\n' + L.join('\n') + '\n' + navigator.userAgent + '（顔の点：' + delegate + '）';
+// 舌の先を探す：口の下の範囲で、頬の肌より赤い所をつなげ、いちばん下の帯の真ん中を舌の先とする。
+// 顔の中心線は眉間（168）と上くちびるの真ん中（0）を通る線（あごは舌と一緒に動くので使わない）
+function tongueFrame({ pts, img }) {
+  const { f, inv } = frame(pts), W = img.width, H = img.height, D = img.data;
+  const pix = q => { const p = inv(q), x = Math.round(p.x), y = Math.round(p.y); if (x < 0 || y < 0 || x >= W || y >= H) return null; const i = (y * W + x) * 4; return [D[i], D[i + 1], D[i + 2]]; };
+  const ch = v => { const s = v[0] + v[1] + v[2] + 1; return { r: v[0] / s, g: v[1] / s, l: s / 3 }; };
+  const sk = [];
+  // 肌の色の基準：頬と、口の高さのあごの横（照明で顔の下ほど赤い時にも合うように）
+  for (const k of [205, 425, 50, 280, 136, 365, 172, 397]) { const q = f(pts[k]); for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) { const v = pix({ x: q.x + i * 0.015, y: q.y + j * 0.015 }); if (v) sk.push(ch(v)); } }
+  if (sk.length < 10) return null;
+  const skin = { r: med(sk.map(o => o.r)), g: med(sk.map(o => o.g)), l: med(sk.map(o => o.l)) };
+  const mR = f(pts[P.mouth[0]]), mL = f(pts[P.mouth[1]]), up = f(pts[13]), lipB = f(pts[17]), chin = f(pts[152]);
+  const st = 0.012, x0 = Math.min(mR.x, mL.x) - 0.25, x1 = Math.max(mR.x, mL.x) + 0.25, y0 = up.y, y1 = Math.max(chin.y, lipB.y + 0.5) + 0.15;
+  const nx = Math.ceil((x1 - x0) / st), ny = Math.ceil((y1 - y0) / st), M = new Uint8Array(nx * ny);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const v = pix({ x: x0 + i * st, y: y0 + j * st }); if (!v) continue; const c = ch(v);
+    if (c.g < skin.g - 0.010 && c.r > skin.r - 0.03 && c.l > skin.l * 0.3) M[j * nx + i] = 1;   // 舌・くちびるは肌より緑が少ない（ピンク寄り）。明るさで口の中の暗い所を除く
+  }
+  // 口の真ん中（下くちびるの内側のすぐ下）から、赤い所をつなげる
+  const m168 = f(pts[168]), m0 = f(pts[0]), midX = y => m168.x + (m0.x - m168.x) * (y - m168.y) / (m0.y - m168.y);
+  const lo = f(pts[14]); let seed = -1, bd = Infinity;
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) if (M[j * nx + i]) { const x = x0 + i * st, y = y0 + j * st, dd = Math.hypot(x - midX(lo.y), y - (lo.y + 0.05)); if (dd < bd) { bd = dd; seed = j * nx + i; } }
+  if (seed < 0 || bd > 0.25) return { found: false, skin };
+  const comp = [], seen = new Uint8Array(nx * ny), q = [seed]; seen[seed] = 1;
+  while (q.length) { const c = q.pop(); comp.push(c); const i = c % nx, j = (c / nx) | 0;
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue; const k = b * nx + a; if (M[k] && !seen[k]) { seen[k] = 1; q.push(k); } } }
+  const cells = comp.map(c => ({ x: x0 + (c % nx) * st, y: y0 + ((c / nx) | 0) * st }));
+  // 舌の先＝口の真ん中（上下のくちびるの内側の間）からいちばん遠い所。横へ曲がった舌でも先を取れる
+  const mc = { x: (up.x + lo.x) / 2, y: (up.y + lo.y) / 2 }, dm = c => Math.hypot(c.x - mc.x, c.y - mc.y);
+  const far = Math.max(...cells.map(dm)), band = cells.filter(c => dm(c) >= far - 0.08);
+  const tipX = mean(band.map(c => c.x)), tipY = mean(band.map(c => c.y)), below = cells.filter(c => c.y > lo.y);
+  return {
+    found: true, n: cells.length, gap: r3(lo.y - up.y), prot: r3(far - Math.hypot(lipB.x - mc.x, lipB.y - mc.y)), far: r3(far),
+    off: r3(-(tipX - midX(tipY))),                                                  // ＋＝本人の右へ寄っている
+    cenOff: below.length ? r3(-(mean(below.map(c => c.x)) - mean(below.map(c => midX(c.y))))) : null,
+    tip: { x: tipX, y: tipY }, cells, midX, m168, inv,
+  };
 }
-$('bCopy').onclick = async () => { const t = $('endText'); let ok = false; try { await navigator.clipboard.writeText(t.value); ok = true; } catch (e) { t.select(); try { ok = document.execCommand('copy'); } catch (_) {} } $('bCopy').textContent = ok ? 'コピーしました' : '上の枠を長押しでコピー'; };
-$('bAgain').onclick = () => { $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepAlign(); };
+const TONGUE_SIDE = 0.06, TONGUE_GAP = 0.2;     // 舌の先が中心線から目の間の長さの 6% 以上ずれたら「寄っている」（仮）
+function analyzeTongue(frs) {
+  const res = frs.map(fr => ({ fr, o: tongueFrame(fr) })).filter(x => x.o && x.o.found);
+  // 舌を出すと口が開く。口が開いていないコマは使わない（閉じた口のくちびる・あごの赤みを舌と取り違えた）
+  const out = res.filter(x => x.o.prot > 0.12 && x.o.n > 30 && x.o.gap > TONGUE_GAP);
+  const bsT = med(frs.map(f => f.bs && f.bs.tongueOut).filter(Number.isFinite));
+  let T;
+  if (out.length < 2) T = { side: '判定できず', why: '舌が見つからない', frames: frs.length, found: out.length };
+  else {
+    const off = med(out.map(x => x.o.off)), prot = med(out.map(x => x.o.prot));
+    T = { side: off > TONGUE_SIDE ? '本人の右' : off < -TONGUE_SIDE ? '本人の左' : 'まっすぐ', off: r3(off), cenOff: r3(med(out.map(x => x.o.cenOff).filter(Number.isFinite))), prot: r3(prot), frames: frs.length, found: out.length, threshold: TONGUE_SIDE };
+  }
+  if (Number.isFinite(bsT)) T.bsTongueOut = r3(bsT);
+  RUN.tongue = T;
+  if (STAFF) {
+    const best = (out.length ? out : res).sort((a, b) => (b.o.prot || 0) - (a.o.prot || 0))[0] || (frs.length ? { fr: frs[frs.length >> 1], o: null } : null);
+    if (best) drawTongue(best.fr, best.o);
+    staff(`舌の向き（自動）：<b>${T.side}</b>${T.off != null ? `（舌の先のずれ ${f2(T.off)}・舌全体のずれ ${f2(T.cenOff)}・出た長さ ${f2(T.prot)}）` : ''}<br><span class="small">ずれは目の間の長さを1とした値。${TONGUE_SIDE} 以上で寄っているとする（仮）。舌が見えたコマ ${T.found}／${T.frames}。写真：ピンク＝舌とみなした所・黄色の点線＝顔の中心・水色の点＝舌の先</span>`);
+  }
+  recorded(stepTongue, finish, '終わる');
+}
+function drawTongue(fr, o) {
+  const c = $('photo'), w = fr.img.width, h = fr.img.height; c.width = w; c.height = h; const x = c.getContext('2d');
+  x.putImageData(fr.img, 0, 0);
+  const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h; tmp.getContext('2d').drawImage(c, 0, 0);
+  x.setTransform(-1, 0, 0, 1, w, 0); x.drawImage(tmp, 0, 0); x.setTransform(1, 0, 0, 1, 0, 0);   // 鏡の向き（本人が見ている向き）に直す
+  const m = p => ({ x: w - p.x, y: p.y });
+  if (o && o.found) {
+    x.fillStyle = 'rgba(255,0,200,.45)'; const s = Math.max(2, frame(fr.pts).d * 0.012);
+    for (const cl of o.cells) { const p = m(o.inv(cl)); x.fillRect(p.x - s / 2, p.y - s / 2, s, s); }
+    const a = m(o.inv({ x: o.midX(o.m168.y), y: o.m168.y })), b = m(o.inv({ x: o.midX(o.tip.y + 0.3), y: o.tip.y + 0.3 }));
+    x.strokeStyle = '#ffcc00'; x.lineWidth = Math.max(2, w / 220); x.setLineDash([12, 8]); x.beginPath(); x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); x.stroke(); x.setLineDash([]);
+    const t = m(o.inv(o.tip)); x.fillStyle = '#4fc3f7'; x.beginPath(); x.arc(t.x, t.y, Math.max(5, w / 90), 0, 7); x.fill();
+  }
+  x.fillStyle = '#fff'; x.font = `bold ${Math.round(w / 24)}px sans-serif`;
+  x.fillText('あなたの右 →', w * 0.64, h * 0.07); x.fillText('← あなたの左', w * 0.03, h * 0.07);
+  $('photoWrap').style.display = 'block';
+}
+
+// ════ まとめ：記録はこの端末に残す（内部用）。お客さんには判定を見せない
+function summaryLines() {
+  const L = [], e = RUN.eight, f = RUN.face, p = RUN.pursuit, s = RUN.saccade, x = RUN.fixation, c = RUN.conv, t = RUN.tongue;
+  if (e) L.push(`1. 首の8の字：点について線の上 最初${e.fwd.follow}%・反対${e.rev.follow}%／なぞれた範囲 右の輪 ${e.fwd.covR}%・${e.rev.covR}%／左の輪 ${e.fwd.covL}%・${e.rev.covL}%`);
+  if (f) L.push(`2. 表情：口角 右${f2(f.m0)}・左${f2(f.m1)}／眉 右${f2(f.b0)}・左${f2(f.b1)}／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%`);
+  if (RUN.calib) L.push(`3. 目の合わせ：横 ${RUN.calib.x?.nm}（見分け${RUN.calib.x?.sep}）・たて ${RUN.calib.y?.nm}（見分け${RUN.calib.y?.sep}）・近さ ${f2(RUN.eyeGate?.eye)}`);
+  if (p && p.dir) L.push(`4. 追従：${DIRS.map(k => `${DJ[k]}${p.dir[k] ? p.dir[k].q : '—'}`).join('・')}`);
+  if (s && s.dir) L.push(`5. サッカード（反応ms／速さ）：${DIRS.map(k => `${DJ[k]}${s.dir[k] ? `${s.dir[k].lat ?? '—'}/${f2(s.dir[k].pv)}` : '—'}`).join('・')}`);
+  if (x && x.ok) L.push(`6. 注視：揺れ よこ${f2(x.sdX)}・たて${f2(x.sdY)}／広さ${f2(x.bcea)}／外れ${x.intrusions}回`);
+  if (c) L.push(`7. 寄り目：右${f2(c.eyes[0].gain)}・左${f2(c.eyes[1].gain)}／先に逃げた目 ${c.first || 'なし'}`);
+  if (t) L.push(`8. 舌（自動）：${t.side}${t.off != null ? `（ずれ${f2(t.off)}）` : ''}`);
+  return L;
+}
+function saveRun() {
+  try { const a = JSON.parse(localStorage.getItem('fntcc_runs') || '[]'); a.push(RUN); while (a.length > 30) a.shift(); localStorage.setItem('fntcc_runs', JSON.stringify(a)); return a.length; } catch (e) { return 0; }
+}
+function finish() {
+  tok++; judge(); RUN.ended = new Date().toISOString(); RUN.delegate = delegate;
+  const n = saveRun();
+  $('sMain').classList.add('hide'); $('sEnd').classList.remove('hide');
+  if (STAFF) {
+    $('staffEnd').classList.remove('hide');
+    $('endList').innerHTML = summaryLines().map(s => `<div class="res">${s}</div>`).join('') + judgeHTML() + `<p class="small">この端末に残っている記録：${n}件</p>`;
+    $('endText').value = 'カメラでチェック（試し版）の記録\n' + summaryLines().join('\n') + '\n内部の判定（仮）：' + (RUN.judgeNote || (RUN.judge || []).map(j => j.k + '（' + j.why + '）').join('／') || '目立った差なし') + '\n\n' + JSON.stringify(RUN);
+  } else { $('staffEnd').classList.add('hide'); $('endList').innerHTML = '<div class="res">記録しました。結果は担当者からお伝えします。</div>'; }
+}
+async function copyText(t, b) { let ok = false; try { await navigator.clipboard.writeText(t); ok = true; } catch (e) { const a = $('endText'); a.value = t; a.select(); try { ok = document.execCommand('copy'); } catch (_) {} } b.textContent = ok ? 'コピーしました' : '上の枠を長押しでコピー'; }
+$('bCopy').onclick = () => copyText($('endText').value, $('bCopy'));
+$('bCopyAll').onclick = () => copyText(localStorage.getItem('fntcc_runs') || '[]', $('bCopyAll'));
+$('bAgain').onclick = () => { newRun(); CAL = null; $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepAlign(); };
 
 $('bStart').onclick = async () => {
   $('bStart').disabled = true;
@@ -484,7 +867,8 @@ $('bStart').onclick = async () => {
   stepAlign();
 };
 // 確かめ用（自動の試験から各段を直接呼ぶ）
-window.__steps = { analyzeEight, gPos, finish, stepAlign, stepEight, stepFace, stepEyes, stepConv, stepTongue, R };
+window.__steps = { analyzeEight, gPos, finish, stepAlign, stepEight, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue,
+  analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, get RUN() { return RUN; }, setCAL: c => { CAL = c; }, PT, DV };
 </script>
 </body>
 </html>
