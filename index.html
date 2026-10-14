@@ -368,7 +368,8 @@ function btn(label, fn, cls = '') { const b = document.createElement('button'); 
 const clearBtns = () => { $('btns').innerHTML = ''; $('result').innerHTML = ''; };
 function staff(html) { $('result').innerHTML = STAFF ? `<div class="res">${html}</div>` : ''; }
 const calWarn = () => CAL && !CAL.reliable ? '<br><span style="color:#ff8a65">※目の合わせが不安定なので、この数字は信用しない</span>' : '';
-async function countdown(n = 3, pre = '') { for (let i = n; i > 0; i--) { cue(pre ? `${pre}<br><span style="font-size:1.8em">${i}</span>` : String(i), pre ? '' : 'huge'); await sleep(800); } cue(''); }
+// やり直しで段が変わったら、前の段のカウントダウンを止める（新しい段の指示を上書きしない）
+async function countdown(n = 3, pre = '') { const my = tok; for (let i = n; i > 0 && my === tok; i--) { cue(pre ? `${pre}<br><span style="font-size:1.8em">${i}</span>` : String(i), pre ? '' : 'huge'); await sleep(800); } if (my === tok) cue(''); }
 async function record(ms, onTick) {
   const mine = rec = [], my = tok, t0 = performance.now();   // やり直しで段が変わったら、すぐ抜ける（次の段の記録を横取りしない）
   while (performance.now() - t0 < ms && my === tok) { if (onTick) onTick((performance.now() - t0) / ms); await sleep(16); }
@@ -629,6 +630,7 @@ async function runEight(practice) {
     if (!last) return fail(stepEight, '顔が見つかりませんでした');
     G.dir = 1; G.t0 = null;
     for (let i = 3; i > 0 && my === tok; i--) { cue(`鼻先を∞の真ん中に置いて<br>矢印の向きへ動き出します　<span style="font-size:1.5em">${i}</span>`, 'low'); await sleep(1000); }   // 矢印を隠さないよう、案内は下に出す
+    if (my !== tok) return;
     cue('');
     const seg = [];
     for (const [k, dir] of [['fwd', 1], ['rev', -1]]) {
@@ -1316,6 +1318,7 @@ async function stepTongue() {
     if (my !== tok) return;
     cue('舌を出して！', 'thin low'); await sleep(600);
     grab = { lastT: 0, fr: [] }; await sleep(2600); const g = grab; grab = null;
+    if (my !== tok || !g) return;   // やり直しを押した後の古い測定は捨てる
     cue(STAFF ? '' : '戻してOK'); analyzeTongue(g.fr);
   });
 }
