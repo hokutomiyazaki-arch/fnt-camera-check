@@ -961,7 +961,7 @@ function analyzeSaccSeries(fr, jumps) {
 const SMET = 0.2;
 function saccJudge(o) {
   const J = [], M = o && o.metria; if (!M) return J;
-  const rep = (g, key) => g && g[key] >= 2 && g[key] / Math.max(1, g.n) >= 0.4;
+  const rep = (g, key) => g && g.n >= 3 && g[key] >= 2 && g[key] / g.n >= 0.4;   // 読めた跳びが3回未満の向きは読まない（動かない動画で、ぶれを行き過ぎと数えた）
   const cnt = (g, key) => `${g[key]}／${g.n}回`;
   for (const [to, from, opp] of [['right', '右', '左'], ['left', '左', '右']]) {
     const g = M[to], h = to === 'right' ? M.left : M.right;
@@ -1266,7 +1266,7 @@ function mitate() {
   if (M.vest) L.push(`<b>${M.vest.side}の前庭器官</b> — ${M.vest.why}`);
   for (const s of pmS) L.push(`<b>${s}の PMRF</b> — ${M.pmrf.filter(p => p.side === s).map(p => p.why).join('・')}`);
   if (M.pain) L.push(`<b>痛み</b>：${M.pain}`);
-  const cb = J.filter(j => /小脳|半規管|前庭/.test(j.k)); if (cb.length) L.push(`<b>小脳・前庭</b>：${cb.map(j => j.k).join('・')}（首の検査・サッカードから）`);
+  const cb = J.filter(j => /小脳|半規管|前庭/.test(j.k)); if (cb.length) L.push(`<b>小脳・前庭</b>：${[...new Set(cb.map(j => j.k))].join('・')}（首の検査・サッカードから）`);
   RUN.mitate = { cortex: cx, cn: cn.map(({ n, side, why, read }) => ({ n, side, why, read })), vest: M.vest, pmrf: M.pmrf, pain: M.pain && M.pain.replace(/<\/?b>/g, ''), lines: L.map(x => x.replace(/<\/?b>/g, '')) };
   return L;
 }
