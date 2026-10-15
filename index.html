@@ -1109,21 +1109,36 @@ function analyzeSaccSeries(fr, jumps) {
     const cross = fr0 => { const th = p0 + fr0 * amp; for (let i = 1; i < w.length; i++) { if (w[i].t <= 0) continue; if (w[i].p >= th && w[i - 1].p < th) return w[i - 1].t + (th - w[i - 1].p) / (w[i].p - w[i - 1].p) * (w[i].t - w[i - 1].t); } return null; };
     const t10 = cross(0.1), t20 = cross(0.2), t90 = cross(0.9);
     let pv = 0; for (let i = 1; i < w.length; i++) if (w[i].t > 0 && w[i].t < 500 && w[i].t > w[i - 1].t) pv = Math.max(pv, (w[i].p - w[i - 1].p) / (w[i].t - w[i - 1].t) * L * 1000);
-    // 行き過ぎ（ハイパーメトリア）・届かない（ハイポメトリア）：最初の跳びがいったん止まった所を、最後に落ち着いた所（＝1）と比べる。
-    // 位置は3コマの中央値でならしてから見る（1コマだけのぶれを跳びと取り違えない）
+    // 行き過ぎ（ハイパーメトリア）・届かない（ハイポメトリア）（2026-10-15 作り直し）。
+    // 顔の点の読み取りは、0.05秒の跳びを 0.1〜0.2秒かけてじわじわ動いたように出す（作った目の動きで実測）。前は、そのじわじわの途中を「止まった所」と取り違えて、健康な跳び（届いた割合 0.85）でも半分を「届かない」と数え、1.25倍の行き過ぎは1回も拾えなかった。
+    // そこで「止まった所」は、速さが最初の跳びの 0.25 倍未満のコマが2つ続いた所とし、届かない／行き過ぎは、そのあと同じ向き／逆の向きへ「もう一度はっきり動いた」（修正の跳び）ときだけ数える
     const sp = w.map((o, i) => ({ t: o.t, p: med(w.slice(Math.max(0, i - 1), i + 2).map(q => q.p)) }));
-    const i0 = sp.findIndex(o => o.t > 0 && o.p - p0 >= 0.3 * amp); let prim = null;
-    if (i0 >= 0) for (let i = i0; i < sp.length - 1 && sp[i].t < 400; i++) if (Math.abs(sp[i + 1].p - sp[i].p) < 0.1 * amp) { prim = (sp[i].p + sp[i + 1].p) / 2; break; }
+    const vel = []; for (let i = 0; i + 1 < sp.length; i++) vel.push(sp[i + 1].t > sp[i].t ? (sp[i + 1].p - sp[i].p) / amp / (sp[i + 1].t - sp[i].t) * 1000 : 0);
+    const i0 = sp.findIndex(o => o.t > 0 && o.p - p0 >= 0.3 * amp); let prim = null, corr = 0, ip = -1;
+    if (i0 >= 1) {
+      let vmax = 0; for (let i = Math.max(0, i0 - 2); i < Math.min(vel.length, i0 + 3); i++) if (vel[i] > vmax) { vmax = vel[i]; ip = i; }
+      // 最初の跳びのあと、速さがいちばん落ちた所（段）から、もう一度はっきり速くなったら修正の跳び。前へ速くなれば届かない、後ろへ戻れば行き過ぎ
+      let vmin = Infinity, km = -1;
+      if (vmax > 0) for (let j = ip + 1; j < vel.length && sp[j].t < 650; j++) {
+        if (vel[j] < vmin && vel[j] >= 0) { vmin = vel[j]; km = j; }
+        if (km >= 0 && j > km && vel[j] - vmin >= REACC * vmax) { corr = 1; prim = sp[km + 1 < sp.length ? km + 1 : km].p; break; }
+        if (vel[j] <= -REACC * vmax) { corr = -1; break; }
+      }
+    }
+    if (prim == null) prim = med(sp.filter(o => o.t >= 150 && o.t < 450).map(o => o.p));
     const peak = Math.max(...sp.filter(o => o.t > 0 && o.t < 450).map(o => o.p));
     const pr = prim != null ? (prim - p0) / amp : null, ov = (peak - p0) / amp;
-    const metr = pr == null ? null : (ov >= 1 + SMET || pr >= 1 + SMET) ? 'hyper' : pr <= 1 - SMET ? 'hypo' : 'ok';
+    // 行き過ぎ：いちばん先まで行った所から、あとで跳ぶ幅の 0.1 以上戻った（読み取りがじわじわなので、戻りは速さではなく戻った量で見る）
+    const ipk = sp.findIndex(o => o.t > 0 && o.t < 450 && o.p === peak), back = ipk >= 0 ? (peak - Math.min(...sp.slice(ipk).filter(o => o.t < 750).map(o => o.p))) / amp : 0;
+    if (back >= SMET_HI) corr = -1;
+    const metr = pr == null ? null : (corr < 0 && back >= SMET_HI) ? 'hyper' : (corr > 0 && pr <= 1 - SMET) ? 'hypo' : 'ok';
     // 上下へ跳ぶ途中で、目が横へずれた量（跳ぶ幅を1とした割合。＋＝本人の右）。BDC「サッカード」：縦のサッカードで片側にずれる → ずれる側の小脳
     let side = null;
     if (Math.abs(dv.x) < 1e-6 && t10 != null) {
       const bx = med(base.map(o => o.x)), mv = w.filter(o => o.t >= t10 && o.t <= (t90 ?? t10 + 150) + 150).map(o => o.x - bx);
       if (mv.length >= 2) side = mv.map((_, i) => med(mv.slice(Math.max(0, i - 1), i + 2))).reduce((a, b) => Math.abs(b) > Math.abs(a) ? b : a, 0) / L;
     }
-    each.push({ dir, ok: t20 != null, lat: r0(t20), dur: t10 != null && t90 != null ? r0(t90 - t10) : null, pv: r3(pv), gain: r3(amp), prim: r3(pr), over: r3(ov), metr, side: r3(side) });
+    each.push({ dir, ok: t20 != null, lat: r0(t20), dur: t10 != null && t90 != null ? r0(t90 - t10) : null, pv: r3(pv), gain: r3(amp), prim: r3(pr), over: r3(ov), back: r3(back), metr, side: r3(side) });
   }
   const dir = {};
   for (const k of DIRS) {
@@ -1147,7 +1162,7 @@ function analyzeSaccSeries(fr, jumps) {
 // ・上下：跳ぶ途中で目が横へずれる → ずれる側の小脳（BDC「サッカード」）
 // ・上に行き過ぎ・下に届かない（半球中間帯＝栓状核。問題が出る目と同じ側）は、左右の目を分けて測っていないので読まない
 // くり返し（その向きの跳びの 2回以上・4割以上）出たときだけ読む
-const SMET = 0.2, SDIAG = 2, SLAT = 0.2;   // 斜めの組の差（回）・上下で横へずれる割合（跳ぶ幅の 20%）。どちらも仮
+const SMET = 0.25, SMET_HI = 0.1, REACC = 0.15, SDIAG = 3, SLAT = 0.2;   // 届かない＝止まった所が 0.75 以下＋同じ向きの修正の跳び・行き過ぎ＝1.1 以上＋戻りの跳び（読み取りがじわじわ動くので、行き過ぎは小さく見える）・止まった＝速さが最初の跳びの 0.25 倍未満が2コマ・修正の跳び＝0.4 倍以上   // 斜めの組の差（回）・上下で横へずれる割合（跳ぶ幅の 20%）。どちらも仮
 function saccJudge(o) {
   const J = [], M = o && o.metria; if (!M) return J;
   const add = (k, why) => { const h = J.find(j => j.k === k); if (h) h.why += '／' + why; else J.push({ k, src: 'サッカード', why }); };
@@ -1171,7 +1186,7 @@ function saccJudge(o) {
 function saccHTML(o) {
   const d = o.dir, cell = k => d[k] ? `${DJ[k]}：反応 <b>${d[k].lat ?? '—'}</b>ms・速さ <b>${f2(d[k].pv)}</b>・届いた <b>${f2(d[k].gain)}</b>` : `${DJ[k]} —`;
   const M = o.metria, mm = g => g ? `行き過ぎ <b>${g.hyper}</b>・届かない <b>${g.hypo}</b>／${g.n}回` : '—';
-  return `跳ぶ点への目の動き（向きごと）<br>${DIRS.map(cell).join('<br>')}<br>行き過ぎ・届かない：右へ ${mm(M?.right)}<br>　　　　　　　　　左へ ${mm(M?.left)}<br>上へ ${mm(M?.up)}・下へ ${mm(M?.down)}<br>斜め 右上・左下 ${mm(M?.diagR)}／左上・右下 ${mm(M?.diagL)}<br>上下へ跳ぶ途中の横ずれ（＋＝右・跳ぶ幅に対する割合）：${(M?.vside || []).map(f2).join('・') || '—'}<br><span class="small">最初の跳びが止まった所が、落ち着いた所の ${Math.round((1 + SMET) * 100)}% 以上＝行き過ぎ、${Math.round((1 - SMET) * 100)}% 以下＝届かない（仮）。</span><br><span class="small">速さ＝画面の半分の幅を1とした1秒あたりの動き。${o.fps}コマ/秒なので、速さは目安（カメラが遅いと低く出る）。反応にはカメラの遅れも入る。読めた跳び ${o.valid}／${o.total}</span>`;
+  return `跳ぶ点への目の動き（向きごと）<br>${DIRS.map(cell).join('<br>')}<br>行き過ぎ・届かない：右へ ${mm(M?.right)}<br>　　　　　　　　　左へ ${mm(M?.left)}<br>上へ ${mm(M?.up)}・下へ ${mm(M?.down)}<br>斜め 右上・左下 ${mm(M?.diagR)}／左上・右下 ${mm(M?.diagL)}<br>上下へ跳ぶ途中の横ずれ（＋＝右・跳ぶ幅に対する割合）：${(M?.vside || []).map(f2).join('・') || '—'}<br><span class="small">届かない＝最初の跳びが落ち着いた所の ${Math.round((1 - SMET) * 100)}% 以下で止まり、そこから同じ向きへ跳び直した。行き過ぎ＝いちばん先まで行ってから、跳ぶ幅の ${Math.round(SMET_HI * 100)}% 以上戻った（仮。2026-10-15 作った目の動きで、届いた割合 0.85〜1.0 は出ず、0.6〜0.7・1.25倍は出ることを確かめた）。</span><br><span class="small">速さ＝画面の半分の幅を1とした1秒あたりの動き。${o.fps}コマ/秒なので、速さは目安（カメラが遅いと低く出る）。反応にはカメラの遅れも入る。読めた跳び ${o.valid}／${o.total}</span>`;
 }
 
 // ════ 6. 注視（真ん中の点をじっと見つめる）：10秒
