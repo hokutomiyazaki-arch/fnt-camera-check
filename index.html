@@ -1203,7 +1203,7 @@ async function stepSacc() {
     RUN.saccade = out;
     if (!out.ok) return fail(stepSacc, '目の動きを読み取れませんでした');
     const SJ = saccJudge(out);   // 2026-10-15 夜：前は目の合わせが不安定だと読まずに「なし」と出していた（読めなかったのが正常に見えた）。読んで「参考」と添える
-    staff(saccHTML(out) + `<div class="res judge">内部の読み${CAL && !CAL.reliable ? '（目の合わせが不安定なので参考）' : ''}：${SJ.length ? SJ.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : out.metria.read < 6 ? `<br><b>行き過ぎ・届かないを読めた跳びが ${out.metria.read} 回だけで、判定できなかった</b>（正常という意味ではない）` : '<br>目立った行き過ぎ・届かないなし'}<br><span class="small">届かない（ハイポメトリア）→ 反対側の皮質（反対側の小脳の可能性も）・行き過ぎる（ハイパーメトリア）→ 同じ側の小脳・斜め 右上と左下＝右の小脳／左上と右下＝左の小脳・上下で横へずれる＝ずれる側の小脳（アドバンス教材 §7.1・BDC「サッカード」「小脳虫部＝室頂核」）。跳ぶまでの遅さ・速さの左右差は記録のみ</span></div>` + calWarn());
+    staff(saccHTML(out) + `<div class="res"><b>跳びごとの目の動き</b>（カメラが読んだまま）<br>${saccPlots(out)}<br><span class="small">横＝点が跳んでからの時間（右端 ${SWIN / 1000}秒）・たて＝目の位置（下の灰色＝跳ぶ前・上の灰色＝点の位置）。点線＝届かない（0.7）と行き過ぎ（1.1）の目安。白い点がカメラの1コマ。点が粗い・揺れている所は、カメラが目の速い動きを拾えていない所</span></div><div class="res judge">内部の読み${CAL && !CAL.reliable ? '（目の合わせが不安定なので参考）' : ''}：${SJ.length ? SJ.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : out.metria.read < 6 ? `<br><b>行き過ぎ・届かないを読めた跳びが ${out.metria.read} 回だけで、判定できなかった</b>（正常という意味ではない）` : '<br>目立った行き過ぎ・届かないなし'}<br><span class="small">届かない（ハイポメトリア）→ 反対側の皮質（反対側の小脳の可能性も）・行き過ぎる（ハイパーメトリア）→ 同じ側の小脳・斜め 右上と左下＝右の小脳／左上と右下＝左の小脳・上下で横へずれる＝ずれる側の小脳（アドバンス教材 §7.1・BDC「サッカード」「小脳虫部＝室頂核」）。跳ぶまでの遅さ・速さの左右差は記録のみ</span></div>` + calWarn());
     recorded(stepSacc, stepFix, '次へ（点を見つめる）');
   });
 }
@@ -1264,7 +1264,8 @@ function analyzeSaccSeries(fr, jumps) {
       const bx = med(base.map(o => o.x)), mv = w.filter(o => o.t >= t10 && o.t <= (t90 ?? t10 + 150) + 150).map(o => o.x - bx);
       if (mv.length >= 2) side = mv.map((_, i) => med(mv.slice(Math.max(0, i - 1), i + 2))).reduce((a, b) => Math.abs(b) > Math.abs(a) ? b : a, 0) / L;
     }
-    each.push({ dir, ok: t20 != null, lat: r0(t20), dur: t10 != null && t90 != null ? r0(t90 - t10) : null, pv: r3(pv), gain: r3(amp), prim: r3(pr), plat: r3(lv), sig: r3(sig), over: r3(ov), back: r3(back), metr, side: r3(side) });
+    const tr = w.filter(o => o.t <= SWIN).map(o => [Math.round(o.t), r3(o.p - p0)]);   // 線の図に使う：カメラが読んだ目の位置（跳ぶ幅＝1・跳ぶ前＝0）
+    each.push({ tr, dir, ok: t20 != null, lat: r0(t20), dur: t10 != null && t90 != null ? r0(t90 - t10) : null, pv: r3(pv), gain: r3(amp), prim: r3(pr), plat: r3(lv), sig: r3(sig), over: r3(ov), back: r3(back), metr, side: r3(side) });
   }
   const dir = {};
   for (const k of DIRS) {
@@ -1313,6 +1314,22 @@ function saccJudge(o) {
   if (V.length >= 3) { const nR = V.filter(v => v >= SLAT).length, nL = V.filter(v => v <= -SLAT).length;
     for (const [s, n, m] of [['右', nR, nL], ['左', nL, nR]]) if (n >= 2 && n / V.length >= 0.5 && m === 0) add(`${s}の小脳`, `上下へ跳ぶ途中で目が${s}へずれる（${n}／${V.length}回）＝ずれる側の小脳（BDC「サッカード」）`); }
   return J;
+}
+// 跳びごとの線の図（スタッフだけ）：横＝点が跳んでからの時間（0〜1.25秒）、たて＝目の位置（0＝跳ぶ前・1＝点の位置）。
+// 灰色の線＝点の位置、白い点＝カメラが読んだ目の位置。2026-10-16 宮崎さん「どんな測り方をしているのかをちゃんと教えてほしい」：何が見えていて、何が見えていないかを、そのまま見せる
+function saccPlots(o) {
+  const NM = { hyper: '行き過ぎ', hypo: '届かない', ok: 'ふつう' }, cs = document.createElement('canvas'), W = 170, H = 110; cs.width = W; cs.height = H; const x = cs.getContext('2d');
+  const X = t => 8 + (W - 16) * clamp(t, -200, SWIN) / SWIN, Y = p => H - 14 - (H - 28) * (clamp(p, -0.3, 1.7) + 0.3) / 2;
+  return o.each.map(e => {
+    x.fillStyle = '#111'; x.fillRect(0, 0, W, H);
+    x.strokeStyle = '#555'; x.lineWidth = 1; x.beginPath(); x.moveTo(X(-200), Y(0)); x.lineTo(X(0), Y(0)); x.lineTo(X(0), Y(1)); x.lineTo(X(SWIN), Y(1)); x.stroke();
+    x.strokeStyle = '#333'; x.setLineDash([3, 3]); for (const v of [0.7, 1.1]) { x.beginPath(); x.moveTo(X(0), Y(v)); x.lineTo(X(SWIN), Y(v)); x.stroke(); } x.setLineDash([]);
+    const tr = e.tr || []; x.strokeStyle = '#4fc3f7'; x.lineWidth = 1.5; x.beginPath(); tr.forEach(([t, p], i) => i ? x.lineTo(X(t), Y(p)) : x.moveTo(X(t), Y(p))); x.stroke();
+    x.fillStyle = '#fff'; for (const [t, p] of tr) { x.beginPath(); x.arc(X(t), Y(p), 2, 0, 7); x.fill(); }
+    x.fillStyle = e.metr === 'hyper' || e.metr === 'hypo' ? '#ffcc00' : '#ccc'; x.font = 'bold 12px sans-serif';
+    x.fillText(`${DJ[e.dir] || e.dir} ${e.ok ? (e.metr ? NM[e.metr] : '読まず（揺れ大）') : e.why || ''}`, 6, 13);
+    return `<img src="${cs.toDataURL()}" width="${W}" height="${H}" style="margin:2px;border-radius:4px">`;
+  }).join('');
 }
 function saccHTML(o) {
   const d = o.dir, cell = k => d[k] ? `${DJ[k]}：反応 <b>${d[k].lat ?? '—'}</b>ms・速さ <b>${f2(d[k].pv)}</b>・届いた <b>${f2(d[k].gain)}</b>` : `${DJ[k]} —`;
