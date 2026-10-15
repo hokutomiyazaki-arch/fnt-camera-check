@@ -60,6 +60,10 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 #bottom:not(:has(*:not(:empty))){background:none}
 #msg{font-size:12.5px;color:#aab;text-align:center;min-height:0}
 #photoWrap{position:absolute;inset:0;display:none;z-index:4;background:#000}
+#svv{position:fixed;inset:0;display:none;z-index:30;background:#000}
+#svv canvas{position:absolute;inset:0;width:100%;height:100%}
+#svvMsg{position:absolute;left:50%;top:18%;transform:translateX(-50%);width:min(92vw,520px);text-align:center;font-weight:800;font-size:clamp(22px,6vw,30px);line-height:1.45;color:#ddd}
+#svvMsg small{display:block;font-size:15px;font-weight:600;color:#999;margin-top:6px}
 #okn{position:absolute;inset:0;display:none;z-index:4;background:repeating-linear-gradient(90deg,#f4f4f4 0 50%,#111 50% 100%)}
 #photo{width:100%;height:100%;object-fit:contain}
 #camFix{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:30;width:auto;background:#e8590c}
@@ -108,6 +112,7 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
   <button id="bRedo" style="display:none">↺ 最初からやり直し</button>
   <div id="near"></div>
   <div id="bottom"><div id="result"></div><div id="btns"></div><div id="msg"></div></div>
+  <div id="svv"><canvas id="svvC"></canvas><div id="svvMsg"></div></div>
 </div>
 
 <script type="module">
@@ -316,11 +321,11 @@ function brightness() {
 }
 
 // ── 画面の部品
-const NSTEP = 15;
+const NSTEP = 16;
 $('steps').innerHTML = '<span></span>'.repeat(NSTEP);
 let tok = 0, CUR = null;
 // テストの最中でも、いまのテストを最初からやり直せる（2026-10-14 宮崎さん）
-const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首の8の字': stepEight, '3. 首の左右・上下': stepNeck, '4. 表情の左右差': stepFace, '5. 目の準備（測る前の合わせ）': stepEyePrep, '6. 点を目で追う': stepPursuit, '7. 跳ぶ点を見る': stepSacc, '8. 点を見つめる': stepFix, '9. 流れる縞を見る': stepOkn, '10. 頭を動かして点を見つめる': stepVor, '11. 寄り目': stepConv, '12. 舌の出方': stepTongue, '13. 口の開け方': stepJaw });                       // 段を移ったら増える（前の段の待ちを止めるため）
+const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首の8の字': stepEight, '3. 首の左右・上下': stepNeck, '4. 表情の左右差': stepFace, '5. 目の準備（測る前の合わせ）': stepEyePrep, '6. 点を目で追う': stepPursuit, '7. 跳ぶ点を見る': stepSacc, '8. 点を見つめる': stepFix, '9. 流れる縞を見る': stepOkn, '10. 頭を動かして点を見つめる': stepVor, '11. 寄り目': stepConv, '12. 舌の出方': stepTongue, '13. 口の開け方': stepJaw, '14. 線をまっすぐにする': stepSvv });                       // 段を移ったら増える（前の段の待ちを止めるため）
 function show(step, title) {
   tok++;
   [...$('steps').children].forEach((e, i) => e.classList.toggle('on', i <= step));
@@ -459,11 +464,14 @@ async function motionStart() {   // iPhone は押したボタンの中で許可�
   addEventListener('devicemotion', e => {
     const g = e.accelerationIncludingGravity; if (!g || !Number.isFinite(g.x) || !Number.isFinite(g.y)) return;
     const land = Math.abs((screen.orientation && screen.orientation.angle) || 0) % 180 === 90, a = Math.abs(land ? g.y : g.x), b = Math.abs(land ? g.x : g.y);
-    MOT = { t: performance.now(), deg: a + b < 4 ? null : Math.atan2(a, b) * 180 / Math.PI };   // 画面を立てたときの左右の傾き（向きは見ない）
+    // roll：向きつきの傾き（＋＝本人から見て時計回り＝画面の上が右へ）。縦持ちのときだけ。iPhone と Android は重力の符号が逆なので、縦の成分の符号でそろえる
+    const sg = g.y >= 0 ? 1 : -1, roll = land || Math.abs(g.y) < 3 ? null : Math.atan2(-g.x * sg, g.y * sg) * 180 / Math.PI;
+    MOT = { t: performance.now(), deg: a + b < 4 ? null : Math.atan2(a, b) * 180 / Math.PI, roll };   // deg：画面を立てたときの左右の傾き（向きは見ない）
   });
   motOn = true; return true;
 }
 const phoneDeg = () => MOT && MOT.deg != null && performance.now() - MOT.t < 1000 ? MOT.deg : null;
+const phoneRoll = () => MOT && MOT.roll != null && performance.now() - MOT.t < 1000 ? MOT.roll : null;
 const r1 = v => Number.isFinite(v) ? Math.round(v * 10) / 10 : null;
 async function stepTilt() {
   show(1, '1. ふだんの首の傾き');
@@ -1084,6 +1092,9 @@ function judge() {
   const ff = fixFlag(RUN.fixation); if (ff) J.push({ k: '小脳虫部（両側）', why: ff });
   const oj = RUN.okn && RUN.okn.judge; if (oj && oj.side) J.push({ k: `${oj.side}の皮質`, src: 'OKN', why: oj.why });
   const tg = RUN.tongue; if (tg && tg.unstable) J.push({ k: '小脳虫部・延髄（舌下神経）', src: '舌', why: `舌を出してキープすると安定しない（舌の先の揺れ 横${f2(tg.wobble.side)}・前後${f2(tg.wobble.prot)}）。BDC「CN12 舌下神経」：舌が小刻みに動く＝舌下神経・小脳虫部` });
+  const sv = RUN.svv;   // 線をまっすぐにする：傾いた側の耳石（Z-Health Next Evolution）
+  if (sv && sv.V && sv.V.side) J.push({ k: `${sv.V.side}の耳石（SVV）`, src: 'SVV', side: sv.V.side, why: `線をまっすぐ縦にすると上の端が${sv.V.side}へ平均 ${Math.abs(sv.V.mean).toFixed(1)}°（${SVV_TH}°以上で異常。球形嚢寄り）` });
+  if (sv && sv.H && sv.H.side) J.push({ k: `${sv.H.side}の耳石（SVH）`, src: 'SVH', side: sv.H.side, why: `線をまっすぐ横にすると${sv.H.side}の端が下がる 平均 ${Math.abs(sv.H.mean).toFixed(1)}°（${SVH_TH}°以上で異常。卵形嚢寄り）` });
   RUN.judge = J;
 }
 function judgeHTML() {
@@ -1735,7 +1746,7 @@ function analyzeJaw(reps, img) {
   if (STAFF && img) drawJaw(img);
   staff(`口を開けたときの下あごのずれ（＋＝本人の右・目じりの間の長さ＝1）：${R.map((r, i) => `${i + 1}回目 ${r.ok ? `<b>${f2(r.dev)}</b>（途中でいちばん ${f2(r.path)}・開いた量 ${f2(r.gain)}）` : r.why}`).join('<br>')}
   <div class="res judge">内部の読み（仮）：${side ? `<b>${side}の三叉神経（運動核・橋）</b>の働き低下の可能性 — 口を開けると下あごが${side}へずれる（${f2(Math.abs(RUN.jaw.dev))}）` : '目立ったずれなし'}<br><span class="small">BDC「CN5 三叉神経運動核」：問題のある方向に顎がずれる。橋の神経核なので、ほかの橋の働き（顔面神経など）と一緒に見る。顎関節の構造の問題でもずれるので一概には言えない。しきい値 ${JAW_TH}（仮）。写真：黄色の点線＝顔の中心・水色の点＝あごの先</span></div>`);
-  recorded(stepJaw, stepAsk, '次へ（最後の質問）');
+  recorded(stepJaw, stepSvv, '次へ（線をまっすぐにする）');
 }
 function drawJaw({ img, pts }) {
   const c = $('photo'), w = img.width, h = img.height; c.width = w; c.height = h; const x = c.getContext('2d');
@@ -1750,6 +1761,86 @@ function drawJaw({ img, pts }) {
   $('photoWrap').style.display = 'block';
 }
 
+// ════ 14. 線をまっすぐにする（SVV＝主観的垂直・SVH＝主観的水平）（2026-10-15 宮崎さん）
+// 暗い画面に赤い線を1本、傾けて出す。本人はスマホを傾けて、線を「まっすぐ縦」（SVV）・「まっすぐ横」（SVH）に合わせて止める。
+// 線は画面に対して固定（バケツの内側の線と同じ）。止まったときの線の、重力に対する傾き＝画面上の線の角度＋スマホの傾き（加速度で重力の向きを取る）。
+// 縦4回・横4回。始めは右・左へ交互に 12〜20° 傾けておく（Carrick CNS05-22：半分ずつ反対から始める。Z-Health Next Evolution：傾けて渡し、右からと左からの両方）。
+// 読み（Z-Health 9S Next Evolution マニュアル p.27–28・スライド p.97）：平均のずれが SVV 2.5° 以上・SVH 1.5° 以上で異常。
+//   SVV は線の上の端が、SVH は下がった端が、働きの落ちた耳石の側を向く。どちらも「時計回り（＋）＝本人の右」。
+//   SVV は球形嚢寄り・SVH は卵形嚢寄り（Next Evolution 動画 Module 3）。ただし本（Vestibular Rehabilitation 印刷頁189）は「どちらかは特定できない」。
+//   中枢なら：延髄・橋（上部の橋より下）は同じ側、小脳・中脳より上は反対側へ傾くことが多い（Vestibular Rehabilitation 印刷頁190・Carrick CNS10 Handbook p.72）。
+// 本来は暗室かバケツで、周りの縦横の手がかりを消す。スマホの画面だけでは消し切れない（Carrick CNS09-14：アプリだけでは周りが見える）ので、仮の代わり。部屋を暗くし、画面を顔に近づけてもらう
+const SVV_TH = 2.5, SVH_TH = 1.5, SVV_N = 4, SVV_HOLD = 1200, SVV_STILL = 1.0, SVV_MOVE = 4, SVV_MAX = 20000;   // 度・回数・止まったとみる長さ(ms)と揺れの幅(度)・動かした量(度)・1回の上限(ms)
+function svvShow(on) { $('svv').style.display = on ? 'block' : 'none'; const bd = document.querySelector('.badge'); if (bd) bd.style.visibility = on ? 'hidden' : '';   // 札の文字も縦横の手がかりになるので隠す
+  if (!on) svvMsg(''); }
+function svvMsg(html) { $('svvMsg').innerHTML = html; if (html) say(html); }
+function svvLine(kind, deg) {   // deg：画面に対する線の傾き（＋＝時計回り）
+  const c = $('svvC'), w = c.clientWidth, h = c.clientHeight, x = c.getContext('2d'), k = devicePixelRatio || 1;
+  c.width = w * k; c.height = h * k; x.setTransform(k, 0, 0, k, 0, 0); x.clearRect(0, 0, w, h);
+  document.body.dataset.svv = kind ? kind + ' ' + deg : '';   // 確かめ用（自動の試験で、いま出ている線の向きを読む）
+  if (!kind) return;
+  const L = Math.min(w, h) * 0.36;
+  x.translate(w / 2, h / 2); x.rotate(deg * Math.PI / 180);
+  x.strokeStyle = '#d32020'; x.lineWidth = 5; x.lineCap = 'round'; x.beginPath();
+  if (kind === 'V') { x.moveTo(0, -L); x.lineTo(0, L); } else { x.moveTo(-L, 0); x.lineTo(L, 0); }
+  x.stroke();
+}
+async function svvTrial(p, my) {
+  // 線の傾きは「いまのスマホの傾き」を差し引いて決める＝重力に対して毎回 p.start だけ傾いて出る（前の回でスマホが傾いたままでも、毎回 12〜20° 動かして合わせる）
+  const t0 = performance.now(), r0 = phoneRoll() ?? 0, th = p.start - r0, S = [];
+  svvLine(p.kind, th);
+  let moved = false;
+  while (my === tok && performance.now() - t0 < SVV_MAX) {
+    const now = performance.now(), r = phoneRoll();
+    if (r != null) {
+      const hd = last ? -frame(last).ang * 180 / Math.PI : null;   // 画面に対する頭の傾き（＋＝本人の右）。暗いと取れない
+      S.push({ t: now, r, hd }); while (S.length && now - S[0].t > 3000) S.shift();
+      if (Math.abs(r - r0) >= SVV_MOVE) moved = true;
+      const w = S.filter(o => now - o.t <= SVV_HOLD), rr = w.map(o => o.r);
+      if (moved && now - t0 > 1500 && w.length >= 8 && Math.max(...rr) - Math.min(...rr) <= SVV_STILL) break;
+    }
+    await sleep(30);
+  }
+  const now = performance.now(), w = S.filter(o => now - o.t <= SVV_HOLD), roll = med(w.map(o => o.r)), hds = w.map(o => o.hd).filter(Number.isFinite);
+  if (!Number.isFinite(roll)) return { kind: p.kind, ok: false, start: r1(p.start) };
+  return { kind: p.kind, ok: true, start: r1(p.start), err: r1(th + roll), roll: r1(roll), head: hds.length ? r1(med(hds) + roll) : null, timeout: !moved || now - t0 >= SVV_MAX, ms: Math.round(now - t0) };   // head：重力に対する頭の傾き
+}
+async function stepSvv() {
+  show(14, '14. 線をまっすぐにする');
+  cue('スマホを<b>手に持って</b><br>顔の前に<small>部屋を暗くできれば暗く</small>');
+  btn('始める', async () => {
+    const my = tok; clearBtns();
+    await motionStart();
+    const w0 = performance.now(); while (my === tok && phoneRoll() == null && performance.now() - w0 < 2500) await sleep(100);
+    if (my !== tok) return;
+    if (phoneRoll() == null) { RUN.svv = { ok: false, why: 'この端末ではスマホの傾きを測れない' }; cue('この端末では<br>測れませんでした'); btn('次へ（最後の質問）', stepAsk); return; }
+    const plan = [];   // 縦4・横4。始めの傾きは右・左を交互に（最初の向きはばらばら）、大きさは 12〜20° でばらばら
+    for (const kind of ['V', 'H']) { const s0 = Math.random() < 0.5 ? 1 : -1; for (let i = 0; i < SVV_N; i++) plan.push({ kind, start: (i % 2 ? -s0 : s0) * (12 + Math.random() * 8) }); }
+    cue(''); svvShow(true); const T = [];
+    for (let i = 0; i < plan.length; i++) {
+      const p = plan[i];
+      if (i === 0 || plan[i - 1].kind !== p.kind) { svvLine(null); svvMsg(p.kind === 'V' ? '線を<b>まっすぐ縦</b>に<small>スマホを傾けて合わせ、止める</small>' : '次は<b>まっすぐ横</b>に<small>スマホを傾けて合わせ、止める</small>'); await sleep(3000); if (my !== tok) return svvShow(false); svvMsg(''); }
+      T.push(await svvTrial(p, my)); if (my !== tok) return svvShow(false);
+      beep(660, 80); svvLine(null); await sleep(800);
+    }
+    svvShow(false); analyzeSvv(T);
+  });
+}
+function analyzeSvv(T) {
+  const one = (kind, th) => { const a = T.filter(t => t.kind === kind && t.ok && !t.timeout); if (a.length < 2) return { ok: false, n: a.length };
+    const e = a.map(t => t.err), m = mean(e), side = Math.abs(m) >= th ? (m > 0 ? '右' : '左') : null, hd = a.map(t => t.head).filter(Number.isFinite);
+    return { ok: true, n: a.length, mean: r1(m), sd: r1(sd(e)), each: e, side, th, head: hd.length ? r1(med(hd)) : null }; };
+  const V = one('V', SVV_TH), H = one('H', SVH_TH);
+  RUN.svv = { ok: V.ok || H.ok, V, H, trials: T };
+  if (!V.ok && !H.ok) return fail(stepSvv, '線を合わせたところを読み取れませんでした');
+  const row = (o, nm, end) => !o.ok ? `${nm}：読み取れず` : `${nm}：平均 <b>${o.mean > 0 ? '右' : '左'}へ ${Math.abs(o.mean).toFixed(1)}°</b>（${o.each.map(e => (e > 0 ? '+' : '') + e.toFixed(1)).join('・')}・ばらつき ±${o.sd}°）${end}${o.head != null && Math.abs(o.head) >= 5 ? `<br><span style="color:#ff8a65">※頭が${o.head > 0 ? '右' : '左'}へ ${Math.abs(o.head)}° 傾いていた（頭の傾きで線の感じ方も変わる）</span>` : ''}`;
+  const rd = (o, nm, organ, end) => o.ok && o.side ? `<br><b>${o.side}の耳石（${organ}寄り）</b>の働き低下の可能性 — ${nm}で${end}が${o.side}へ平均 ${Math.abs(o.mean).toFixed(1)}°（${o.th}°以上で異常）` : '';
+  const jv = rd(V, '縦（SVV）', '球形嚢', '線の上の端'), jh = rd(H, '横（SVH）', '卵形嚢', '下がった端');
+  staff(`${row(V, '縦（SVV）', '（＋＝上の端が右）')}<br>${row(H, '横（SVH）', '（＋＝右の端が下）')}
+  <div class="res judge">内部の読み（仮）：${jv || jh ? jv + jh : '<br>縦・横とも正常の範囲'}<br><span class="small">Z-Health 9S Next Evolution（マニュアル p.27–28・スライド p.97）：SVV は 2.5°以上・SVH は 1.5°以上で異常。SVV は線の上の端が、SVH は下がった端が、働きの落ちた耳石の側を向く。SVV＝球形嚢寄り・SVH＝卵形嚢寄り（同 動画 Module 3）。延髄・橋なら同じ側、小脳・中脳より上なら反対側へ傾くことが多い（Vestibular Rehabilitation 印刷頁190・Carrick CNS10 Handbook p.72）。本来は暗室かバケツで周りを隠して測る。スマホだけでは周りの縦横が見えるので、数字は仮</span></div>`);
+  recorded(stepSvv, stepAsk, '次へ（最後の質問）');
+}
+
 // ════ 13. 最後の質問：痛みの出やすい側・いまの痛み・聞こえ（2026-10-14 宮崎さん）
 const QS = [
   { k: 'painSide', q: '痛みが出ることが多いのは<br>体のどちら側ですか？', a: ['右半身', '左半身', 'どちらも同じくらい', '痛みはあまり出ない'] },
@@ -1757,7 +1848,7 @@ const QS = [
   { k: 'hearing', q: '左右の耳で<br>聞こえにくい側はありますか？', a: ['右が聞こえにくい', '左が聞こえにくい', 'どちらも同じ'] },
 ];
 async function stepAsk() {
-  const my = show(14, '14. 最後にいくつか質問');
+  const my = show(15, '15. 最後にいくつか質問');
   RUN.ask = {};
   for (const Q of QS) {
     const a = await new Promise(res => { $('btns').innerHTML = ''; cue(Q.q); for (const t of Q.a) btn(t, () => res(t)); });
@@ -1823,6 +1914,12 @@ function mitate() {
     if (v.cb !== '左右の小脳') for (const j of J) if (!j.canal && j.k.startsWith(v.cb)) plus.push(`${j.k}（${j.src || '眼球運動'}：${j.why.replace(/（.*$/, '')}）`);
     M.vor.push({ canal: v.canal, cb: v.cb, plus });
     L.push(`<b>${v.canal}</b>（→ ${v.cb}）— VOR：${v.why}${plus.length ? `<br>　加算材料（8の字・首の検査の同じ半規管・同じ側の小脳 ${plus.length}件）：${plus.join('・')} → ${v.canal}の働き低下をより強く疑う` : '<br>　（8の字・首の検査・小脳にまだ同じ所見なし。VOR だけで決めない）'}`); }
+  // 線をまっすぐにする（SVV・SVH）＝傾いた側の耳石。首の傾き（卵形嚢）と同じ側なら重なる。反対側の小脳の所見があれば「小脳の問題でも反対側へ傾く」ことを添える（Vestibular Rehabilitation 印刷頁190）
+  M.oto = [];
+  for (const s of ['右', '左']) { const js = J.filter(j => (j.src === 'SVV' || j.src === 'SVH') && j.side === s); if (!js.length) continue;
+    const o = s === '右' ? '左' : '右', cb = [...new Set(J.filter(j => j.k.startsWith(`${o}の小脳`)).map(j => j.k))], tl = M.vest && M.vest.side === s;
+    M.oto.push({ side: s, from: js.map(j => j.src), tilt: tl, cbOpp: cb });
+    L.push(`<b>${s}の耳石</b> — ${js.map(j => j.why).join('／')}${tl ? `<br>　首の傾き（${s}の卵形嚢）と同じ側 → ${s}の耳石の働き低下をより強く疑う` : ''}${cb.length ? `<br>　※${o}の小脳の所見もある（${cb.join('・')}）。小脳の問題でも反対側へ傾くので、耳石だけと決めない` : ''}`); }
   const nz = RUN.eight && RUN.eight.nausea; if (nz && nz !== 'いいえ') { M.nausea = nz; L.push(`<b>前庭</b>の問題を疑う — 首の8の字で気持ち悪さ「${nz}」`); }
   for (const s of pmS) L.push(`<b>${s}の PMRF</b> — ${M.pmrf.filter(p => p.side === s).map(p => p.why).join('・')}`);
   if (M.pain) L.push(`<b>痛み</b>：${M.pain}`);
@@ -1844,16 +1941,18 @@ function mitate() {
   for (const s of pmS) for (const p of M.pmrf.filter(p => p.side === s)) add(`${s}の PMRF`, p.why);
   for (const j of J) if (j.canal) add(j.canal, j.src);   // 同じ半規管が 8の字・首の検査・VOR で何回出たか
   for (const v of M.vor) if (v.cb !== '左右の小脳') for (const j of J) if (!j.canal && j.k.startsWith(v.cb)) add(v.canal, `${j.k}（${j.src || '眼球運動'}）`);
-  if (M.vest) { add(`${M.vest.side}の卵形嚢`, '首の傾き'); for (const x of M.vest.plus) add(`${M.vest.side}の卵形嚢`, x); }
+  const oto = s => `${s}の耳石（卵形嚢・球形嚢）`;   // 首の傾きと線の検査（SVV・SVH）を同じ耳石に重ねる
+  if (M.vest) { add(oto(M.vest.side), '首の傾き'); for (const x of M.vest.plus) add(oto(M.vest.side), x); }
+  for (const j of J) if (j.src === 'SVV' || j.src === 'SVH') add(oto(j.side), j.src === 'SVV' ? '線を縦に（SVV）' : '線を横に（SVH）');
   const OL = Object.entries(O).sort((a, b) => b[1].length - a[1].length);
   M.overlap = OL.map(([k, v]) => ({ k, n: v.length, from: v }));
   if (OL.length) L.unshift(`<b>重なり</b>（多い順）：${OL.map(([k, v]) => `${k} ${v.length}件`).join('／')}`);
-  RUN.mitate = { cortex: cx, cn: cn.map(({ n, side, why, read }) => ({ n, side, why, read })), vest: M.vest, vor: M.vor, nausea: M.nausea || null, midbrain: !!mb, overlap: M.overlap, pmrf: M.pmrf, pain: M.pain && M.pain.replace(/<\/?b>/g, ''), lines: L.map(x => x.replace(/<\/?b>/g, '')) };
+  RUN.mitate = { oto: M.oto, cortex: cx, cn: cn.map(({ n, side, why, read }) => ({ n, side, why, read })), vest: M.vest, vor: M.vor, nausea: M.nausea || null, midbrain: !!mb, overlap: M.overlap, pmrf: M.pmrf, pain: M.pain && M.pain.replace(/<\/?b>/g, ''), lines: L.map(x => x.replace(/<\/?b>/g, '')) };
   return L;
 }
 function mitateHTML() {
   const L = mitate();
-  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。首の傾き＝傾いた側の卵形嚢で、同じ側の PMRF・小脳の所見は加算材料。頭を動かして点を見つめる（VOR）で、動いた瞬間に目が反対へ動く反射が遅れる・点へ跳んで戻る向き＝その向きの半規管→同じ側の小脳。何回かやってくり返し出た向きを、8の字・首の検査の同じ半規管とサッカードの同じ側の小脳と合わせて見る。動眼神経＝中脳、寄り目と上下の追従が両方弱い＝中脳。三叉神経（口の開け方）＝橋（BDC）。8の字で気持ち悪い＝前庭。見つめる検査の揺れ＝小脳虫部（両側）で、ほかの小脳・前庭の所見は加算材料。重なりが多い所ほど問題がありそうと読む</span></div>`;
+  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。首の傾き＝傾いた側の卵形嚢で、同じ側の PMRF・小脳の所見は加算材料。線をまっすぐにする（SVV 2.5°・SVH 1.5°以上）＝傾いた側の耳石（Z-Health Next Evolution）で、首の傾きと同じ側なら重ねる。頭を動かして点を見つめる（VOR）で、動いた瞬間に目が反対へ動く反射が遅れる・点へ跳んで戻る向き＝その向きの半規管→同じ側の小脳。何回かやってくり返し出た向きを、8の字・首の検査の同じ半規管とサッカードの同じ側の小脳と合わせて見る。動眼神経＝中脳、寄り目と上下の追従が両方弱い＝中脳。三叉神経（口の開け方）＝橋（BDC）。8の字で気持ち悪い＝前庭。見つめる検査の揺れ＝小脳虫部（両側）で、ほかの小脳・前庭の所見は加算材料。重なりが多い所ほど問題がありそうと読む</span></div>`;
 }
 
 // ════ まとめ：記録はこの端末に残す（内部用）。お客さんには判定を見せない
@@ -1874,7 +1973,9 @@ function summaryLines() {
   if (t) L.push(`12. 舌（自動）：${t.side}${t.off != null ? `（ずれ${f2(t.off)}）` : ''}／キープ中の揺れ ${t.wobble ? `横${f2(t.wobble.side)}・前後${f2(t.wobble.prot)} → ${t.unstable ? '安定しない' : '安定'}` : '—'}`);
   const jw = RUN.jaw;
   if (jw) L.push(`13. 口の開け方：下あごのずれ ${jw.reps.map(r => r.ok ? f2(r.dev) : '—').join('・')}（＋＝右）→ ${jw.side ? jw.side + 'へずれる' : 'ずれなし'}`);
-  if (RUN.ask) L.push(`14. 質問：痛みが出やすい側 ${RUN.ask.painSide || '—'}／いまの痛み ${RUN.ask.painNow || '—'}／聞こえにくい耳 ${RUN.ask.hearing || '—'}`);
+  const sv = RUN.svv; if (sv && sv.V) { const one = (o, nm) => o && o.ok ? `${nm} 平均${o.mean > 0 ? '右' : '左'}へ${Math.abs(o.mean).toFixed(1)}°（${o.each.map(e => (e > 0 ? '+' : '') + e.toFixed(1)).join('・')}）` : `${nm} —`;
+    L.push(`14. 線をまっすぐにする：${one(sv.V, '縦（SVV）')}／${one(sv.H, '横（SVH）')}（＋＝時計回り＝本人の右）`); }
+  if (RUN.ask) L.push(`15. 質問：痛みが出やすい側 ${RUN.ask.painSide || '—'}／いまの痛み ${RUN.ask.painNow || '—'}／聞こえにくい耳 ${RUN.ask.hearing || '—'}`);
   return L;
 }
 function saveRun() {   // 前の版で撮ったのどの奥の写真は重いので消す
@@ -1905,7 +2006,7 @@ $('bStart').onclick = async () => {
   stepAlign();
 };
 // 確かめ用（自動の試験から各段を直接呼ぶ）
-window.__steps = { analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
+window.__steps = { analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
   analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, mitate, mitateHTML, saccJudge, analyzeTilt, analyzeFace, analyzePupil, pupilOne, wrinkleCount, stepTilt, stepPupil, stepAsk, get RUN() { return RUN; }, setCAL: c => { CAL = c; }, PT, DV };
 </script>
 </body>
