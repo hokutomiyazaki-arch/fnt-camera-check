@@ -1119,9 +1119,18 @@ function analyzePursuitSeries(segs) {
     const a = bins[k]; if (!a || a.length < 4) continue;
     const sm = a.filter(o => !o.sac), gain = sm.length ? med(sm.map(o => o.along)) : 0, sacc = a.filter(o => o.sac).length / a.length;
     const err = med(a.map(o => o.err));   // 点からの位置のずれ（点が動く幅＝1）。前は点数に入れておらず、点から離れたまま動いても点数が下がらなかった（2026-10-15 夜）
-    dir[k] = { n: a.length, gain: r3(gain), sacc: r3(sacc), err: r3(err), q: Math.round(100 * clamp(gain, 0, 1) * (1 - Math.min(1, 2 * sacc)) * clamp(1 - (err - PUR_ERR) / 0.5, 0, 1)) };
+    // 2026-10-16（宮崎さん「跳びをより優先的に問題として認識している」）：前は跳びの割合を2倍して引いていて、跳びが 25% あるだけで点数が半分になり、点から離れて動くずれより跳びが判定を決めていた。
+    // 跳びは1倍で引く。どれが点数を下げたかを、判定の文に出す（pursuitWhy）
+    dir[k] = { n: a.length, gain: r3(gain), sacc: r3(sacc), err: r3(err), q: Math.round(100 * clamp(gain, 0, 1) * (1 - Math.min(1, sacc)) * clamp(1 - (err - PUR_ERR) / 0.5, 0, 1)) };
   }
   return { ok: Object.keys(dir).length >= 4, dir, blinkFrac: r3(total ? 1 - used / total : 1) };
+}
+// 点数を下げたもの：ずれ（点から離れて動く）・遅い（目の速さが点に届かない）・跳び（追いつくために跳ぶ）。下げた量の大きい順
+function pursuitWhy(dir, ks) {
+  const a = ks.map(k => dir[k]).filter(Boolean); if (!a.length) return '';
+  const g = mean(a.map(o => o.gain)), sc = mean(a.map(o => o.sacc)), e = mean(a.map(o => o.err));
+  const L = [['点から離れて動く（ずれ ' + f2(e) + '）', 1 - clamp(1 - (e - PUR_ERR) / 0.5, 0, 1)], ['目が点より遅い（速さ ' + f2(g) + '）', 1 - clamp(g, 0, 1)], ['追いつくために跳ぶ（' + Math.round(sc * 100) + '%）', Math.min(1, sc)]].filter(x => x[1] >= 0.1).sort((x, y) => y[1] - x[1]);
+  return L.length ? '。主に ' + L.map(x => x[0]).join('・') : '';
 }
 const grpQ = (dir, ks) => { const v = ks.map(k => dir[k] && dir[k].q).filter(Number.isFinite); return v.length ? Math.round(mean(v)) : null; };
 function pursuitHTML(o) {
@@ -1148,13 +1157,13 @@ function judge() {
     const qR = grpQ(d, ['R', 'UR', 'DR']), qL = grpQ(d, ['L', 'UL', 'DL']), qV = grpQ(d, ['U', 'D']), qH = grpQ(d, ['R', 'L']);
     const lowR = qR != null && qR < PUR_ABS, lowL = qL != null && qL < PUR_ABS;
     if (qR != null && qL != null) {
-      if (qL - qR >= JTH) J.push({ k: '右の皮質', why: `右方向（右・右上・右下）の追従 ${qR} が、左方向 ${qL} より ${qL - qR} 低い` });
-      if (qR - qL >= JTH) J.push({ k: '左の皮質', why: `左方向（左・左上・左下）の追従 ${qL} が、右方向 ${qR} より ${qR - qL} 低い` });
+      if (qL - qR >= JTH) J.push({ k: '右の皮質', why: `右方向（右・右上・右下）の追従 ${qR} が、左方向 ${qL} より ${qL - qR} 低い${pursuitWhy(d, ['R', 'UR', 'DR'])}` });
+      if (qR - qL >= JTH) J.push({ k: '左の皮質', why: `左方向（左・左上・左下）の追従 ${qL} が、右方向 ${qR} より ${qR - qL} 低い${pursuitWhy(d, ['L', 'UL', 'DL'])}` });
     }
-    if (lowR && !J.some(j => j.k === '右の皮質')) J.push({ k: '右の皮質', why: `右方向（右・右上・右下）の追従が ${qR} 点（${PUR_ABS} 点未満）` });
-    if (lowL && !J.some(j => j.k === '左の皮質')) J.push({ k: '左の皮質', why: `左方向（左・左上・左下）の追従が ${qL} 点（${PUR_ABS} 点未満）` });
-    if (qV != null && qH != null && qH - qV >= JTH) J.push({ k: '中脳', why: `上下の追従 ${qV} が、左右 ${qH} より ${qH - qV} 低い` });
-    else if (qV != null && qV < PUR_ABS) J.push({ k: '中脳', why: `上下の追従が ${qV} 点（${PUR_ABS} 点未満）` });
+    if (lowR && !J.some(j => j.k === '右の皮質')) J.push({ k: '右の皮質', why: `右方向（右・右上・右下）の追従が ${qR} 点（${PUR_ABS} 点未満）${pursuitWhy(d, ['R', 'UR', 'DR'])}` });
+    if (lowL && !J.some(j => j.k === '左の皮質')) J.push({ k: '左の皮質', why: `左方向（左・左上・左下）の追従が ${qL} 点（${PUR_ABS} 点未満）${pursuitWhy(d, ['L', 'UL', 'DL'])}` });
+    if (qV != null && qH != null && qH - qV >= JTH) J.push({ k: '中脳', why: `上下の追従 ${qV} が、左右 ${qH} より ${qH - qV} 低い${pursuitWhy(d, ['U', 'D'])}` });
+    else if (qV != null && qV < PUR_ABS) J.push({ k: '中脳', why: `上下の追従が ${qV} 点（${PUR_ABS} 点未満）${pursuitWhy(d, ['U', 'D'])}` });
     RUN.pursuitGroups = { right: qR, left: qL, vertical: qV, horizontal: qH, threshold: JTH, abs: PUR_ABS, note: 'しきい値は仮' };
   }
   if (RUN.saccade && RUN.saccade.ok) for (const j of saccJudge(RUN.saccade)) J.push(j);
