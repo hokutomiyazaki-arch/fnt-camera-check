@@ -1139,8 +1139,8 @@ async function stepSacc() {
     for (const k of dirs) {
       if (my !== tok) { rec = null; return; }
       const to = DV[k].map(v => v * 0.85);
-      await sleep(1000 + Math.random() * 600); placeDot(...to); jumps.push({ t: performance.now(), from: cur, to }); cur = to;
-      await sleep(1000 + Math.random() * 600); placeDot(0, 0); jumps.push({ t: performance.now(), from: cur, to: [0, 0] }); cur = [0, 0];
+      await sleep(1300 + Math.random() * 600); placeDot(...to); jumps.push({ t: performance.now(), from: cur, to }); cur = to;   // 間を 1.3〜1.9秒に（行き過ぎて止まってから戻るまで見られるように）
+      await sleep(1300 + Math.random() * 600); placeDot(0, 0); jumps.push({ t: performance.now(), from: cur, to: [0, 0] }); cur = [0, 0];
     }
     await sleep(900); const fr = rec; rec = null; hideDot(); dark(false);
     const out = analyzeSaccSeries(series(fr), jumps);
@@ -1158,9 +1158,9 @@ function analyzeSaccSeries(fr, jumps) {
   for (let j = 0; j < jumps.length; j++) {
     const J = jumps[j], tn = j + 1 < jumps.length ? jumps[j + 1].t : Infinity;
     const dv = { x: J.to[0] - J.from[0], y: J.to[1] - J.from[1] }, L2 = dv.x ** 2 + dv.y ** 2, L = Math.sqrt(L2), dir = dirOf(dv.x, dv.y);
-    const w = fr.filter(f => !f.bl && Number.isFinite(f.X) && f.t >= J.t - 200 && f.t < Math.min(J.t + 800, tn))
+    const w = fr.filter(f => !f.bl && Number.isFinite(f.X) && f.t >= J.t - 200 && f.t < Math.min(J.t + SWIN, tn))
       .map(f => ({ t: f.t - J.t, p: ((f.X - J.from[0]) * dv.x + (f.Y - J.from[1]) * dv.y) / L2, x: f.X }));
-    const base = w.filter(o => o.t <= 60), fin = w.filter(o => o.t >= 450);
+    const base = w.filter(o => o.t <= 60), fin = w.filter(o => o.t >= SFIN);
     if (base.length < 2 || fin.length < 3) { each.push({ dir, ok: false, why: 'コマ不足' }); continue; }
     const p0 = med(base.map(o => o.p)), pf = med(fin.map(o => o.p)), amp = pf - p0;
     if (amp < 0.35) { each.push({ dir, ok: false, why: '動きが見えない', amp: r3(amp) }); continue; }
@@ -1184,10 +1184,12 @@ function analyzeSaccSeries(fr, jumps) {
       }
     }
     if (prim == null) prim = med(sp.filter(o => o.t >= 150 && o.t < 450).map(o => o.p));
-    const peak = Math.max(...sp.filter(o => o.t > 0 && o.t < 450).map(o => o.p));
+    const peak = Math.max(...sp.filter(o => o.t > 0 && o.t < SFIN - 100).map(o => o.p));
     const pr = prim != null ? (prim - p0) / amp : null, ov = (peak - p0) / amp;
     // 行き過ぎ：いちばん先まで行った所から、あとで跳ぶ幅の 0.1 以上戻った（読み取りがじわじわなので、戻りは速さではなく戻った量で見る）
-    const ipk = sp.findIndex(o => o.t > 0 && o.t < 450 && o.p === peak), back = ipk >= 0 ? (peak - Math.min(...sp.slice(ipk).filter(o => o.t < 750).map(o => o.p))) / amp : 0;
+    // 2026-10-15 夜（宮崎さん「毎回行き過ぎてみたのに正常としか出ない」）：前は 0.45秒までの先・0.75秒までの戻りしか見ず、落ち着いた所も 0.45秒からとっていた。
+    // 行き過ぎて 0.3〜0.5秒止まってから戻る目は、落ち着いた所に行き過ぎが混じって揺れが大きく読まれ、作り物の目で 1.5倍の行き過ぎを 16回中0回しか拾えなかった。先は 0.8秒まで・落ち着いた所は 0.9秒から見る
+    const ipk = sp.findIndex(o => o.t > 0 && o.t < SFIN - 100 && o.p === peak), back = ipk >= 0 ? (peak - Math.min(...sp.slice(ipk).map(o => o.p))) / amp : 0;
     if (back >= SMET_HI) corr = -1;
     // 2026-10-15 夜 作り直し（宮崎さん「毎回両方の目でハイポメトリアになる。読み取り方に疑問がある」）：
     // 前は「速さが落ちてから 0.15 倍だけ速くなった」を修正の跳びと数えていた。読み取りの遅れ（0.1秒）と揺れを足した作り物の正常な目で試すと、
@@ -1231,7 +1233,7 @@ function analyzeSaccSeries(fr, jumps) {
 // ・上下：跳ぶ途中で目が横へずれる → ずれる側の小脳（BDC「サッカード」）
 // ・上に行き過ぎ・下に届かない（半球中間帯＝栓状核。問題が出る目と同じ側）は、左右の目を分けて測っていないので読まない
 // くり返し（その向きの跳びの 2回以上・4割以上）出たときだけ読む
-const SPLAT = 80, SSIG = 0.12, SFPS = 20;   // 届かない段とみる止まりの長さ(ms)・これより揺れる跳びは読まない（跳ぶ幅＝1）・これよりコマが少ないと行き過ぎ・届かないを読まない（作り物の目で、15コマ/秒以下は本当の届かないを2割も拾えなかった）
+const SPLAT = 80, SSIG = 0.12, SFPS = 20, SWIN = 1250, SFIN = 900;   // 1回の跳びを見る長さ・落ち着いた所とみる時刻(ms)・届かない段とみる止まりの長さ(ms)・これより揺れる跳びは読まない（跳ぶ幅＝1）・これよりコマが少ないと行き過ぎ・届かないを読まない（作り物の目で、15コマ/秒以下は本当の届かないを2割も拾えなかった）
 const SMET = 0.3, SMET_HI = 0.1, REACC = 0.15, SDIAG = 3, SLAT = 0.2;   // 届かない＝止まった段が 0.7 以下（2026-10-15 夜 0.75→0.7。読み取りの遅れで、ふつうの 0.9 の跳び＋小さな修正が 0.75 以下に見えた）＋同じ向きの修正の跳び・行き過ぎ＝1.1 以上＋戻りの跳び（読み取りがじわじわ動くので、行き過ぎは小さく見える）・止まった＝速さが最初の跳びの 0.25 倍未満が2コマ・修正の跳び＝0.4 倍以上   // 斜めの組の差（回）・上下で横へずれる割合（跳ぶ幅の 20%）。どちらも仮
 function saccJudge(o) {
   const J = [], M = o && o.metria; if (!M) return J;
