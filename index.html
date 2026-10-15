@@ -133,7 +133,7 @@ const BSN = ['eyeLookInLeft', 'eyeLookOutLeft', 'eyeLookUpLeft', 'eyeLookDownLef
 let delegate = '', toCPU = async () => {}, switching = false, gpuMiss = 0;
 
 async function load() {
-  const fs = FSET = await FilesetResolver.forVisionTasks(WASM);
+  const fs = await FilesetResolver.forVisionTasks(WASM);
   const opt = d => ({ baseOptions: { modelAssetPath: MODEL, delegate: d }, runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true });
   try { lm = await FaceLandmarker.createFromOptions(fs, opt('GPU')); delegate = 'GPU'; }
   catch (e) { lm = await FaceLandmarker.createFromOptions(fs, opt('CPU')); delegate = 'CPU'; }
