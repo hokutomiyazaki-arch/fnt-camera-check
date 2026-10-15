@@ -1782,7 +1782,9 @@ function drawJaw({ img, pts }) {
 //   SVV は球形嚢寄り・SVH は卵形嚢寄り（Next Evolution 動画 Module 3）。ただし本（Vestibular Rehabilitation 印刷頁189）は「どちらかは特定できない」。
 //   中枢なら：延髄・橋（上部の橋より下）は同じ側、小脳・中脳より上は反対側へ傾くことが多い（Vestibular Rehabilitation 印刷頁190・Carrick CNS10 Handbook p.72）。
 // 本来は暗室かバケツで、周りの縦横の手がかりを消す。スマホの画面だけでは消し切れない（Carrick CNS09-14：アプリだけでは周りが見える）ので、仮の代わり。部屋を暗くし、画面を顔に近づけてもらう
-const SVV_TH = 2.5, SVH_TH = 1.5, SVV_N = 4, SVV_HOLD = 1200, SVV_STILL = 1.0, SVV_MOVE = 4, SVV_MAX = 20000;   // 度・回数・止まったとみる長さ(ms)と揺れの幅(度)・動かした量(度)・1回の上限(ms)
+// 1回は10秒決め打ちで、残りの秒数を出す。読むのは最後の1.5秒の傾き（2026-10-15 宮崎さん「何秒やればいいかわからない。合わせる時間は10秒ぐらい」「何回もやって平均値」）。
+// 前は「止まったら完了」にしていたが、手持ちのスマホは止めても1°以上揺れるので完了と読めず、全部の回が時間切れで捨てられていた（同日「読み取れなかった」）
+const SVV_TH = 2.5, SVH_TH = 1.5, SVV_N = 4, SVV_SEC = 10, SVV_TAIL = 1500, SVV_OFF = 10;   // 度・回数・1回の秒数・読む長さ(ms)・合わせられていないとみて平均から外すずれ(度)
 function svvShow(on) { $('svv').style.display = on ? 'block' : 'none'; const bd = document.querySelector('.badge'); if (bd) bd.style.visibility = on ? 'hidden' : '';   // 札の文字も縦横の手がかりになるので隠す
   if (!on) svvMsg(''); }
 function svvMsg(html) { $('svvMsg').innerHTML = html; if (html) say(html); }
@@ -1791,7 +1793,7 @@ function svvLine(kind, deg) {   // deg：画面に対する線の傾き（＋＝
   c.width = w * k; c.height = h * k; x.setTransform(k, 0, 0, k, 0, 0); x.clearRect(0, 0, w, h);
   document.body.dataset.svv = kind ? kind + ' ' + deg : '';   // 確かめ用（自動の試験で、いま出ている線の向きを読む）
   if (!kind) return;
-  const L = Math.min(w, h) * 0.36;
+  const L = Math.hypot(w, h) / 2 + 10;   // 画面の端から端まで貫く（2026-10-15 宮崎さん）
   x.translate(w / 2, h / 2); x.rotate(deg * Math.PI / 180);
   x.strokeStyle = '#d32020'; x.lineWidth = 5; x.lineCap = 'round'; x.beginPath();
   if (kind === 'V') { x.moveTo(0, -L); x.lineTo(0, L); } else { x.moveTo(-L, 0); x.lineTo(L, 0); }
@@ -1801,21 +1803,18 @@ async function svvTrial(p, my) {
   // 線の傾きは「いまのスマホの傾き」を差し引いて決める＝重力に対して毎回 p.start だけ傾いて出る（前の回でスマホが傾いたままでも、毎回 12〜20° 動かして合わせる）
   const t0 = performance.now(), r0 = phoneRoll() ?? 0, th = p.start - r0, S = [];
   svvLine(p.kind, th);
-  let moved = false;
-  while (my === tok && performance.now() - t0 < SVV_MAX) {
-    const now = performance.now(), r = phoneRoll();
-    if (r != null) {
-      const hd = last ? -frame(last).ang * 180 / Math.PI : null;   // 画面に対する頭の傾き（＋＝本人の右）。暗いと取れない
-      S.push({ t: now, r, hd }); while (S.length && now - S[0].t > 3000) S.shift();
-      if (Math.abs(r - r0) >= SVV_MOVE) moved = true;
-      const w = S.filter(o => now - o.t <= SVV_HOLD), rr = w.map(o => o.r);
-      if (moved && now - t0 > 1500 && w.length >= 8 && Math.max(...rr) - Math.min(...rr) <= SVV_STILL) break;
-    }
+  let shown = -1;
+  while (my === tok && performance.now() - t0 < SVV_SEC * 1000) {
+    const now = performance.now(), r = phoneRoll(), left = Math.ceil(SVV_SEC - (now - t0) / 1000);
+    if (left !== shown) { $('svvMsg').innerHTML = `<span style="font-size:44px">${left}</span><small>合わせたら、そのまま止める</small>`; shown = left; }   // 秒数は読み上げない（毎秒しゃべると邪魔になる）
+    if (r != null) { const hd = last ? -frame(last).ang * 180 / Math.PI : null; S.push({ t: now, r, hd }); }   // hd：画面に対する頭の傾き（＋＝本人の右）。暗いと取れない
     await sleep(30);
   }
-  const now = performance.now(), w = S.filter(o => now - o.t <= SVV_HOLD), roll = med(w.map(o => o.r)), hds = w.map(o => o.hd).filter(Number.isFinite);
-  if (!Number.isFinite(roll)) return { kind: p.kind, ok: false, start: r1(p.start) };
-  return { kind: p.kind, ok: true, start: r1(p.start), err: r1(th + roll), roll: r1(roll), head: hds.length ? r1(med(hds) + roll) : null, timeout: !moved || now - t0 >= SVV_MAX, ms: Math.round(now - t0) };   // head：重力に対する頭の傾き
+  $('svvMsg').innerHTML = '';
+  const now = performance.now(), w = S.filter(o => now - o.t <= SVV_TAIL), roll = med(w.map(o => o.r)), hds = w.map(o => o.hd).filter(Number.isFinite);
+  if (w.length < 5 || !Number.isFinite(roll)) return { kind: p.kind, ok: false, start: r1(p.start) };
+  const err = th + roll;
+  return { kind: p.kind, ok: true, start: r1(p.start), err: r1(err), roll: r1(roll), head: hds.length ? r1(med(hds) + roll) : null, off: Math.abs(err) > SVV_OFF, sway: r1(Math.max(...w.map(o => o.r)) - Math.min(...w.map(o => o.r))) };   // off：合わせられていない回／sway：最後の1.5秒の揺れ幅
 }
 async function stepSvv() {
   show(14, '14. 線をまっすぐにする');
@@ -1831,7 +1830,7 @@ async function stepSvv() {
     cue(''); svvShow(true); const T = [];
     for (let i = 0; i < plan.length; i++) {
       const p = plan[i];
-      if (i === 0 || plan[i - 1].kind !== p.kind) { svvLine(null); svvMsg(p.kind === 'V' ? '線を<b>まっすぐ縦</b>に<small>スマホを傾けて合わせ、止める</small>' : '次は<b>まっすぐ横</b>に<small>スマホを傾けて合わせ、止める</small>'); await sleep(3000); if (my !== tok) return svvShow(false); svvMsg(''); }
+      if (i === 0 || plan[i - 1].kind !== p.kind) { svvLine(null); svvMsg(p.kind === 'V' ? '線を<b>まっすぐ縦</b>に<small>スマホを傾けて合わせ、止める。1回10秒</small>' : '次は<b>まっすぐ横</b>に<small>スマホを傾けて合わせ、止める。1回10秒</small>'); await sleep(3000); if (my !== tok) return svvShow(false); svvMsg(''); }
       T.push(await svvTrial(p, my)); if (my !== tok) return svvShow(false);
       beep(660, 80); svvLine(null); await sleep(800);
     }
@@ -1839,7 +1838,7 @@ async function stepSvv() {
   });
 }
 function analyzeSvv(T) {
-  const one = (kind, th) => { const a = T.filter(t => t.kind === kind && t.ok && !t.timeout); if (a.length < 2) return { ok: false, n: a.length };
+  const one = (kind, th) => { const a = T.filter(t => t.kind === kind && t.ok && !t.off);   // 平均は、合わせられた回（ずれ10°以内）だけで出す if (a.length < 2) return { ok: false, n: a.length };
     const e = a.map(t => t.err), m = mean(e), side = Math.abs(m) >= th ? (m > 0 ? '右' : '左') : null, hd = a.map(t => t.head).filter(Number.isFinite);
     return { ok: true, n: a.length, mean: r1(m), sd: r1(sd(e)), each: e, side, th, head: hd.length ? r1(med(hd)) : null }; };
   const V = one('V', SVV_TH), H = one('H', SVH_TH);
