@@ -1348,7 +1348,7 @@ function beep(f = 880, ms = 90) {   // 線が光った合図（目を点から�
 // 線と点：映像の座標で描く（本人の右＝映像の x が小さい側。画面には鏡写しで出る）。見つめる点は線の真ん中で、いちばん上に描く
 // 線は出さない（線があると目が線についていく：2026-10-15 宮崎さん）。
 // 向きの字は点をはさんで左右に分けて書き、点は字の真ん中に半透明で重ねる。字を読むと自然に点を見ることになる（2026-10-15 宮崎さん「指示の真ん中にターゲット。半透明で」）
-const VWORD = { R: ['右', '→'], L: ['←', '左'], U: ['上', '↑'], D: ['下', '↓'], UR: ['右上', '↗'], UL: ['↖', '左上'], DR: ['右下', '↘'], DL: ['↙', '左下'] };
+const VWORD = { C: ['真ん中に', '戻す'], R: ['右', '→'], L: ['←', '左'], U: ['上', '↑'], D: ['下', '↓'], UR: ['右上', '↗'], UL: ['↖', '左上'], DR: ['右下', '↘'], DL: ['↙', '左下'] };
 function drawVor(t, pts) {
   const g = G, u = OVU;
   if (pts) { const n = pts[1]; oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, 6 * u, 0, 7); oc.fill(); }
@@ -1393,7 +1393,9 @@ async function stepVor() {
       if (my !== tok) { rec = null; return; }
       const k = order[i]; G.on = k; beep(); said = ''; say(DJ[k]); flicks.push({ k, t: performance.now() });   // 向きは字と声で（目を点から離さなくていいように）
       cue(last ? '' : '顔が見えません', 'thin top', '');
-      await sleep(700); if (G) G.on = null; await sleep(650 + Math.random() * 400);   // 字は0.7秒で消す（一瞬動かして戻す）。次までの間は今までと同じ
+      await sleep(700); if (!G) break;
+      G.on = 'C'; said = ''; say('真ん中に戻す');   // 戻すのも字と声で言う（2026-10-15 宮崎さん「戻るのが分かりづらい。真ん中に戻るも指示で」）
+      await sleep(600); if (G) G.on = null; await sleep(450 + Math.random() * 350);
     }
     if (my !== tok) { rec = null; return; }
     const fr = rec, ms = performance.now() - t0; rec = null; endBeep();
