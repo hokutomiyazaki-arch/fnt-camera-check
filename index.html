@@ -771,6 +771,14 @@ async function stepNeck() {
     const g = { ...G }; G = null; analyzeNeck(seg, g);
   });
 }
+// 線に直角な向きの、鼻先のぶれ（目じりの間の長さ＝1）。体ごとのずれ（fitTrack の ox・oy）と、ぶれの真ん中（中央値）は差し引く
+const PERP_TOL = 0.08, PERP_FRAC = 0.3;   // ぶれたとみなす幅・ぶれたコマの割合（どちらも仮。作り物の鼻先で、ふつうの揺れ 0.03 は 0%、横へ 0.10 ぶらすと 4割・0.15 で 6割）
+function neckPerp(rs, fb, g, ax) {
+  const p = rs.map(r => ax === 'H' ? (r.n.y + fb.oy - g.cy) / g.d : (r.n.x + fb.ox - g.cx) / g.d);
+  if (p.length < 20) return null;
+  const m = med(p), a = p.map(v => Math.abs(v - m)).sort((x, y) => x - y);
+  return { frac: r3(a.filter(v => v >= PERP_TOL).length / a.length), p95: r3(a[Math.floor(a.length * 0.95)]), sd: r3(Math.sqrt(mean(p.map(v => (v - m) ** 2)))) };
+}
 function analyzeNeck(seg, g0) {
   if (seg.reduce((a, s) => a + s.r.length, 0) < 30) return fail(stepNeck, '顔が見えている時間が短すぎました');
   const out = {}, legs = {}, spd = {};
@@ -794,7 +802,7 @@ function analyzeNeck(seg, g0) {
       const c = Math.cos(2 * Math.PI * e / LPER); if (e < 0 || Math.abs(c) < 0.3) continue;   // 折り返しの所は、向きが決まらないので数えない
       addLeg(legs, s.ax === 'H' ? (c > 0 ? 'toR' : 'toL') : (c > 0 ? 'up' : 'down'), Math.floor(e / LPER), off);
     }
-    out[s.ax] = { lag: fb.lag, n: rs.length, follow: rs.length ? Math.round(on / rs.length * 100) : 0 };
+    out[s.ax] = { lag: fb.lag, n: rs.length, follow: rs.length ? Math.round(on / rs.length * 100) : 0, perp: neckPerp(rs, fb, g, s.ax) };
   }
   const S = legSummary(legs), OPP = { toR: 'toL', toL: 'toR', up: 'down', down: 'up' };
   const V = {}; for (const k in spd) { const L = spd[k]; V[k] = { n: L.n, pct: Math.round(L.sum / L.n * 100), laps: Object.values(L.laps).filter(q => q.n >= 3).map(q => Math.round(q.sum / q.n * 100)) }; }
@@ -806,10 +814,15 @@ function analyzeNeck(seg, g0) {
     // 前は反対向きとの差だけで見ていて、作り物の首で 上 108%・下 92%（どちらも点についていけている）を「下が遅い」と読んだ
     const slow = v.laps.filter(x => x <= Math.min(o.pct - SPD_GAP, SPD_LOW)).length;
     if (o.pct - v.pct >= SPD_GAP && v.pct <= SPD_LOW && slow >= 2) canals.push({ k: CANAL[k], cb: cereb(CANAL[k]), leg: k, why: `${LEGJ[k]} の鼻先の速さが点の ${v.pct}%（反対向き ${o.pct}%）・${v.laps.length}回中${slow}回くり返し遅い` }); }
-  const low = Math.min(out.H?.follow ?? 100, out.V?.follow ?? 100);
-  RUN.neckJudge = { overall: low < 60 ? `首の左右・上下で鼻先が線についていけた割合が低い（左右 ${out.H?.follow ?? '—'}%・上下 ${out.V?.follow ?? '—'}%）` : null, canals };
+  const low = Math.min(out.H?.follow ?? 100, out.V?.follow ?? 100), ov = [];
+  if (low < 60) ov.push(`首の左右・上下で鼻先が線についていけた割合が低い（左右 ${out.H?.follow ?? '—'}%・上下 ${out.V?.follow ?? '—'}%）`);
+  // 線から横へのぶれ（2026-10-16 宮崎さん「上下に線を鼻先で追うテストで、左右にブレさせてみたけれども、全然エラーが出ない」）：
+  // 前は点との距離（0.2 以上で「ずれた」）と、向きどうしの差だけで見ていた。上下どちらへ動くときも同じように横へぶれると差が出ず、距離も 0.2 に届かないので正常になった。
+  // 線に直角な向きのぶれを別に数える。上下の線なら横、左右の線ならたて。ぶれた側が決まらないので、側を言わず「小脳虫部・前庭機能」として読む
+  for (const [ax, lab, dir] of [['V', '上下', '横'], ['H', '左右', 'たて']]) { const q = out[ax]?.perp; if (q && q.frac >= PERP_FRAC) ov.push(`首の${lab}で鼻先が線から${dir}へぶれる（${PERP_TOL} 以上ぶれたコマ ${Math.round(q.frac * 100)}%・いちばん大きいぶれ ${f2(q.p95)}）`); }
+  RUN.neckJudge = { overall: ov.length ? ov.join('／') : null, canals };
   const c = k => `${LEGJ[k]} <b>${S[k] ? S[k].off + '%' : '—'}</b>${S[k] ? `（速さ${S[k].speed ?? '—'}%）` : ''}`;
-  staff(`点について線の上：左右 <b>${out.H?.follow ?? '—'}%</b>・上下 <b>${out.V?.follow ?? '—'}%</b><br>向きごとにずれた割合（速さ＝鼻先÷点）：${c('toR')}・${c('toL')}<br>${c('up')}・${c('down')}<br><span class="small">遅れ 左右${((out.H?.lag || 0) / 1000).toFixed(1)}／上下${((out.V?.lag || 0) / 1000).toFixed(1)}秒</span>${headJudgeHTML(RUN.neckJudge)}`);
+  staff(`点について線の上：左右 <b>${out.H?.follow ?? '—'}%</b>・上下 <b>${out.V?.follow ?? '—'}%</b><br>線から外へのぶれ（${PERP_TOL} 以上ぶれたコマ）：上下の線で横へ <b>${out.V?.perp ? Math.round(out.V.perp.frac * 100) + '%' : '—'}</b>・左右の線でたてへ <b>${out.H?.perp ? Math.round(out.H.perp.frac * 100) + '%' : '—'}</b>（${PERP_FRAC * 100}% 以上で読む・仮）<br>向きごとにずれた割合（速さ＝鼻先÷点）：${c('toR')}・${c('toL')}<br>${c('up')}・${c('down')}<br><span class="small">遅れ 左右${((out.H?.lag || 0) / 1000).toFixed(1)}／上下${((out.V?.lag || 0) / 1000).toFixed(1)}秒</span>${headJudgeHTML(RUN.neckJudge)}`);
   askNausea('neck', () => recorded(stepNeck, stepFace, '次へ（表情）'));
 }
 
