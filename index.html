@@ -358,13 +358,25 @@ function say(html) {
   said = t;
   if (!VOICE) return;
   const f = VMAP && VMAP[vkey(u)];
-  if (f) { try { speechSynthesis.cancel(); } catch (e) {} VA.pause(); VA.src = 'voice/' + f; VA.play().catch(() => {}); return; }
+  if (f) { try { speechSynthesis.cancel(); } catch (e) {} vplay('voice/' + f); return; }
   if (STAFF && VMAP) { (window.__voiceMiss = window.__voiceMiss || []).push(u); console.log('[voice] 音声ファイルなし：' + u); }
   if (!window.speechSynthesis) return;
   VA.pause();
   try { speechSynthesis.cancel(); const x = new SpeechSynthesisUtterance(u); x.lang = 'ja-JP'; x.rate = 1.1;
     jaV = jaV || speechSynthesis.getVoices().find(v => /^ja/i.test(v.lang)); if (jaV) x.voice = jaV; speechSynthesis.speak(x); } catch (e) {}
 }
+// 鳴らせなかった文は覚えておき、次に画面をさわったとき（押した中なら必ず鳴らせる）に鳴らす。
+// スマホは、押した瞬間の外で鳴らそうとすると断られることがある（2026-10-15 宮崎さん「また音声が出なくなっている」）
+let vPend = null;
+function vplay(src) {
+  vPend = null; VA.pause(); VA.muted = false; VA.src = src;
+  VA.play().catch(e => { if (e && e.name === 'NotAllowedError') { vPend = src; if (STAFF) console.log('[voice] 鳴らせなかった（次にさわったときに鳴らす）：' + src); } });
+}
+const vTap = () => {
+  try { if (endBeep.a && endBeep.a.state !== 'running') endBeep.a.resume(); } catch (e) {}
+  if (vPend && VOICE) { const s = vPend; vPend = null; VA.src = s; VA.play().catch(() => {}); }
+};
+['pointerdown', 'touchend', 'click'].forEach(k => addEventListener(k, vTap, true));
 function voiceBtn() { $('bVoice').textContent = VOICE ? '🔊 音声オン' : '🔇 音声オフ'; }
 $('bVoice').onclick = () => { VOICE = !VOICE; localStorage.setItem('fntVoice', VOICE ? 'on' : 'off'); voiceBtn(); if (!VOICE) { try { speechSynthesis.cancel(); } catch (e) {} VA.pause(); } else { const t = said; said = ''; say(t.replace(/。/g, '<br>')); } };
 $('bRedo').onclick = () => { const f = REDO()[CUR]; if (f) { try { speechSynthesis.cancel(); } catch (e) {} VA.pause(); f(); } };
@@ -1997,7 +2009,7 @@ $('bCopyAll').onclick = () => copyText(localStorage.getItem('fntcc_runs') || '[]
 $('bAgain').onclick = () => { newRun(); CAL = null; $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepAlign(); };
 
 $('bStart').onclick = async () => {
-  try { VA.muted = true; VA.src = 'voice/unlock.mp3'; VA.play().then(() => { VA.pause(); VA.muted = false; }).catch(() => { VA.muted = false; }); } catch (e) {}   // スマホは、押したときに一度鳴らしておかないと後で音が出ない
+  try { VA.muted = false; VA.src = 'voice/unlock.mp3'; VA.play().catch(() => {}); } catch (e) {}   // スマホは、押したときに一度鳴らしておかないと後で音が出ない。消音のまま鳴らすと許可にならない端末があるので、無音のファイルを音ありで鳴らす
   $('bStart').disabled = true;
   const startTry = async () => { for (let i = 0; ; i++) { try { return await startCam(); } catch (e) { if (i >= 4 || !/NotReadable|Abort|TrackStart/.test(e.name)) throw e; await sleep(1000); } } };   // 前のページがカメラを手放すまで少し待って、やり直す
   try { await Promise.race([startTry(), sleep(10000).then(() => { throw { name: '時間切れ。ほかのアプリやタブでカメラを使っていないか確かめて、ページを読み込み直してください' }; })]); }
