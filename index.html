@@ -321,11 +321,11 @@ function brightness() {
 }
 
 // ── 画面の部品
-const NSTEP = 16;
+const NSTEP = 14;   // 2026-10-16 サッカード・注視を外して 16→14
 $('steps').innerHTML = '<span></span>'.repeat(NSTEP);
 let tok = 0, CUR = null;
 // テストの最中でも、いまのテストを最初からやり直せる（2026-10-14 宮崎さん）
-const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首の8の字': stepEight, '3. 首の左右・上下': stepNeck, '4. 表情の左右差': stepFace, '5. 目の準備（測る前の合わせ）': stepEyePrep, '6. 点を目で追う': stepPursuit, '7. 跳ぶ点を見る': stepSacc, '8. 点を見つめる': stepFix, '9. 流れる縞を見る': stepOkn, '10. 頭を動かして点を見つめる': stepVor, '11. 寄り目': stepConv, '12. 舌の出方': stepTongue, '13. 口の開け方': stepJaw, '14. 線をまっすぐにする': stepSvv });                       // 段を移ったら増える（前の段の待ちを止めるため）
+const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首の8の字': stepEight, '3. 首の左右・上下': stepNeck, '4. 表情の左右差': stepFace, '5. 目の準備（測る前の合わせ）': stepEyePrep, '6. 点を目で追う': stepPursuit, '7. 流れる縞を見る': stepOkn, '8. 頭を動かして点を見つめる': stepVor, '9. 寄り目': stepConv, '10. 舌の出方': stepTongue, '11. 口の開け方': stepJaw, '12. 線をまっすぐにする': stepSvv });                       // 段を移ったら増える（前の段の待ちを止めるため）
 function show(step, title) {
   tok++;
   [...$('steps').children].forEach((e, i) => e.classList.toggle('on', i <= step));
@@ -1089,7 +1089,7 @@ async function stepPursuit() {
     RUN.pursuit = out; judge();
     if (!out.ok) return fail(stepPursuit, '目が見えている時間が短すぎました');
     staff(pursuitHTML(out));
-    recorded(stepPursuit, stepSacc, '次へ（跳ぶ点を見る）');
+    recorded(stepPursuit, stepOkn, '次へ（流れる縞を見る）');   // 2026-10-16 宮崎さん：サッカード・注視は外した（下の stepSacc・stepFix の所に理由）
   });
 }
 // 追従の採点：点が速く動いている所（最高の速さの半分以上）だけを使い、点の向きごとに
@@ -1166,8 +1166,6 @@ function judge() {
     else if (qV != null && qV < PUR_ABS) J.push({ k: '中脳', why: `上下の追従が ${qV} 点（${PUR_ABS} 点未満）${pursuitWhy(d, ['U', 'D'])}` });
     RUN.pursuitGroups = { right: qR, left: qL, vertical: qV, horizontal: qH, threshold: JTH, abs: PUR_ABS, note: 'しきい値は仮' };
   }
-  if (RUN.saccade && RUN.saccade.ok) for (const j of saccJudge(RUN.saccade)) J.push(j);
-  const ff = fixFlag(RUN.fixation); if (ff) J.push({ k: '小脳虫部（両側）', why: ff });
   const oj = RUN.okn && RUN.okn.judge; if (oj && oj.side) J.push({ k: `${oj.side}の皮質`, src: 'OKN', why: oj.why });
   const tg = RUN.tongue; if (tg && tg.unstable) J.push({ k: '小脳虫部・延髄（舌下神経）', src: '舌', why: `舌を出してキープすると安定しない（舌の先の揺れ 横${f2(tg.wobble.side)}・前後${f2(tg.wobble.prot)}）。BDC「CN12 舌下神経」：舌が小刻みに動く＝舌下神経・小脳虫部` });
   const sv = RUN.svv;   // 線をまっすぐにする：傾いた側の耳石（Z-Health Next Evolution）
@@ -1182,6 +1180,8 @@ function judgeHTML() {
 }
 
 // ════ 5. サッカード（跳ぶ点を見る）：8方向へ跳んで、真ん中へ戻る。間はばらばら（1.0〜1.6秒）にして先読みを防ぐ
+// 🔴 2026-10-16 検査の流れから外した（宮崎さん「サッカードのテストは諦める。テスト項目から削除」）。わざと行き過ぎ・届かないを何度やっても読めなかった。
+// 行き過ぎて戻る動きは0.1秒以内で、カメラ（1秒10〜25コマ）では1〜2コマにしか写らず、顔の点の読み取りが均して消す。関数は残すが呼ばない
 async function stepSacc() {
   show(7, '7. 跳ぶ点を見る');
   cue('跳んだ点を<br><b>すぐ目だけ</b>で見る');
@@ -1338,6 +1338,8 @@ function saccHTML(o) {
 }
 
 // ════ 6. 注視（真ん中の点をじっと見つめる）：10秒
+// 🔴 2026-10-16 検査の流れから外した（宮崎さん「注視も同じ基準なら、正確に読み取るのが困難なため削除」）。見ていたスクエアウェーブジャーク（目が0.5〜数度外れて0.2秒ほどで戻る）は
+// サッカードと同じく小さく速い動きで、カメラの読み取りの揺れに埋もれる。関数は残すが呼ばない
 async function stepFix() {
   show(8, '8. 点を見つめる');
   cue('点を<br><b>じっと見る</b><small>10秒</small>');
@@ -1382,7 +1384,7 @@ async function oknRun(d, ms, my) {
   okn.style.display = 'none'; delete document.body.dataset.okn;
 }
 async function stepOkn() {
-  show(9, '9. 流れる縞を見る');
+  show(7, '7. 流れる縞を見る');
   cue('流れる縞を<br><b>ぼんやり見る</b><small>目で追わなくていい</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
@@ -1476,7 +1478,7 @@ function placeVor() {   // 点は画面のまん中（映像は object-fit:conta
   return G;
 }
 async function stepVor() {
-  show(10, '10. 頭を動かして点を見つめる');
+  show(8, '8. 頭を動かして点を見つめる');
   placeVor();
   cue('目は<b>ずっと点</b>を見たまま<br>出た向きへ鼻先を<br><b>一瞬</b>動かして戻す', 'top');
   btn('始める', async () => {
@@ -1511,7 +1513,7 @@ async function stepVor() {
     RUN.vorJudge = vorJudge(out);   // 2026-10-15 夜：目の合わせが不安定でも読む（前は読まずに何も出さず、正常に見えた）
     const VJ = RUN.vorJudge;
     staff(`頭を動かしたとき、目が点から持っていかれた量（向きごと・点の幅＝1）<br>${DIRS.map(k => out.dir[k] ? `${DJ[k]}へ：<b>${f2(out.dir[k].carry)}</b>（${f2(out.th)} 以上 ${out.dir[k].hit}／${out.dir[k].n}回・点へ跳んで戻った ${out.dir[k].back}回）・目が頭と逆へ動いた割合 <b>${f2(out.dir[k].cg)}</b>（${VOR_G} 未満 ${out.dir[k].weak}回）` : `${DJ[k]}へ —（読めず）`).join('<br>')}<br>向きの中央 <b>${f2(out.base)}</b>・目が頭と逆へ動いた割合 よこ ${f2(out.gainX)}・たて ${f2(out.gainY)}・止まっている間の読み取りの揺れ ${f2(out.noise)}<br><span class="small">読めた回 ${out.valid}／${out.total}（動きが小さすぎた回 ${out.small}）・${out.fps}コマ/秒。速い戻りはコマの間に入って取りこぼすことがある</span>
-    <div class="res judge">内部の読み（仮${CAL && !CAL.reliable ? '・目の合わせが不安定なので参考' : ''}）：${!VJ ? '' : (VJ.overall ? `<br><b>${VJ.lab}</b>の働き低下の可能性 — ${VJ.overall}` : '') + (VJ.canals.length ? VJ.canals.map(c => `<br><b>${c.k}</b>（→ ${c.cb}）の問題の可能性 — ${c.why}`).join('') : VJ.overall ? '' : '<br>目立った向きなし')}<br><span class="small">頭を動かした向き：右＝右の水平半規管・左＝左の水平・上＝両方の後半規管・下＝両方の前半規管・右上＝右の後・左上＝左の後・右下＝左の前・左下＝右の前半規管（BDC「前庭器官を学ぶ(3)」）。半規管→同じ側の小脳。見るのは、①目が点に残らず頭と一緒に動く（1回ごとの「目が頭と逆へ動いた割合」が ${VOR_G} 未満の回が、その向きの半分以上・2回以上）②動いた瞬間に目が反対へ動き出す遅れと、動いた瞬間の目の微妙な動き（離れて点へ跳んで戻る）。①が6方向以上で出たら VOR 全体。各向き${VOR_N}回のうち2回以上出て、離れた量がほかの向きの中央より ${VOR_GAP} 以上多い向きを読む（しきい値 ${VOR_TH}、読み取りの揺れが大きいときはその3倍。仮）。1回では出ないことがあるので、8の字・首の検査・サッカードの小脳と合わせて見立てで見る</span></div>` + calWarn());
+    <div class="res judge">内部の読み（仮${CAL && !CAL.reliable ? '・目の合わせが不安定なので参考' : ''}）：${!VJ ? '' : (VJ.overall ? `<br><b>${VJ.lab}</b>の働き低下の可能性 — ${VJ.overall}` : '') + (VJ.canals.length ? VJ.canals.map(c => `<br><b>${c.k}</b>（→ ${c.cb}）の問題の可能性 — ${c.why}`).join('') : VJ.overall ? '' : '<br>目立った向きなし')}<br><span class="small">頭を動かした向き：右＝右の水平半規管・左＝左の水平・上＝両方の後半規管・下＝両方の前半規管・右上＝右の後・左上＝左の後・右下＝左の前・左下＝右の前半規管（BDC「前庭器官を学ぶ(3)」）。半規管→同じ側の小脳。見るのは、①目が点に残らず頭と一緒に動く（1回ごとの「目が頭と逆へ動いた割合」が ${VOR_G} 未満の回が、その向きの半分以上・2回以上）②動いた瞬間に目が反対へ動き出す遅れと、動いた瞬間の目の微妙な動き（離れて点へ跳んで戻る）。①が6方向以上で出たら VOR 全体。各向き${VOR_N}回のうち2回以上出て、離れた量がほかの向きの中央より ${VOR_GAP} 以上多い向きを読む（しきい値 ${VOR_TH}、読み取りの揺れが大きいときはその3倍。仮）。1回では出ないことがあるので、8の字・首の検査と合わせて見立てで見る</span></div>` + calWarn());
     recorded(stepVor, stepConv, '次へ（寄り目）');
   });
 }
@@ -1663,7 +1665,7 @@ function endBeep() {   // 終わりの合図（目を的から離さずに分か
 // 寄り目：点が2つに見える手前までスマホを鼻へ近づけて止める → 戻す、を3回（2026-10-15 宮崎さん「最低限の指示だけ大きく。二重になる手前まで寄せてストップ、戻して、もう一度。3回」）
 const CONV_N = 3, CONV_IN = 5000, CONV_OUT = 3000, CONV_MIN = 0.04;   // CONV_MIN：黒目が内へ寄った量（目の幅＝1）がこれ未満なら「寄らない」（仮。寄り目の近さで片目およそ 10° 回ると 0.08 前後）   // 1回＝近づける5秒＋戻す3秒
 async function stepConv() {
-  show(11, '11. 寄り目');
+  show(9, '9. 寄り目');
   dark(true); placeDot(0, 1.25);
   near('点を見たまま<br>スマホを<b>鼻へ近づけ</b><br><b>2つに見える手前</b>で止めて<br>戻す。<b>3回</b>', '始める', async () => {
     const my = tok;
@@ -1714,7 +1716,7 @@ function convOne(r) {   // 1回分（近づけて止めるまで）
 
 // ════ 11. 舌：写真のコマから舌の先を見つけて、顔の中心線からどちらへ寄ったかを自動で出す
 async function stepTongue() {
-  show(12, '12. 舌の出方');
+  show(10, '10. 舌の出方');
   cue('舌を<b>まっすぐ前に出して</b><br>そのまま<b>3秒</b>');
   btn('始める', async () => {
     const my = tok; clearBtns(); dark(false);
@@ -1875,7 +1877,7 @@ function chinShift(ref, pts, img) {   // ref＝口を閉じたときの chinPatc
   return { sh: -best.dx, s: best.s };
 }
 async function stepJaw() {
-  show(13, '13. 口の開け方');
+  show(11, '11. 口の開け方');
   cue('口を<b>ゆっくり大きく</b><br>開けて閉じる<small>3回</small>');
   btn('始める', async () => {
     const my = tok; clearBtns(); dark(false);
@@ -1986,7 +1988,7 @@ async function svvTrial(p, my) {
   return { kind: p.kind, ok: true, start: r1(p.start), err: r1(err), roll: r1(roll), head: hds.length ? r1(med(hds) + roll) : null, off: Math.abs(err) > SVV_OFF, sway: r1(Math.max(...w.map(o => o.r)) - Math.min(...w.map(o => o.r))) };   // off：合わせられていない回／sway：最後の1.5秒の揺れ幅
 }
 async function stepSvv() {
-  show(14, '14. 線をまっすぐにする');
+  show(12, '12. 線をまっすぐにする');
   cue('スマホを<b>手に持って</b><br>顔の前に<small>部屋を暗くできれば暗く</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
@@ -2028,7 +2030,7 @@ const QS = [
   { k: 'hearing', q: '左右の耳で<br>聞こえにくい側はありますか？', a: ['右が聞こえにくい', '左が聞こえにくい', 'どちらも同じ'] },
 ];
 async function stepAsk() {
-  const my = show(15, '15. 最後にいくつか質問');
+  const my = show(13, '13. 最後にいくつか質問');
   RUN.ask = {};
   for (const Q of QS) {
     const a = await new Promise(res => { $('btns').innerHTML = ''; cue(Q.q); for (const t of Q.a) btn(t, () => res(t)); });
@@ -2114,7 +2116,7 @@ function mitate() {
   if (M.vest) cbv.push(`${M.vest.side}の卵形嚢（首の傾き）`);
   if (M.nausea) cbv.push(`前庭（8の字で気持ち悪さ「${M.nausea}」）`);
   if (vermis) L.push(`<b>小脳虫部（両側）</b>の働き低下 — ${vermis.why}${cbv.length ? `<br>　加算材料（ほかの検査の小脳・前庭の所見 ${cbv.length}件）：${cbv.join('・')}` : '（ほかの検査に小脳・前庭の所見なし）'}`);
-  else if (cbv.length) L.push(`<b>小脳・前庭</b>：${[...new Set(cbv)].join('・')}（首の検査・サッカードから）`);
+  else if (cbv.length) L.push(`<b>小脳・前庭</b>：${[...new Set(cbv)].join('・')}（首の検査・VOR から）`);
   // 重なり：同じ所に何件の所見が重なったか（多い順）
   const O = {}, add = (k, src) => (O[k] = O[k] || []).push(src);
   for (const j of J) { const m = j.k.match(/^(右|左)の皮質/); if (m) add(`${m[1]}の皮質`, j.src || (/追従/.test(j.why) ? '点を目で追う' : '眼球運動')); }
@@ -2137,7 +2139,7 @@ function mitate() {
 }
 function mitateHTML() {
   const L = mitate();
-  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。首の傾き＝傾いた側の卵形嚢で、同じ側の PMRF・小脳の所見は加算材料。線をまっすぐにする（SVV 2.5°・SVH 1.5°以上）＝傾いた側の耳石（Z-Health Next Evolution）で、首の傾きと同じ側なら重ねる。頭を動かして点を見つめる（VOR）で、動いた瞬間に目が反対へ動く反射が遅れる・点へ跳んで戻る向き＝その向きの半規管→同じ側の小脳。何回かやってくり返し出た向きを、8の字・首の検査の同じ半規管とサッカードの同じ側の小脳と合わせて見る。動眼神経＝中脳、寄り目と上下の追従が両方弱い＝中脳。三叉神経（口の開け方）＝橋（BDC）。8の字で気持ち悪い＝前庭。見つめる検査の揺れ＝小脳虫部（両側）で、ほかの小脳・前庭の所見は加算材料。重なりが多い所ほど問題がありそうと読む</span></div>`;
+  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。首の傾き＝傾いた側の卵形嚢で、同じ側の PMRF・小脳の所見は加算材料。線をまっすぐにする（SVV 2.5°・SVH 1.5°以上）＝傾いた側の耳石（Z-Health Next Evolution）で、首の傾きと同じ側なら重ねる。頭を動かして点を見つめる（VOR）で、動いた瞬間に目が反対へ動く反射が遅れる・点へ跳んで戻る向き＝その向きの半規管→同じ側の小脳。何回かやってくり返し出た向きを、8の字・首の検査の同じ半規管と合わせて見る。動眼神経＝中脳、寄り目と上下の追従が両方弱い＝中脳。三叉神経（口の開け方）＝橋（BDC）。8の字で気持ち悪い＝前庭。小脳・前庭の所見は首の検査・VOR から並べる。重なりが多い所ほど問題がありそうと読む</span></div>`;
 }
 
 // ════ まとめ：記録はこの端末に残す（内部用）。お客さんには判定を見せない
@@ -2149,18 +2151,18 @@ function summaryLines() {
   if (f) L.push(`4. 表情：口角 右${f2(f.m0)}・左${f2(f.m1)}／眉 右${f2(f.b0)}・左${f2(f.b1)}／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%／真顔の下がり 口角${f2(f.mouthDrop)}・眉${f2(f.browDrop)}（＋＝右が下）／目じりのしわ 右${f2(f.wk0)}・左${f2(f.wk1)}`);
   if (RUN.calib) L.push(`5. 目の準備（検査ではない・測るための合わせ）：横 ${RUN.calib.x?.nm}（見分け${RUN.calib.x?.sep}）・たて ${RUN.calib.y?.nm}（見分け${RUN.calib.y?.sep}）・近さ ${f2(RUN.eyeGate?.eye)}`);
   if (p && p.dir) L.push(`6. 追従：${DIRS.map(k => `${DJ[k]}${p.dir[k] ? p.dir[k].q : '—'}`).join('・')}`);
-  if (s && s.dir) L.push(`7. サッカード（反応ms／速さ）：${DIRS.map(k => `${DJ[k]}${s.dir[k] ? `${s.dir[k].lat ?? '—'}/${f2(s.dir[k].pv)}` : '—'}`).join('・')}${s.metria ? `／行き過ぎ・届かない 右へ${s.metria.right.hyper}・${s.metria.right.hypo}／${s.metria.right.n}回・左へ${s.metria.left.hyper}・${s.metria.left.hypo}／${s.metria.left.n}回` : ''}`);
-  if (x && x.ok) L.push(`8. 注視：揺れ よこ${f2(x.sdX)}・たて${f2(x.sdY)}／広さ${f2(x.bcea)}／外れ${x.intrusions}回`);
-  const ok9 = RUN.okn; if (ok9 && ok9.R && ok9.R.ok && ok9.L && ok9.L.ok) L.push(`9. 流れる縞（OKN）：素早く戻る 右へ流す${ok9.R.beats}回・左へ流す${ok9.L.beats}回／流される速さ 右${f2(ok9.R.gain)}・左${f2(ok9.L.gain)}`);
-  const vr = RUN.vor; if (vr && vr.ok) L.push(`10. 頭を動かして点を見つめる（VOR）：目が持っていかれた量 ${DIRS.map(k => `${DJ[k]}${vr.dir[k] ? f2(vr.dir[k].carry) : '—'}`).join('・')}／向きの中央 ${f2(vr.base)}`);
+  if (false && s && s.dir) L.push(`7. サッカード（反応ms／速さ）：${DIRS.map(k => `${DJ[k]}${s.dir[k] ? `${s.dir[k].lat ?? '—'}/${f2(s.dir[k].pv)}` : '—'}`).join('・')}${s.metria ? `／行き過ぎ・届かない 右へ${s.metria.right.hyper}・${s.metria.right.hypo}／${s.metria.right.n}回・左へ${s.metria.left.hyper}・${s.metria.left.hypo}／${s.metria.left.n}回` : ''}`);
+  if (false && x && x.ok) L.push(`8. 注視：揺れ よこ${f2(x.sdX)}・たて${f2(x.sdY)}／広さ${f2(x.bcea)}／外れ${x.intrusions}回`);
+  const ok9 = RUN.okn; if (ok9 && ok9.R && ok9.R.ok && ok9.L && ok9.L.ok) L.push(`7. 流れる縞（OKN）：素早く戻る 右へ流す${ok9.R.beats}回・左へ流す${ok9.L.beats}回／流される速さ 右${f2(ok9.R.gain)}・左${f2(ok9.L.gain)}`);
+  const vr = RUN.vor; if (vr && vr.ok) L.push(`8. 頭を動かして点を見つめる（VOR）：目が持っていかれた量 ${DIRS.map(k => `${DJ[k]}${vr.dir[k] ? f2(vr.dir[k].carry) : '—'}`).join('・')}／向きの中央 ${f2(vr.base)}`);
   if (RUN.pupil) L.push(`9. 瞳孔÷黒目：${RUN.pupil.r0 != null ? `右${f2(RUN.pupil.r0)}・左${f2(RUN.pupil.r1)}` : '判定できず'}`);
-  if (c) L.push(`11. 寄り目：右${f2(c.eyes[0].gain)}・左${f2(c.eyes[1].gain)}／先に逃げた目 ${c.first || 'なし'}`);
-  if (t) L.push(`12. 舌（自動）：${t.side}${t.off != null ? `（ずれ${f2(t.off)}）` : ''}／キープ中の揺れ ${t.wobble ? `横${f2(t.wobble.side)}・前後${f2(t.wobble.prot)} → ${t.unstable ? '安定しない' : '安定'}` : '—'}`);
+  if (c) L.push(`9. 寄り目：右${f2(c.eyes[0].gain)}・左${f2(c.eyes[1].gain)}／先に逃げた目 ${c.first || 'なし'}`);
+  if (t) L.push(`10. 舌（自動）：${t.side}${t.off != null ? `（ずれ${f2(t.off)}）` : ''}／キープ中の揺れ ${t.wobble ? `横${f2(t.wobble.side)}・前後${f2(t.wobble.prot)} → ${t.unstable ? '安定しない' : '安定'}` : '—'}`);
   const jw = RUN.jaw;
-  if (jw) L.push(`13. 口の開け方：下あごのずれ ${jw.reps.map(r => r.ok ? f2(r.dev) : '—').join('・')}（＋＝右）→ ${jw.side ? jw.side + 'へずれる' : 'ずれなし'}`);
+  if (jw) L.push(`11. 口の開け方：下あごのずれ ${jw.reps.map(r => r.ok ? f2(r.dev) : '—').join('・')}（＋＝右）→ ${jw.side ? jw.side + 'へずれる' : 'ずれなし'}`);
   const sv = RUN.svv; if (sv && sv.V) { const one = (o, nm) => o && o.ok ? `${nm} 平均${o.mean > 0 ? '右' : '左'}へ${Math.abs(o.mean).toFixed(1)}°（${o.each.map(e => (e > 0 ? '+' : '') + e.toFixed(1)).join('・')}）` : `${nm} —`;
-    L.push(`14. 線をまっすぐにする：${one(sv.V, '縦（SVV）')}／${one(sv.H, '横（SVH）')}（＋＝時計回り＝本人の右）`); }
-  if (RUN.ask) L.push(`15. 質問：痛みが出やすい側 ${RUN.ask.painSide || '—'}／いまの痛み ${RUN.ask.painNow || '—'}／聞こえにくい耳 ${RUN.ask.hearing || '—'}`);
+    L.push(`12. 線をまっすぐにする：${one(sv.V, '縦（SVV）')}／${one(sv.H, '横（SVH）')}（＋＝時計回り＝本人の右）`); }
+  if (RUN.ask) L.push(`13. 質問：痛みが出やすい側 ${RUN.ask.painSide || '—'}／いまの痛み ${RUN.ask.painNow || '—'}／聞こえにくい耳 ${RUN.ask.hearing || '—'}`);
   return L;
 }
 function saveRun() {   // 前の版で撮ったのどの奥の写真は重いので消す
