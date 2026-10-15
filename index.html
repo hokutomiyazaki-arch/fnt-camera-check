@@ -532,7 +532,7 @@ function analyzeTilt(r, ph) {
 const CANAL = { UR: '右の後半規管', UL: '左の後半規管', DR: '左の前半規管', DL: '右の前半規管', toR: '右の水平半規管', toL: '左の水平半規管', up: '両方の後半規管', down: '両方の前半規管' };
 const LEGJ = { UR: '真ん中→右上', UL: '真ん中→左上', DR: '真ん中→右下', DL: '真ん中→左下', toR: '左→右', toL: '右→左', up: '下→上', down: '上→下' };
 const cereb = c => c.startsWith('右') ? '右の小脳' : c.startsWith('左') ? '左の小脳' : '左右の小脳';
-const OFF_MIN = 35, OFF_GAP = 15, SPD_GAP = 15, TOLF = 0.2;   // しきい値は仮（ずれの割合・速さの差は％ポイント）
+const OFF_MIN = 35, OFF_GAP = 15, SPD_GAP = 15, SPD_LOW = 80, TOLF = 0.2;   // しきい値は仮（ずれの割合・速さの差は％ポイント）
 // 線は画面の真ん中に固定したので、鼻の位置とのずれは ±0.8（目じりの間を1）まで探す
 function fitTrack(rs, at, d) {   // 人の遅れ（0〜1.2秒）と体ごとのずれを探して差し引く
   let best = { lag: 0, ox: 0, oy: 0, e: Infinity }; const sub = rs.filter((_, i) => i % 3 === 0);
@@ -802,8 +802,10 @@ function analyzeNeck(seg, g0) {
   out.legs = S; RUN.neck = out;
   const canals = legFlags(S, k => S[OPP[k]] ? S[OPP[k]].off : null);
   for (const k in V) { const v = V[k], o = V[OPP[k]]; if (!o || v.n < 10 || o.pct < 60 || canals.some(c => c.leg === k)) continue;   // 反対向きも追えていないときは、向きの差として読まない
-    const slow = v.laps.filter(x => x <= o.pct - SPD_GAP).length;
-    if (o.pct - v.pct >= SPD_GAP && slow >= 2) canals.push({ k: CANAL[k], cb: cereb(CANAL[k]), leg: k, why: `${LEGJ[k]} の鼻先の速さが点の ${v.pct}%（反対向き ${o.pct}%）・${v.laps.length}回中${slow}回くり返し遅い` }); }
+    // 遅い向きは、点の速さの 8 割に届かないときだけ（2026-10-15 夜 宮崎さん「ずっと点についていっているのに後半規管と出る」）。
+    // 前は反対向きとの差だけで見ていて、作り物の首で 上 108%・下 92%（どちらも点についていけている）を「下が遅い」と読んだ
+    const slow = v.laps.filter(x => x <= Math.min(o.pct - SPD_GAP, SPD_LOW)).length;
+    if (o.pct - v.pct >= SPD_GAP && v.pct <= SPD_LOW && slow >= 2) canals.push({ k: CANAL[k], cb: cereb(CANAL[k]), leg: k, why: `${LEGJ[k]} の鼻先の速さが点の ${v.pct}%（反対向き ${o.pct}%）・${v.laps.length}回中${slow}回くり返し遅い` }); }
   const low = Math.min(out.H?.follow ?? 100, out.V?.follow ?? 100);
   RUN.neckJudge = { overall: low < 60 ? `首の左右・上下で鼻先が線についていけた割合が低い（左右 ${out.H?.follow ?? '—'}%・上下 ${out.V?.follow ?? '—'}%）` : null, canals };
   const c = k => `${LEGJ[k]} <b>${S[k] ? S[k].off + '%' : '—'}</b>${S[k] ? `（速さ${S[k].speed ?? '—'}%）` : ''}`;
