@@ -884,6 +884,14 @@ function analyzeFace(seg, imgs = {}) {
   const mb = [0, 1].map(s => ({ up: avg(seg.base, fr => mouthAt(fr, s).up), out: avg(seg.base, fr => mouthAt(fr, s).out) }));
   const sm = seg.smile.map(fr => [0, 1].map(s => { const m = mouthAt(fr, s); return (m.up - mb[s].up) + (m.out - mb[s].out); }));
   const topSm = [...sm].sort((a, b) => (b[0] + b[1]) - (a[0] + a[1])).slice(0, Math.max(3, Math.round(sm.length * 0.2)));
+  // 2026-10-16（宮崎さん「左だけ上げてみたけれども、全然問題とならない」2回目）：顔の点の口角は、片側だけの笑いでも反対側まで一緒に動いて見えることがある（顔の点は左右そろった形に寄せて読まれる）。
+  // そこで MediaPipe の笑いの値（mouthSmileLeft／Right）も使う。写真の片方の口角だけを下げて通すと、下げた側の値だけ下がり、Left＝本人の左だった（実測）。
+  // 笑いがいちばん強かったコマ（両側の合計の上位2割）で、真顔からの増え方を左右で比べる。顔の点と笑いの値の、どちらかで差が出たら読む
+  const bsS = (fr, s) => { const v = fr.bs && fr.bs[s === 0 ? 'mouthSmileRight' : 'mouthSmileLeft']; return Number.isFinite(v) ? v : NaN; };
+  const bsB = [0, 1].map(s => med(seg.base.map(fr => bsS(fr, s)).filter(Number.isFinite)));
+  const bsF = seg.smile.map(fr => [0, 1].map(s => bsS(fr, s) - bsB[s])).filter(v => v.every(Number.isFinite));
+  const topB = [...bsF].sort((a, b) => (b[0] + b[1]) - (a[0] + a[1])).slice(0, Math.max(3, Math.round(bsF.length * 0.2)));
+  for (const s of [0, 1]) res['ms' + s] = topB.length >= 3 ? r3(Math.max(0, mean(topB.map(v => v[s])))) : null;
   for (const s of [0, 1]) {
     res['m' + s] = r3(Math.max(0, mean(topSm.map(v => v[s]))));
     const bb = avg(seg.base, fr => browY(fr, s));
@@ -917,20 +925,23 @@ function analyzeFace(seg, imgs = {}) {
     v.push({ side: lo, why: `目をギュッと閉じたときに${lo}の目が閉じ切らない（閉じた割合 右${Math.round(res.e0 * 100)}%・左${Math.round(res.e1 * 100)}%）` });
   }
   // 笑ったときの口角の上がりが悪い側（よく上がる側の 7 割に届かない。仮）
-  if (Math.max(res.m0, res.m1) >= 0.03 && pct(res.m0, res.m1) >= SMILE_GAP) {
-    const lo = res.m0 < res.m1 ? '右' : '左';
-    v.push({ side: lo, why: `笑ったときに${lo}の口角の上がりが悪い（右${f2(res.m0)}・左${f2(res.m1)}、差 ${pct(res.m0, res.m1)}%）` });
+  const smG = Math.max(res.m0, res.m1) >= 0.03 && pct(res.m0, res.m1) >= SMILE_GAP, smB = res.ms0 != null && Math.max(res.ms0, res.ms1) >= 0.15 && pct(res.ms0, res.ms1) >= SMILE_GAP;
+  if (smB || smG) {
+    const lo = smB ? (res.ms0 < res.ms1 ? '右' : '左') : (res.m0 < res.m1 ? '右' : '左');
+    v.push({ side: lo, why: `笑ったときに${lo}の口角の上がりが悪い（笑いの値 右${f2(res.ms0)}・左${f2(res.ms1)}、差 ${res.ms0 != null ? pct(res.ms0, res.ms1) : '—'}%／顔の点 右${f2(res.m0)}・左${f2(res.m1)}、差 ${pct(res.m0, res.m1)}%）` });
   }
-  const sides = [...new Set(v.map(x => x.side))];
-  res.cn7 = { side: sides.length === 1 ? sides[0] : null, mixed: sides.length > 1, items: v };
+  // 左右で出た数が多い側を読む（前は1つでも反対側が出ると「左右がまちまち」で側を出さず、口角の差が見えなくなっていた）
+  const nS = sd => v.filter(x => x.side === sd).length, side7 = nS('右') > nS('左') ? '右' : nS('左') > nS('右') ? '左' : null;
+  res.cn7 = { side: side7, mixed: !side7 && v.length > 0, items: v };
   RUN.face = res;
   const C7 = res.cn7;
   staff(`真顔の下がり：口角 ${Math.abs(res.mouthDrop) < 0.005 ? 'ほぼ同じ' : LR(res.mouthDrop) + 'が下 ' + f2(Math.abs(res.mouthDrop))}・眉 ${Math.abs(res.browDrop) < 0.005 ? 'ほぼ同じ' : LR(res.browDrop) + 'が下 ' + f2(Math.abs(res.browDrop))}<br>
   目をギュッと閉じたときの目じりのしわ（増えた本数）：右 <b>${f2(res.wk0)}</b>・左 <b>${f2(res.wk1)}</b><br>
-  口角の上がり：右 <b>${f2(res.m0)}</b>・左 <b>${f2(res.m1)}</b> → ${sideWord(res.m0, res.m1, 'よく上がる')}（差 ${pct(res.m0, res.m1)}%）<br>
+  口角の上がり（笑いの値）：右 <b>${f2(res.ms0)}</b>・左 <b>${f2(res.ms1)}</b> → ${res.ms0 != null ? sideWord(res.ms0, res.ms1, 'よく上がる') : '読めず'}（差 ${res.ms0 != null ? pct(res.ms0, res.ms1) : '—'}%）<br>
+  口角の上がり（顔の点）：右 <b>${f2(res.m0)}</b>・左 <b>${f2(res.m1)}</b> → ${sideWord(res.m0, res.m1, 'よく上がる')}（差 ${pct(res.m0, res.m1)}%）<br>
   眉の上がり：右 <b>${f2(res.b0)}</b>・左 <b>${f2(res.b1)}</b> → ${sideWord(res.b0, res.b1, 'よく上がる')}（差 ${pct(res.b0, res.b1)}%）<br>
   目の閉じ方：右 <b>${Math.round(res.e0 * 100)}%</b>・左 <b>${Math.round(res.e1 * 100)}%</b> → ${sideWord(res.e0, res.e1, 'よく閉じる')}
-  <div class="res judge">内部の読み（仮）：${C7.side ? `<b>${C7.side}の顔面神経</b>の働き低下の可能性 — ${C7.items.map(i => i.why).join('・')}` : C7.mixed ? `左右がまちまち — ${C7.items.map(i => i.why).join('・')}` : '目立った左右差なし'}<br><span class="small">下がりは目の間の長さを1として ${DROOP} 以上・しわは増えた本数の差 ${WRK_GAP}% 以上・口角の上がりは差 ${SMILE_GAP}% 以上・目の閉じ方は両目がいちばん閉じたときの差 ${EYE_GAP}% 以上（どれも仮）。しわは照明の当たり方で左右差が出ることがある</span></div>`);
+  <div class="res judge">内部の読み（仮）：${C7.side ? `<b>${C7.side}の顔面神経</b>の働き低下の可能性 — ${C7.items.map(i => (i.side === C7.side ? '' : `（反対の${i.side}：`) + i.why + (i.side === C7.side ? '' : '）')).join('・')}` : C7.mixed ? `左右がまちまち — ${C7.items.map(i => i.why).join('・')}` : '目立った左右差なし'}<br><span class="small">下がりは目の間の長さを1として ${DROOP} 以上・しわは増えた本数の差 ${WRK_GAP}% 以上・口角の上がりは差 ${SMILE_GAP}% 以上・目の閉じ方は両目がいちばん閉じたときの差 ${EYE_GAP}% 以上（どれも仮）。しわは照明の当たり方で左右差が出ることがある</span></div>`);
   recorded(stepFace, stepEyePrep, '次へ（目の準備）');
 }
 
