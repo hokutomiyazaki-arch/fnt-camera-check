@@ -60,10 +60,10 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 #bottom:not(:has(*:not(:empty))){background:none}
 #msg{font-size:12.5px;color:#aab;text-align:center;min-height:0}
 #photoWrap{position:absolute;inset:0;display:none;z-index:4;background:#000}
-#svv{position:fixed;inset:0;display:none;z-index:30;background:#000}
+#svv{position:fixed;inset:0;display:none;z-index:30;background:#fff}
 #svv canvas{position:absolute;inset:0;width:100%;height:100%}
-#svvMsg{position:absolute;left:50%;top:18%;transform:translateX(-50%);width:min(92vw,520px);text-align:center;font-weight:800;font-size:clamp(22px,6vw,30px);line-height:1.45;color:#ddd}
-#svvMsg small{display:block;font-size:15px;font-weight:600;color:#999;margin-top:6px}
+#svvMsg{position:absolute;left:50%;top:18%;transform:translateX(-50%);width:min(92vw,520px);text-align:center;font-weight:800;font-size:clamp(22px,6vw,30px);line-height:1.45;color:#222}
+#svvMsg small{display:block;font-size:15px;font-weight:600;color:#666;margin-top:6px}
 #okn{position:absolute;inset:0;display:none;z-index:4;background:repeating-linear-gradient(90deg,#f4f4f4 0 50%,#111 50% 100%)}
 #photo{width:100%;height:100%;object-fit:contain}
 #camFix{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:30;width:auto;background:#e8590c}
@@ -857,14 +857,17 @@ async function stepFace() {
     cue('終わりました'); analyzeFace(seg, imgs);
   });
 }
-// 目じりの外のしわ：目じりから外へ、たての線を何本も引き、明るさの谷（しわの溝）の数を数えて平均する。
+// しわ：目じりから外へ（out）・目がしらから鼻の側へ（in）、たての線を何本も引き、明るさの谷（しわの溝）の数を数えて平均する。
 // 目をギュッと閉じたときに、真顔より何本増えたか（2026-10-14 宮崎さん「目を思い切りつぶった時のシワの数が少ない方の顔面神経」）
-function wrinkleCount({ pts, img }, s) {
+// 内側（目がしら〜鼻の横）も数える（2026-10-16 宮崎さん「目尻のシワっていうよりも、内側のシワの本数もちゃんと数えてほしい」）。
+// 内側は鼻すじの手前まで（目がしらどうしの間は目じりの間の約3分の1なので、真ん中に届かない 0.10 まで）
+const WRK_ZONE = { out: { anchor: 'eyeOut', dir: 1, u0: 0.04, u1: 0.20, y0: -0.10, y1: 0.14 }, in: { anchor: 'eyeIn', dir: -1, u0: 0.02, u1: 0.10, y0: -0.06, y1: 0.14 } };
+function wrinkleCount({ pts, img }, s, zone = 'out') {
   const { f, inv, d } = frame(pts), W = img.width, H = img.height, D = img.data;
   const gray = q => { const p = inv(q), x = Math.round(p.x), y = Math.round(p.y); if (x < 0 || y < 0 || x >= W || y >= H) return NaN; const i = (y * W + x) * 4; return 0.299 * D[i] + 0.587 * D[i + 1] + 0.114 * D[i + 2]; };
-  const a = f(pts[P.eyeOut[s]]), out = s === 0 ? -1 : 1, st = 1 / d, cols = [];   // 1画素ずつ。右目は x が負の向きが外
-  for (let u = 0.04; u <= 0.2001; u += 0.02) {
-    const v = []; for (let y = a.y - 0.10; y <= a.y + 0.14; y += st) v.push(gray({ x: a.x + out * u, y }));
+  const Z = WRK_ZONE[zone], a = f(pts[P[Z.anchor][s]]), out = (s === 0 ? -1 : 1) * Z.dir, st = 1 / d, cols = [];   // 1画素ずつ。右目は x が負の向きが外（内側はその逆）
+  for (let u = Z.u0; u <= Z.u1 + 0.0001; u += 0.02) {
+    const v = []; for (let y = a.y + Z.y0; y <= a.y + Z.y1; y += st) v.push(gray({ x: a.x + out * u, y }));
     if (v.some(x => !Number.isFinite(x)) || v.length < 12) continue;
     const sm = v.map((_, i) => (v[Math.max(0, i - 1)] + v[i] + v[Math.min(v.length - 1, i + 1)]) / 3), lv = mean(sm);
     let n = 0; const R = Math.max(2, Math.round(0.015 / st));
@@ -915,15 +918,22 @@ function analyzeFace(seg, imgs = {}) {
   // 真顔のときの下がり（＋＝右が下）。y は下が＋
   res.mouthDrop = r3(avg(seg.base, fr => cornerY(fr, 0) - cornerY(fr, 1)));
   res.browDrop = r3(avg(seg.base, fr => browY(fr, 0) - browY(fr, 1)));
-  const wk = (k, sd) => { const v = (imgs[k] || []).map(fr => wrinkleCount(fr, sd)).filter(Number.isFinite); return v.length ? med(v) : NaN; };
-  for (const sd of [0, 1]) { const b0 = wk('base', sd), e1 = wk('eye', sd); res['wb' + sd] = r3(b0); res['we' + sd] = r3(e1); res['wk' + sd] = r3(e1 - b0); }
+  const wk = (k, sd, z) => { const v = (imgs[k] || []).map(fr => wrinkleCount(fr, sd, z)).filter(Number.isFinite); return v.length ? med(v) : NaN; };
+  // 外（目じり）と内（目がしら）の増えた本数を足して比べる。片方が読めなければ、読めた方だけで比べる（左右とも同じ側を使う）
+  const inc = {}; for (const z of ['out', 'in']) for (const sd of [0, 1]) { const b0 = wk('base', sd, z), e1 = wk('eye', sd, z); inc[z + sd] = { b: b0, e: e1, d: e1 - b0 }; }
+  const zs = ['out', 'in'].filter(z => Number.isFinite(inc[z + 0].d) && Number.isFinite(inc[z + 1].d));
+  for (const sd of [0, 1]) {
+    const sum = k => zs.length ? zs.reduce((t, z) => t + inc[z + sd][k], 0) : NaN;
+    res['wb' + sd] = r3(sum('b')); res['we' + sd] = r3(sum('e')); res['wk' + sd] = r3(sum('d'));
+    res['wo' + sd] = r3(inc['out' + sd].d); res['wi' + sd] = r3(inc['in' + sd].d);
+  }
   // 顔面神経：口角・眉が下がっている側、目を閉じたときのしわが少ない側（2026-10-14 宮崎さん）
   const v = [], LR = x => x > 0 ? '右' : '左';
   if (Math.abs(res.mouthDrop) >= DROOP) v.push({ side: LR(res.mouthDrop), why: `真顔で${LR(res.mouthDrop)}の口角が下がっている（差 ${f2(Math.abs(res.mouthDrop))}）` });
   if (Math.abs(res.browDrop) >= DROOP) v.push({ side: LR(res.browDrop), why: `真顔で${LR(res.browDrop)}の眉が下がっている（差 ${f2(Math.abs(res.browDrop))}）` });
   if (Number.isFinite(res.wk0) && Number.isFinite(res.wk1) && Math.max(res.wk0, res.wk1) >= 0.5 && pct(res.wk0, res.wk1) >= WRK_GAP) {
     const lo = res.wk0 < res.wk1 ? '右' : '左';
-    v.push({ side: lo, why: `目をギュッと閉じたときの目じりのしわが${lo}のほうが少ない（増えた本数 右${f2(res.wk0)}・左${f2(res.wk1)}）` });
+    v.push({ side: lo, why: `目をギュッと閉じたときの目のまわりのしわが${lo}のほうが少ない（目じり＋目がしらで増えた本数 右${f2(res.wk0)}・左${f2(res.wk1)}）` });
   }
   // 目をギュッと閉じたときに閉じ切らない側（よく閉じる側より ${EYE_GAP}% 以上閉じが浅い）
   if (Math.max(res.e0, res.e1) >= 0.3 && pct(res.e0, res.e1) >= EYE_GAP) {
@@ -942,7 +952,7 @@ function analyzeFace(seg, imgs = {}) {
   RUN.face = res;
   const C7 = res.cn7;
   staff(`真顔の下がり：口角 ${Math.abs(res.mouthDrop) < 0.005 ? 'ほぼ同じ' : LR(res.mouthDrop) + 'が下 ' + f2(Math.abs(res.mouthDrop))}・眉 ${Math.abs(res.browDrop) < 0.005 ? 'ほぼ同じ' : LR(res.browDrop) + 'が下 ' + f2(Math.abs(res.browDrop))}<br>
-  目をギュッと閉じたときの目じりのしわ（増えた本数）：右 <b>${f2(res.wk0)}</b>・左 <b>${f2(res.wk1)}</b><br>
+  目をギュッと閉じたときの目のまわりのしわ（増えた本数・目じり＋目がしら）：右 <b>${f2(res.wk0)}</b>・左 <b>${f2(res.wk1)}</b>（目じり 右${f2(res.wo0)}・左${f2(res.wo1)}／目がしら 右${f2(res.wi0)}・左${f2(res.wi1)}）<br>
   口角の上がり（笑いの値）：右 <b>${f2(res.ms0)}</b>・左 <b>${f2(res.ms1)}</b> → ${res.ms0 != null ? sideWord(res.ms0, res.ms1, 'よく上がる') : '読めず'}（差 ${res.ms0 != null ? pct(res.ms0, res.ms1) : '—'}%）<br>
   口角の上がり（顔の点）：右 <b>${f2(res.m0)}</b>・左 <b>${f2(res.m1)}</b> → ${sideWord(res.m0, res.m1, 'よく上がる')}（差 ${pct(res.m0, res.m1)}%）<br>
   眉の上がり：右 <b>${f2(res.b0)}</b>・左 <b>${f2(res.b1)}</b> → ${sideWord(res.b0, res.b1, 'よく上がる')}（差 ${pct(res.b0, res.b1)}%）<br>
@@ -2013,7 +2023,7 @@ function drawJaw({ img, pts }) {
 }
 
 // ════ 14. 線をまっすぐにする（SVV＝主観的垂直・SVH＝主観的水平）（2026-10-15 宮崎さん）
-// 暗い画面に赤い線を1本、傾けて出す。本人はスマホを傾けて、線を「まっすぐ縦」（SVV）・「まっすぐ横」（SVH）に合わせて止める。
+// 白い画面に赤い線を1本（2026-10-16 宮崎さん：黒だと画面に顔が映り込むので白に）、傾けて出す。本人はスマホを傾けて、線を「まっすぐ縦」（SVV）・「まっすぐ横」（SVH）に合わせて止める。
 // 線は画面に対して固定（バケツの内側の線と同じ）。止まったときの線の、重力に対する傾き＝画面上の線の角度＋スマホの傾き（加速度で重力の向きを取る）。
 // 縦4回・横4回。始めは右・左へ交互に 12〜20° 傾けておく（Carrick CNS05-22：半分ずつ反対から始める。Z-Health Next Evolution：傾けて渡し、右からと左からの両方）。
 // 読み（Z-Health 9S Next Evolution マニュアル p.27–28・スライド p.97）：平均のずれが SVV 2.5° 以上・SVH 1.5° 以上で異常。
@@ -2237,7 +2247,7 @@ function summaryLines() {
   if (RUN.tilt) L.push(`1. ふだんの首の傾き：${Math.abs(RUN.tilt.deg) < 0.5 ? 'ほぼまっすぐ' : (RUN.tilt.deg > 0 ? '右' : '左') + 'へ' + Math.abs(RUN.tilt.deg) + '°'}（スマホの傾き ${RUN.tilt.phone ?? '—'}°）`);
   if (e) L.push(`2. 首の8の字：点について線の上 最初${e.fwd.follow}%・反対${e.rev.follow}%／なぞれた範囲 右の輪 ${e.fwd.covR}%・${e.rev.covR}%／左の輪 ${e.fwd.covL}%・${e.rev.covL}%／ずれた割合 ${['UR', 'UL', 'DR', 'DL'].map(k => `${LEGJ[k].slice(4)}${e.legs?.[k]?.off ?? '—'}%`).join('・')}／気持ち悪さ ${e.nausea || '—'}`);
   if (nk) L.push(`3. 首の左右・上下：線の上 左右${nk.H?.follow ?? '—'}%・上下${nk.V?.follow ?? '—'}%／ずれた割合 ${['toR', 'toL', 'up', 'down'].map(k => `${LEGJ[k]}${nk.legs?.[k]?.off ?? '—'}%（速さ${nk.legs?.[k]?.speed ?? '—'}%）`).join('・')}／気持ち悪さ ${nk.nausea || '—'}`);
-  if (f) L.push(`4. 表情：口角 右${f2(f.m0)}・左${f2(f.m1)}／眉 右${f2(f.b0)}・左${f2(f.b1)}／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%／真顔の下がり 口角${f2(f.mouthDrop)}・眉${f2(f.browDrop)}（＋＝右が下）／目じりのしわ 右${f2(f.wk0)}・左${f2(f.wk1)}（真顔→閉じた 右${f2(f.wb0)}→${f2(f.we0)}・左${f2(f.wb1)}→${f2(f.we1)}）`);
+  if (f) L.push(`4. 表情：口角 右${f2(f.m0)}・左${f2(f.m1)}／眉 右${f2(f.b0)}・左${f2(f.b1)}／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%／真顔の下がり 口角${f2(f.mouthDrop)}・眉${f2(f.browDrop)}（＋＝右が下）／目のまわりのしわ（目じり＋目がしら） 右${f2(f.wk0)}・左${f2(f.wk1)}（目じり 右${f2(f.wo0)}・左${f2(f.wo1)}／目がしら 右${f2(f.wi0)}・左${f2(f.wi1)}）（真顔→閉じた 右${f2(f.wb0)}→${f2(f.we0)}・左${f2(f.wb1)}→${f2(f.we1)}）`);
   if (RUN.calib) L.push(`5. 目の準備（検査ではない・測るための合わせ）：横 ${RUN.calib.x?.nm}（見分け${RUN.calib.x?.sep}）・たて ${RUN.calib.y?.nm}（見分け${RUN.calib.y?.sep}）・近さ ${f2(RUN.eyeGate?.eye)}`);
   if (p && p.dir) L.push(`6. 追従：${DIRS.map(k => `${DJ[k]}${p.dir[k] ? (p.dir[k].q ?? '読めず') : '—'}`).join('・')}（読み方 ${(p.segs || []).map(x => `${x.k}＝${x.nm || '—'}・説明できた割合 ${f2(x.r2)}・倍率 ${f2(x.amp)}`).join('／')}）`);
   if (false && s && s.dir) L.push(`7. サッカード（反応ms／速さ）：${DIRS.map(k => `${DJ[k]}${s.dir[k] ? `${s.dir[k].lat ?? '—'}/${f2(s.dir[k].pv)}` : '—'}`).join('・')}${s.metria ? `／行き過ぎ・届かない 右へ${s.metria.right.hyper}・${s.metria.right.hypo}／${s.metria.right.n}回・左へ${s.metria.left.hyper}・${s.metria.left.hypo}／${s.metria.left.n}回` : ''}`);
