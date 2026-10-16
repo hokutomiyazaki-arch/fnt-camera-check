@@ -1005,7 +1005,7 @@ function feats({ pts, bs }) {
 let CAL = null;
 const CAL_MIN = 2;
 function fitAxis(segs, negK, posK, names) {
-  let best = null;
+  let best = null; const all = [];
   for (const nm of names) {
     const v = k => segs.filter(s => s.k === k || (k === 'C' && s.k === 'C2')).flatMap(s => s.F.map(f => f[nm])).filter(Number.isFinite);
     const n = v(negK), p = v(posK), c = v('C');
@@ -1013,8 +1013,10 @@ function fitAxis(segs, negK, posK, names) {
     const mn = med(n), mp = med(p), mc = med(c), slope = (mp - mn) / 2;
     const noise = (mad(n) + mad(p) + mad(c)) / 3 * 1.4826 + 1e-6;
     let sep = Math.abs(mp - mn) / noise; const mono = (mc - mn) * (mp - mc) > 0; if (!mono) sep /= 2;
-    if (Math.abs(slope) > 1e-6 && (!best || sep > best.sep)) best = { nm, mc, slope, sep: Math.round(sep * 10) / 10, mono };
+    const o = { nm, mc, slope, sep: Math.round(sep * 10) / 10, mono };
+    if (Math.abs(slope) > 1e-6) { all.push(o); if (!best || sep > best.sep) best = o; }
   }
+  if (best) best.all = all;   // 追従では、組ごとに点の動きといちばん合う読み方を選び直す（下の pickSeries）
   return best;
 }
 function fitCalib(segs) {
@@ -1024,9 +1026,9 @@ function fitCalib(segs) {
   // 見分けが 2 未満の向きは、目の位置の読み取りが不安定（その向きの数字・判定は信用しない）
   return { ok: !!(x && y), reliable: !!(x && y && x.sep >= CAL_MIN && y.sep >= CAL_MIN), x, y, apRef, frames: segs.reduce((s, g) => s + g.fr.length, 0) };
 }
-function series(fr) {   // コマ → 画面上の視線（X 右＋・Y 上＋）
+function series(fr, cx = CAL.x, cy = CAL.y) {   // コマ → 画面上の視線（X 右＋・Y 上＋）
   return fr.map(o => {
-    const F = feats(o), X = (F[CAL.x.nm] - CAL.x.mc) / CAL.x.slope, Y = (F[CAL.y.nm] - CAL.y.mc) / CAL.y.slope;
+    const F = feats(o), X = (F[cx.nm] - cx.mc) / cx.slope, Y = (F[cy.nm] - cy.mc) / cy.slope;
     const bl = (F.blinkBs > 0.7) || F.ap < CAL.apRef * 0.35;
     return { t: o.t, X, Y, bl, e: F.e };
   });
@@ -1090,7 +1092,7 @@ async function stepPursuit() {
       segs.push({ k: s.k, v: s.v, t0, fr });
     }
     hideDot(); dark(false);
-    const out = analyzePursuitSeries(segs.map(s => ({ k: s.k, v: s.v, t0: s.t0, fr: series(s.fr) })));
+    const out = analyzePursuitSeries(segs.map(pickSeries));
     out.gate = g; out.fps = fpsOf(segs.flatMap(s => s.fr), PT * PC * PUR.length);
     RUN.pursuit = out; judge();
     if (!out.ok) return fail(stepPursuit, '目が見えている時間が短すぎました');
@@ -1106,27 +1108,47 @@ async function stepPursuit() {
 //  ② 読み取りの揺れの大きさを、コマごとの細かいぶれから見積もって差し引く
 //  ③ 残った「点からのずれ」を、点の進む向き（遅れる・跳んで追いつく）と、線から外れる向きに分けて、点が動く向きごとに測る
 // 点数は ③ のずれで決める。ひとつの組の中で右へ動くときだけずれる、のような向きの差がそのまま出る。目がほとんど動かない組（倍率 PUR_AMP 未満）はその組の向きを0点にする
-const PUR_E0 = 0.08, PUR_E1 = 0.30, PUR_AMP = 0.35;   // ずれ（点の振れ幅＝1）がこれを超えると点数を下げ始める・ここから PUR_E1 増えると0点・目の振れ幅の倍率の下限。どれも仮
+// 2026-10-16 夜：目の振れ幅の倍率が PUR_AMP 未満、または点の動きで説明できた割合が PUR_R2 未満の組は「読めず」にする（前は0点にしていた）。
+// 追従でふつうの人の目がほとんど動かないことはまずなく（遅れても跳んで追いつくので、振れ幅は点とほぼ同じ）、そう読めたのはカメラが目の動きを捉えられていないとき
+const PUR_E0 = 0.08, PUR_E1 = 0.30, PUR_AMP = 0.35, PUR_R2 = 0.3;   // ずれ（点の振れ幅＝1）がこれを超えると点数を下げ始める・ここから PUR_E1 増えると0点・読めたとみなす倍率と説明できた割合の下限。どれも仮
+function lagFit(fr, s) {   // 目の遅れ（0〜400ms）と倍率：目の位置（点の線に沿った向き）＝倍率×点の位置＋ずれ を最小二乗で当てる。r2＝点の動きで説明できた割合
+  const w = 2 * Math.PI / PT, L = Math.hypot(...s.v), u = { x: s.v[0] / L, y: s.v[1] / L }, al = fr.map(f => f.X * u.x + f.Y * u.y), me = mean(al), stt = al.reduce((t, x) => t + (x - me) ** 2, 0);
+  let best = null;
+  for (let lag = 0; lag <= 400; lag += 20) {
+    const a = fr.map(f => L * Math.sin(w * (f.t - lag - s.t0))), ma = mean(a);
+    let sab = 0, saa = 0; a.forEach((x, i) => { sab += (x - ma) * (al[i] - me); saa += (x - ma) ** 2; });
+    const A = saa ? sab / saa : 0, B = me - A * ma, sse = a.reduce((t, x, i) => t + (al[i] - A * x - B) ** 2, 0);
+    if (!best || sse < best.sse) best = { lag, A, B, sse, r2: stt ? 1 - sse / stt : 0 };
+  }
+  return best;
+}
+// 2026-10-16 夜（宮崎さん「左右方向だと追従がゼロと出る。目は追えているのに、カメラで捉えられていないのでは」）：
+// 目の合わせで選んだ読み方（黒目の位置か、MediaPipe の視線の値か）は、端で止まった点を見たときにいちばん見分けがついたもの。
+// MediaPipe の視線の値は真ん中あたりの小さな動きでほとんど動かないので、それが選ばれると、点を追う間は目がほとんど動かないように見えて0点になっていた。
+// 組ごとに、読み方の組み合わせを全部試し、点の動きといちばん合うもの（r2 が大きい）を使う
+const okFr = f => !f.bl && Number.isFinite(f.X) && Number.isFinite(f.Y) && Math.abs(f.X) < 4 && Math.abs(f.Y) < 4;
+function pickSeries(s) {
+  let best = null;
+  for (const cx of CAL.x.all || [CAL.x]) for (const cy of CAL.y.all || [CAL.y]) {
+    const fr = series(s.fr, cx, cy), ok = fr.filter(okFr); if (ok.length < 20) continue;
+    const r2 = lagFit(ok, s).r2; if (!best || r2 > best.r2) best = { fr, r2, nm: cx.nm + '・' + cy.nm };
+  }
+  return best ? { k: s.k, v: s.v, t0: s.t0, fr: best.fr, nm: best.nm } : { k: s.k, v: s.v, t0: s.t0, fr: series(s.fr) };
+}
 function analyzePursuitSeries(segs) {
   const bins = {}, add = (b, o) => (bins[b] = bins[b] || []).push(o), segInfo = [];
   let used = 0, total = 0;
   for (const s of segs) {
-    const fr = s.fr.filter(f => !f.bl && Number.isFinite(f.X) && Number.isFinite(f.Y) && Math.abs(f.X) < 4 && Math.abs(f.Y) < 4); total += s.fr.length; used += fr.length;
+    const fr = s.fr.filter(okFr); total += s.fr.length; used += fr.length;
     if (fr.length < 20) continue;
     const w = 2 * Math.PI / PT, L = Math.hypot(...s.v), u = { x: s.v[0] / L, y: s.v[1] / L }, n = { x: -u.y, y: u.x };
     const al = fr.map(f => f.X * u.x + f.Y * u.y), pp = fr.map(f => f.X * n.x + f.Y * n.y);
-    // ① 遅れと倍率：遅れを 0〜400ms で振って、目の位置（点の線に沿った向き）＝倍率×点の位置＋ずれ を最小二乗で当てる
-    let best = null;
-    for (let lag = 0; lag <= 400; lag += 20) {
-      const a = fr.map(f => L * Math.sin(w * (f.t - lag - s.t0))), ma = mean(a), me = mean(al);
-      let sab = 0, saa = 0; a.forEach((x, i) => { sab += (x - ma) * (al[i] - me); saa += (x - ma) ** 2; });
-      const A = saa ? sab / saa : 0, B = me - A * ma, sse = a.reduce((t, x, i) => t + (al[i] - A * x - B) ** 2, 0);
-      if (!best || sse < best.sse) best = { lag, A, B, sse };
-    }
+    // ① 遅れと倍率：遅れを 0〜400ms で振って当てる（lagFit）
+    const best = lagFit(fr, s);
     // 線から外れる向きも、点の位置に比例する分（よこ・たての合わせの倍率が違うと、ななめの線が少し回って見える）は差し引く
     const a0 = fr.map(f => L * Math.sin(w * (f.t - best.lag - s.t0))), m0 = mean(a0), mp = mean(pp); let sap = 0, saa0 = 0; a0.forEach((x, i) => { sap += (x - m0) * (pp[i] - mp); saa0 += (x - m0) ** 2; });
-    const D = saa0 ? sap / saa0 : 0, A = best.A, weak = !(A >= PUR_AMP);
-    segInfo.push({ k: s.k, amp: r3(A), lag: best.lag });
+    const D = saa0 ? sap / saa0 : 0, A = best.A, weak = !(A >= PUR_AMP && best.r2 >= PUR_R2);
+    segInfo.push({ k: s.k, amp: r3(A), lag: best.lag, r2: r3(best.r2), nm: s.nm || null, unread: weak });
     const sc = Math.max(Math.abs(A), PUR_AMP) * L;   // 点の振れ幅＝1 にそろえる
     const ra = fr.map((f, i) => (al[i] - best.B) / sc - Math.sin(w * (f.t - best.lag - s.t0))), rp = pp.map((v, i) => (v - mp - D * (a0[i] - m0)) / sc);
     // ② 読み取りの揺れ：となりのコマとの差のばらつき（ゆっくりしたずれは差に出ない）
@@ -1153,21 +1175,20 @@ function analyzePursuitSeries(segs) {
   for (const k in dir) { const d = dir[k], o = dir[OPP[k]];
     d.behind = r3(o ? Math.max(0, o.ah - d.ah) : Math.max(0, -2 * d.ah));
     const e = Math.hypot(d.err, d.off, d.behind);
-    d.q = d.weak ? 0 : Math.round(100 * clamp(1 - (e - PUR_E0) / PUR_E1, 0, 1)); }
+    d.q = d.weak ? null : Math.round(100 * clamp(1 - (e - PUR_E0) / PUR_E1, 0, 1)); }
   return { ok: Object.keys(dir).length >= 4, dir, segs: segInfo, blinkFrac: r3(total ? 1 - used / total : 1) };
 }
 // 点数を下げたもの：遅れる・跳ぶ（点の進む向きのずれ）・線から外れる・目がほとんど動かない。大きい順
 function pursuitWhy(dir, ks) {
-  const a = ks.map(k => dir[k]).filter(Boolean); if (!a.length) return '';
-  if (a.some(o => o.weak)) return '。主に 目がほとんど点についていかない（振れ幅 ' + f2(Math.min(...a.map(o => o.amp))) + '）';
+  const a = ks.map(k => dir[k]).filter(o => o && !o.weak); if (!a.length) return '';
   const ea = mean(a.map(o => o.err)), eb = mean(a.map(o => o.behind || 0)), ep = mean(a.map(o => o.off));
   const L = [['反対の向きより点に遅れる（' + f2(eb) + '）', eb], ['つっかえる・跳んで追いつく（' + f2(ea) + '）', ea], ['線から外れる（' + f2(ep) + '）', ep]].filter(x => x[1] >= PUR_E0).sort((x, y) => y[1] - x[1]);
   return L.length ? '。主に ' + L.map(x => x[0]).join('・') : '';
 }
 const grpQ = (dir, ks) => { const v = ks.map(k => dir[k] && dir[k].q).filter(Number.isFinite); return v.length ? Math.round(mean(v)) : null; };
 function pursuitHTML(o) {
-  const d = o.dir, cell = k => d[k] ? `${DJ[k]} <b>${d[k].q}</b>（遅れ ${f2(d[k].behind)}・つっかえ ${f2(d[k].err)}・線から外れる ${f2(d[k].off)}${d[k].weak ? '・目がほとんど動かない' : ''}）` : `${DJ[k]} —（読めず）`;
-  return `追従の点数（向きごと。100＝ぴったり）<br>${DIRS.map(cell).join('<br>')}<br><span class="small">（ ）＝点の振れ幅を1とした、点からのずれ。カメラの遅れ（${(o.segs || []).map(x => x.lag).join('・')}ms と読んだ）・目の合わせの倍率（${(o.segs || []).map(x => f2(x.amp)).join('・')}）・読み取りの揺れは差し引いてある。遅れ（反対の向きと比べて点の後ろにいた量）も足し、ずれ ${PUR_E0} を超えると点数を下げ、${f2(PUR_E0 + PUR_E1)} で0点（仮）。どの向きも ${PUR_ABS} 点未満なら、左右の差が無くても読む。まばたき等で除いたコマ ${Math.round(o.blinkFrac * 100)}%・${o.fps}コマ/秒</span>${judgeHTML()}`;
+  const d = o.dir, cell = k => d[k] ? (d[k].weak ? `${DJ[k]} <b>読めず</b>（カメラで目の動きが小さくしか写らなかった・倍率 ${f2(d[k].amp)}。点数に入れない）` : `${DJ[k]} <b>${d[k].q}</b>（遅れ ${f2(d[k].behind)}・つっかえ ${f2(d[k].err)}・線から外れる ${f2(d[k].off)}）`) : `${DJ[k]} —（読めず）`;
+  return `追従の点数（向きごと。100＝ぴったり）<br>${DIRS.map(cell).join('<br>')}<br><span class="small">（ ）＝点の振れ幅を1とした、点からのずれ。カメラの遅れ（${(o.segs || []).map(x => x.lag).join('・')}ms と読んだ）・目の合わせの倍率（${(o.segs || []).map(x => f2(x.amp)).join('・')}）・点の動きで説明できた割合（${(o.segs || []).map(x => f2(x.r2)).join('・')}）・使った読み方（${(o.segs || []).map(x => x.nm || '—').join('／')}）・読み取りの揺れは差し引いてある。遅れ（反対の向きと比べて点の後ろにいた量）も足し、ずれ ${PUR_E0} を超えると点数を下げ、${f2(PUR_E0 + PUR_E1)} で0点（仮）。倍率 ${PUR_AMP} 未満か説明できた割合 ${PUR_R2} 未満の組は「読めず」。どの向きも ${PUR_ABS} 点未満なら、左右の差が無くても読む。まばたき等で除いたコマ ${Math.round(o.blinkFrac * 100)}%・${o.fps}コマ/秒</span>${judgeHTML()}`;
 }
 // 内部の判定（お客さんには見せない）。しきい値は仮（2026-10-14 宮崎さん：判定のしかたは後で伝える）
 // ・右／右上／右下へ ついていけない（カクつく）→ 右の皮質　・左／左上／左下 → 左の皮質（同側の皮質。アドバンス教材 §7.1 で確定 2026-10-14）
@@ -2203,7 +2224,7 @@ function summaryLines() {
   if (nk) L.push(`3. 首の左右・上下：線の上 左右${nk.H?.follow ?? '—'}%・上下${nk.V?.follow ?? '—'}%／ずれた割合 ${['toR', 'toL', 'up', 'down'].map(k => `${LEGJ[k]}${nk.legs?.[k]?.off ?? '—'}%（速さ${nk.legs?.[k]?.speed ?? '—'}%）`).join('・')}／気持ち悪さ ${nk.nausea || '—'}`);
   if (f) L.push(`4. 表情：口角 右${f2(f.m0)}・左${f2(f.m1)}／眉 右${f2(f.b0)}・左${f2(f.b1)}／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%／真顔の下がり 口角${f2(f.mouthDrop)}・眉${f2(f.browDrop)}（＋＝右が下）／目じりのしわ 右${f2(f.wk0)}・左${f2(f.wk1)}`);
   if (RUN.calib) L.push(`5. 目の準備（検査ではない・測るための合わせ）：横 ${RUN.calib.x?.nm}（見分け${RUN.calib.x?.sep}）・たて ${RUN.calib.y?.nm}（見分け${RUN.calib.y?.sep}）・近さ ${f2(RUN.eyeGate?.eye)}`);
-  if (p && p.dir) L.push(`6. 追従：${DIRS.map(k => `${DJ[k]}${p.dir[k] ? p.dir[k].q : '—'}`).join('・')}`);
+  if (p && p.dir) L.push(`6. 追従：${DIRS.map(k => `${DJ[k]}${p.dir[k] ? (p.dir[k].q ?? '読めず') : '—'}`).join('・')}`);
   if (false && s && s.dir) L.push(`7. サッカード（反応ms／速さ）：${DIRS.map(k => `${DJ[k]}${s.dir[k] ? `${s.dir[k].lat ?? '—'}/${f2(s.dir[k].pv)}` : '—'}`).join('・')}${s.metria ? `／行き過ぎ・届かない 右へ${s.metria.right.hyper}・${s.metria.right.hypo}／${s.metria.right.n}回・左へ${s.metria.left.hyper}・${s.metria.left.hypo}／${s.metria.left.n}回` : ''}`);
   if (false && x && x.ok) L.push(`8. 注視：揺れ よこ${f2(x.sdX)}・たて${f2(x.sdY)}／広さ${f2(x.bcea)}／外れ${x.intrusions}回`);
   const ok9 = RUN.okn; if (ok9 && ok9.R && ok9.R.ok && ok9.L && ok9.L.ok) L.push(`7. 流れる縞（OKN）：素早く戻る 右へ流す${ok9.R.beats}回・左へ流す${ok9.L.beats}回／流される速さ 右${f2(ok9.R.gain)}・左${f2(ok9.L.gain)}`);
