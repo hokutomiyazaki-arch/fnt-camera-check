@@ -1092,50 +1092,76 @@ async function stepPursuit() {
     recorded(stepPursuit, stepOkn, '次へ（流れる縞を見る）');   // 2026-10-16 宮崎さん：サッカード・注視は外した（下の stepSacc・stepFix の所に理由）
   });
 }
-// 追従の採点：点が速く動いている所（最高の速さの半分以上）だけを使い、点の向きごとに
-// ・ついていけた割合（目の速さ ÷ 点の速さ。1＝ぴったり）・途中で跳んで追いついた割合・位置のずれ を出す
+// 追従の採点（2026-10-16 作り直し。宮崎さん「どの方向も全部問題があるかのように出てしまう」）
+// 前は、目の速さ・点からのずれを「画面の単位」のまま見ていた。カメラの遅れ（0.1〜0.2秒）・目の合わせの倍率の狂い（0.6〜1.5倍）・読み取りの揺れが
+// そのまま「遅い」「ずれ」になり、作り物の正常な目でも、揺れが大きい端末では8方向すべて 60点未満になった（20回中20回、右・左・中脳）。
+// いまは、向きの組（よこ・たて・ななめ2つ）ごとに
+//  ① 目の遅れ（0〜0.4秒）と、目の振れ幅の倍率を、その人のその回の動きから求めて差し引く（カメラの遅れ・合わせの倍率の狂いを消す）
+//  ② 読み取りの揺れの大きさを、コマごとの細かいぶれから見積もって差し引く
+//  ③ 残った「点からのずれ」を、点の進む向き（遅れる・跳んで追いつく）と、線から外れる向きに分けて、点が動く向きごとに測る
+// 点数は ③ のずれで決める。ひとつの組の中で右へ動くときだけずれる、のような向きの差がそのまま出る。目がほとんど動かない組（倍率 PUR_AMP 未満）はその組の向きを0点にする
+const PUR_E0 = 0.08, PUR_E1 = 0.30, PUR_AMP = 0.35;   // ずれ（点の振れ幅＝1）がこれを超えると点数を下げ始める・ここから PUR_E1 増えると0点・目の振れ幅の倍率の下限。どれも仮
 function analyzePursuitSeries(segs) {
-  const bins = {}, add = (b, o) => (bins[b] = bins[b] || []).push(o);
+  const bins = {}, add = (b, o) => (bins[b] = bins[b] || []).push(o), segInfo = [];
   let used = 0, total = 0;
   for (const s of segs) {
-    const fr = s.fr.filter(f => !f.bl && Number.isFinite(f.X) && Number.isFinite(f.Y)); total += s.fr.length; used += fr.length;
+    const fr = s.fr.filter(f => !f.bl && Number.isFinite(f.X) && Number.isFinite(f.Y) && Math.abs(f.X) < 4 && Math.abs(f.Y) < 4); total += s.fr.length; used += fr.length;
     if (fr.length < 20) continue;
-    const w = 2 * Math.PI / PT, vpk = Math.hypot(...s.v) * w * 1000;
-    const T = t => { const a = Math.sin(w * (t - s.t0)); return { x: s.v[0] * a, y: s.v[1] * a }; };
-    const VT = t => { const c = Math.cos(w * (t - s.t0)) * w * 1000; return { x: s.v[0] * c, y: s.v[1] * c }; };
-    const ox = med(fr.map(f => f.X - T(f.t).x)), oy = med(fr.map(f => f.Y - T(f.t).y));
-    const dtM = med(fr.slice(1).map((f, i) => f.t - fr[i].t));
-    for (let i = 2; i < fr.length - 2; i++) {
-      const win = fr.slice(i - 2, i + 3); if (win[4].t - win[0].t > Math.max(260, 6 * dtM)) continue;   // まばたきで抜けた所をまたがない（コマが少ない端末では 5コマが 0.26秒を超えるので、コマの間隔に合わせる）
-      const vt = VT(fr[i].t), sp = Math.hypot(vt.x, vt.y); if (sp < 0.5 * vpk) continue;
-      const ve = velOf(win), u = { x: vt.x / sp, y: vt.y / sp };
-      const along = (ve.x * u.x + ve.y * u.y) / sp, sac = Math.hypot(ve.x, ve.y) > 2.5 * vpk;
-      const tp = T(fr[i].t);
-      add(dirOf(u.x, u.y), { along, sac, err: Math.hypot(fr[i].X - ox - tp.x, fr[i].Y - oy - tp.y) });
+    const w = 2 * Math.PI / PT, L = Math.hypot(...s.v), u = { x: s.v[0] / L, y: s.v[1] / L }, n = { x: -u.y, y: u.x };
+    const al = fr.map(f => f.X * u.x + f.Y * u.y), pp = fr.map(f => f.X * n.x + f.Y * n.y);
+    // ① 遅れと倍率：遅れを 0〜400ms で振って、目の位置（点の線に沿った向き）＝倍率×点の位置＋ずれ を最小二乗で当てる
+    let best = null;
+    for (let lag = 0; lag <= 400; lag += 20) {
+      const a = fr.map(f => L * Math.sin(w * (f.t - lag - s.t0))), ma = mean(a), me = mean(al);
+      let sab = 0, saa = 0; a.forEach((x, i) => { sab += (x - ma) * (al[i] - me); saa += (x - ma) ** 2; });
+      const A = saa ? sab / saa : 0, B = me - A * ma, sse = a.reduce((t, x, i) => t + (al[i] - A * x - B) ** 2, 0);
+      if (!best || sse < best.sse) best = { lag, A, B, sse };
+    }
+    // 線から外れる向きも、点の位置に比例する分（よこ・たての合わせの倍率が違うと、ななめの線が少し回って見える）は差し引く
+    const a0 = fr.map(f => L * Math.sin(w * (f.t - best.lag - s.t0))), m0 = mean(a0), mp = mean(pp); let sap = 0, saa0 = 0; a0.forEach((x, i) => { sap += (x - m0) * (pp[i] - mp); saa0 += (x - m0) ** 2; });
+    const D = saa0 ? sap / saa0 : 0, A = best.A, weak = !(A >= PUR_AMP);
+    segInfo.push({ k: s.k, amp: r3(A), lag: best.lag });
+    const sc = Math.max(Math.abs(A), PUR_AMP) * L;   // 点の振れ幅＝1 にそろえる
+    const ra = fr.map((f, i) => (al[i] - best.B) / sc - Math.sin(w * (f.t - best.lag - s.t0))), rp = pp.map((v, i) => (v - mp - D * (a0[i] - m0)) / sc);
+    // ② 読み取りの揺れ：となりのコマとの差のばらつき（ゆっくりしたずれは差に出ない）
+    const nz = a => { const d = a.slice(1).map((x, i) => x - a[i]); return 1.4826 * mad(d) / Math.SQRT2; };
+    const na = nz(ra), np = nz(rp);
+    for (let i = 0; i < fr.length; i++) {
+      const c = Math.cos(w * (fr[i].t - best.lag - s.t0)); if (Math.abs(c) < 0.5) continue;   // 点が速く動いている所だけ（端で止まる所は読まない）
+      add(dirOf(u.x * Math.sign(c), u.y * Math.sign(c)), { ra: ra[i], ah: ra[i] * Math.sign(c), rp: rp[i], na, np, weak, A });   // ah：点より先（＋）・後ろ（−）
     }
   }
   const dir = {};
   for (const k of DIRS) {
     const a = bins[k]; if (!a || a.length < 4) continue;
-    const sm = a.filter(o => !o.sac), gain = sm.length ? med(sm.map(o => o.along)) : 0, sacc = a.filter(o => o.sac).length / a.length;
-    const err = med(a.map(o => o.err));   // 点からの位置のずれ（点が動く幅＝1）。前は点数に入れておらず、点から離れたまま動いても点数が下がらなかった（2026-10-15 夜）
-    // 2026-10-16（宮崎さん「跳びをより優先的に問題として認識している」）：前は跳びの割合を2倍して引いていて、跳びが 25% あるだけで点数が半分になり、点から離れて動くずれより跳びが判定を決めていた。
-    // 跳びは1倍で引く。どれが点数を下げたかを、判定の文に出す（pursuitWhy）
-    dir[k] = { n: a.length, gain: r3(gain), sacc: r3(sacc), err: r3(err), q: Math.round(100 * clamp(gain, 0, 1) * (1 - Math.min(1, sacc)) * clamp(1 - (err - PUR_ERR) / 0.5, 0, 1)) };
+    const rms = v => Math.sqrt(mean(v.map(x => x * x)));
+    // ③ 残ったずれ。遅れは組全体で差し引いてあるので、右へ動くときだけ遅れる目は「右へは後ろ・左へは先」に分かれて出る。その差を下で数える（behind）
+    //    ra のばらつき（跳んで追いつく・つっかえる）と rp（線から外れる）は、読み取りの揺れを二乗で引く
+    const ah = mean(a.map(o => o.ah));
+    const ea = Math.sqrt(Math.max(0, sd(a.map(o => o.ra)) ** 2 - mean(a.map(o => o.na)) ** 2));
+    const ep = Math.sqrt(Math.max(0, rms(a.map(o => o.rp)) ** 2 - mean(a.map(o => o.np)) ** 2));
+    dir[k] = { n: a.length, err: r3(ea), ah: r3(ah), off: r3(ep), amp: r3(med(a.map(o => o.A))), weak: a.some(o => o.weak) };
   }
-  return { ok: Object.keys(dir).length >= 4, dir, blinkFrac: r3(total ? 1 - used / total : 1) };
+  // 遅れ：反対の向き（右↔左・右上↔左下…）より、どれだけ点の後ろにいたか。組全体の遅れ（カメラの遅れ）はここで打ち消し合う
+  const OPP = { R: 'L', L: 'R', U: 'D', D: 'U', UR: 'DL', DL: 'UR', UL: 'DR', DR: 'UL' };
+  for (const k in dir) { const d = dir[k], o = dir[OPP[k]];
+    d.behind = r3(o ? Math.max(0, o.ah - d.ah) : Math.max(0, -2 * d.ah));
+    const e = Math.hypot(d.err, d.off, d.behind);
+    d.q = d.weak ? 0 : Math.round(100 * clamp(1 - (e - PUR_E0) / PUR_E1, 0, 1)); }
+  return { ok: Object.keys(dir).length >= 4, dir, segs: segInfo, blinkFrac: r3(total ? 1 - used / total : 1) };
 }
-// 点数を下げたもの：ずれ（点から離れて動く）・遅い（目の速さが点に届かない）・跳び（追いつくために跳ぶ）。下げた量の大きい順
+// 点数を下げたもの：遅れる・跳ぶ（点の進む向きのずれ）・線から外れる・目がほとんど動かない。大きい順
 function pursuitWhy(dir, ks) {
   const a = ks.map(k => dir[k]).filter(Boolean); if (!a.length) return '';
-  const g = mean(a.map(o => o.gain)), sc = mean(a.map(o => o.sacc)), e = mean(a.map(o => o.err));
-  const L = [['点から離れて動く（ずれ ' + f2(e) + '）', 1 - clamp(1 - (e - PUR_ERR) / 0.5, 0, 1)], ['目が点より遅い（速さ ' + f2(g) + '）', 1 - clamp(g, 0, 1)], ['追いつくために跳ぶ（' + Math.round(sc * 100) + '%）', Math.min(1, sc)]].filter(x => x[1] >= 0.1).sort((x, y) => y[1] - x[1]);
+  if (a.some(o => o.weak)) return '。主に 目がほとんど点についていかない（振れ幅 ' + f2(Math.min(...a.map(o => o.amp))) + '）';
+  const ea = mean(a.map(o => o.err)), eb = mean(a.map(o => o.behind || 0)), ep = mean(a.map(o => o.off));
+  const L = [['反対の向きより点に遅れる（' + f2(eb) + '）', eb], ['つっかえる・跳んで追いつく（' + f2(ea) + '）', ea], ['線から外れる（' + f2(ep) + '）', ep]].filter(x => x[1] >= PUR_E0).sort((x, y) => y[1] - x[1]);
   return L.length ? '。主に ' + L.map(x => x[0]).join('・') : '';
 }
 const grpQ = (dir, ks) => { const v = ks.map(k => dir[k] && dir[k].q).filter(Number.isFinite); return v.length ? Math.round(mean(v)) : null; };
 function pursuitHTML(o) {
-  const d = o.dir, cell = k => d[k] ? `${DJ[k]} <b>${d[k].q}</b>（${f2(d[k].gain)}・跳び${Math.round(d[k].sacc * 100)}%・ずれ${f2(d[k].err)}）` : `${DJ[k]} —（読めず）`;
-  return `追従の点数（向きごと。100＝ぴったり）<br>${DIRS.map(cell).join('<br>')}<br><span class="small">（ ）＝目の速さ÷点の速さ・追いつくために跳んだ割合・点からの位置のずれ（${PUR_ERR} を超えると点数を下げる）。どの向きも ${PUR_ABS} 点未満なら、左右の差が無くても読む。まばたき等で除いたコマ ${Math.round(o.blinkFrac * 100)}%・${o.fps}コマ/秒</span>${judgeHTML()}`;
+  const d = o.dir, cell = k => d[k] ? `${DJ[k]} <b>${d[k].q}</b>（遅れ ${f2(d[k].behind)}・つっかえ ${f2(d[k].err)}・線から外れる ${f2(d[k].off)}${d[k].weak ? '・目がほとんど動かない' : ''}）` : `${DJ[k]} —（読めず）`;
+  return `追従の点数（向きごと。100＝ぴったり）<br>${DIRS.map(cell).join('<br>')}<br><span class="small">（ ）＝点の振れ幅を1とした、点からのずれ。カメラの遅れ（${(o.segs || []).map(x => x.lag).join('・')}ms と読んだ）・目の合わせの倍率（${(o.segs || []).map(x => f2(x.amp)).join('・')}）・読み取りの揺れは差し引いてある。遅れ（反対の向きと比べて点の後ろにいた量）も足し、ずれ ${PUR_E0} を超えると点数を下げ、${f2(PUR_E0 + PUR_E1)} で0点（仮）。どの向きも ${PUR_ABS} 点未満なら、左右の差が無くても読む。まばたき等で除いたコマ ${Math.round(o.blinkFrac * 100)}%・${o.fps}コマ/秒</span>${judgeHTML()}`;
 }
 // 内部の判定（お客さんには見せない）。しきい値は仮（2026-10-14 宮崎さん：判定のしかたは後で伝える）
 // ・右／右上／右下へ ついていけない（カクつく）→ 右の皮質　・左／左上／左下 → 左の皮質（同側の皮質。アドバンス教材 §7.1 で確定 2026-10-14）
