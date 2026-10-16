@@ -1455,7 +1455,9 @@ function analyzeFixSeries(fr) {
 // 反射が出ると、目は縞と同じ向きへゆっくり流され、逆へ素早く戻る（のこぎりの形）。この「素早く戻る」回数と、流される速さを向きごとに数える。
 // BDC「OKN 視運動性眼球反射」：右へ流す＝右側の皮質（頭頂葉・前頭眼野）の刺激（同側）。小脳は流れる向きと反対側。
 // 読み（宮崎さん）：反射が出ない（弱い）向きがあれば、その向きの側の皮質を疑う。BDC に「出なかったらその側」と書いた一文は無く、上の同側の対応からの読み
-const OKN_MS = 8000, OKN_SPEED = 1.2, OKN_PERIOD = 0.2, OKN_RESET = 0.15, OKN_MINBEAT = 4, OKN_WEAK = 0.5;   // 1方向の長さ・縞の速さ（画面の幅/秒）・縞1組の幅（画面の幅に対する割合）・戻りとみなす量（点の幅＝1）・反射ありとみなす戻りの回数・弱いとみなす割合（反対の向きに対して）。どれも仮
+const OKN_MS = 8000, OKN_SPEED = 1.2, OKN_PERIOD = 0.2, OKN_RESET = 0.15, OKN_MINBEAT = 2, OKN_WEAK = 0.5;   // 1方向の長さ・縞の速さ（画面の幅/秒）・縞1組の幅（画面の幅に対する割合）・戻りとみなす量（点の幅＝1）・比べる側に最低いる戻りの回数・弱いとみなす割合（反対の向きに対して）。どれも仮
+// 2026-10-16 宮崎さん「片側の反射の数が反対側よりも半分以下だった場合には、それが問題とよむ」：半分以下だけで読む。
+//   前は「4回未満なら出ないとみなす」も入っていて、3回対5回（半分より多い）でも問題、1回対3回（半分以下）でも「両方見えない」で読まなかった。反対側が 0〜1回のときだけ、比べようがないので読まない
 const okn = document.createElement('div'); okn.id = 'okn'; $('stage').appendChild(okn);
 async function oknRun(d, ms, my) {
   const W = $('stage').clientWidth, per = Math.max(24, W * OKN_PERIOD), t0 = performance.now(), sg = d === 'R' ? 1 : -1;
@@ -1484,7 +1486,7 @@ async function stepOkn() {
     out.judge = CAL && !CAL.reliable ? null : oknJudge(out);
     const OJ = out.judge, row = (d, o) => `${d === 'R' ? '右へ流す' : '左へ流す'}：素早く戻る <b>${o.beats}</b>回（1秒あたり ${f2(o.rate)}）・流される速さ <b>${f2(o.slow)}</b>（縞の速さに対する割合 ${f2(o.gain)}）`;
     staff(`${row('R', out.R)}<br>${row('L', out.L)}
-    <div class="res judge">内部の読み（仮）：${!OJ ? '<br>目の合わせが不安定なので読まない' : OJ.side ? `<br><b>${OJ.side}の皮質</b>の働き低下の可能性 — ${OJ.why}` : `<br>${OJ.why}`}<br><span class="small">BDC「OKN 視運動性眼球反射」：右へ流す＝右の皮質（頭頂葉・前頭眼野）・小脳は流れる向きと反対側。反射が出ない・弱い向き＝その向きの側の皮質（宮崎さん）。戻りの回数が ${OKN_MINBEAT} 回未満、または反対の向きの ${Math.round(OKN_WEAK * 100)}% 以下を「出ない・弱い」とする（仮）。${out.fps}コマ/秒</span></div>` + calWarn());
+    <div class="res judge">内部の読み（仮）：${!OJ ? '<br>目の合わせが不安定なので読まない' : OJ.side ? `<br><b>${OJ.side}の皮質</b>の働き低下の可能性 — ${OJ.why}` : `<br>${OJ.why}`}<br><span class="small">BDC「OKN 視運動性眼球反射」：右へ流す＝右の皮質（頭頂葉・前頭眼野）・小脳は流れる向きと反対側。反射が出ない・弱い向き＝その向きの側の皮質（宮崎さん）。戻りの回数が反対の向きの半分以下を「弱い」とする（反対の向きが ${OKN_MINBEAT} 回未満のときは比べない）。${out.fps}コマ/秒</span></div>` + calWarn());
     recorded(stepOkn, stepVor, '次へ（頭を動かして点を見つめる）');
   });
 }
@@ -1504,10 +1506,10 @@ function analyzeOkn(S, d) {
   return { ok: true, beats, rate: r3(beats / dur), slow: r3(slow), gain: r3(slow / unit), amp: r3(med(amps)), frames: r.length };
 }
 function oknJudge(o) {
-  const R = o.R, L = o.L, weak = (a, b) => a.beats < OKN_MINBEAT && b.beats >= OKN_MINBEAT || b.beats >= OKN_MINBEAT && a.beats <= b.beats * OKN_WEAK;
-  if (R.beats < OKN_MINBEAT && L.beats < OKN_MINBEAT) return { side: null, why: `どちらの向きでも反射（素早く戻る動き）がはっきり見えない（右へ${R.beats}回・左へ${L.beats}回）。読み取りの問題のこともあるので、側は読まない` };
-  if (weak(R, L)) return { side: '右', why: `右へ流したときの反射が出ない・弱い（素早く戻る 右へ${R.beats}回・左へ${L.beats}回）＝右へ流す＝右の皮質（BDC「OKN」）` };
-  if (weak(L, R)) return { side: '左', why: `左へ流したときの反射が出ない・弱い（素早く戻る 左へ${L.beats}回・右へ${R.beats}回）＝左へ流す＝左の皮質（BDC「OKN」）` };
+  const R = o.R, L = o.L, weak = (a, b) => b.beats >= OKN_MINBEAT && a.beats <= b.beats * OKN_WEAK;
+  if (R.beats < OKN_MINBEAT && L.beats < OKN_MINBEAT) return { side: null, why: `どちらの向きでも反射（素早く戻る動き）がほとんど見えない（右へ${R.beats}回・左へ${L.beats}回）。読み取りの問題のこともあるので、側は読まない` };
+  if (weak(R, L)) return { side: '右', why: `右へ流したときの反射が反対の向きの半分以下（素早く戻る 右へ${R.beats}回・左へ${L.beats}回）＝右へ流す＝右の皮質（BDC「OKN」）` };
+  if (weak(L, R)) return { side: '左', why: `左へ流したときの反射が反対の向きの半分以下（素早く戻る 左へ${L.beats}回・右へ${R.beats}回）＝左へ流す＝左の皮質（BDC「OKN」）` };
   return { side: null, why: `左右とも反射あり（右へ${R.beats}回・左へ${L.beats}回）` };
 }
 
