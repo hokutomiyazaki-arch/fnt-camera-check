@@ -2136,10 +2136,10 @@ function convWorse(c) {   // 寄りが悪い側：先に外へ逃げた目。逃
   // 前は、両目とも寄らないと左右の差が出ず「なし」になっていた。寄った量が CONV_MIN 未満の目は、それだけで動眼神経として数える
   const nz = [0, 1].filter(s => !(c.eyes[s].gain >= CONV_MIN));
   if (nz.length === 2) return { side: '両側', why: `寄り目で両目とも寄らない（右${f2(c.eyes[0].gain)}・左${f2(c.eyes[1].gain)}、${CONV_MIN} 未満）` };
-  if (nz.length === 1) { const s = nz[0] ? '左' : '右'; return { side: s, why: `寄り目で${s}目が寄らない（右${f2(c.eyes[0].gain)}・左${f2(c.eyes[1].gain)}、${CONV_MIN} 未満）` }; }
-  if (c.first) { const s = c.first[0]; return { side: s, why: `寄り目で${c.first}が先に外へ逃げた` }; }
+  if (nz.length === 1) { const s = nz[0] ? '左' : '右'; return { side: s, s: 1 + (CONV_MIN - Math.max(0, c.eyes[nz[0]].gain || 0)) / CONV_MIN, why: `寄り目で${s}目が寄らない（右${f2(c.eyes[0].gain)}・左${f2(c.eyes[1].gain)}、${CONV_MIN} 未満）` }; }
+  if (c.first) { const s = c.first[0]; return { side: s, s: 1.5, why: `寄り目で${c.first}が先に外へ逃げた` }; }
   const [a, b] = [c.eyes[0].gain, c.eyes[1].gain];
-  if (Math.max(a, b) >= 0.04 && pct(a, b) >= 15) { const s = a < b ? '右' : '左'; return { side: s, why: `寄り目で${s}目の寄りが少ない（右${f2(a)}・左${f2(b)}）` }; }
+  if (Math.max(a, b) >= 0.04 && pct(a, b) >= 15) { const s = a < b ? '右' : '左'; return { side: s, s: pct(a, b) / 15, why: `寄り目で${s}目の寄りが少ない（右${f2(a)}・左${f2(b)}）` }; }
   return null;
 }
 function mitate() {
@@ -2151,8 +2151,13 @@ function mitate() {
   const cn = M.cn, t = RUN.tongue, fc = RUN.face && RUN.face.cn7, pu = RUN.pupil, cw = convWorse(RUN.conv), hr = sideOfAns(RUN.ask && RUN.ask.hearing);
   if (t && /本人の(右|左)/.test(t.side)) { const s = t.side.replace('本人の', ''); cn.push({ n: '舌下神経', side: s, why: `舌が${s}へ寄った` }); }
   if (fc && fc.side) cn.push({ n: '顔面神経', side: fc.side, why: fc.items.filter(i => i.side === fc.side).map(i => i.why).join('・') });
-  if (cw) cn.push({ n: '動眼神経（中脳）', side: cw.side, why: cw.why });
-  if (pu && pu.big) cn.push({ n: '動眼神経（中脳）', side: pu.big, why: `瞳孔が${pu.big}のほうが大きい` });
+  // 2026-10-16 夜（宮崎さん「一番顕著に差が出た方を読むように、特に問題として認識するように」）：寄り目と瞳孔で動眼神経の側が食い違ったら、
+  // しきい値の何倍の差が出たか（寄り目＝寄りの差 15%・寄らない量・先に逃げた目、瞳孔＝差 PUP_TH）で比べ、大きい方の側だけを動眼神経として読む。もう一方は添えるだけ
+  const ocA = cw ? { n: '動眼神経（中脳）', side: cw.side, why: cw.why, s: cw.s ?? 1 } : null;
+  const ocB = pu && pu.big ? { n: '動眼神経（中脳）', side: pu.big, why: `瞳孔が${pu.big}のほうが大きい（差 ${f2(Math.abs(pu.diff))}）`, s: Math.abs(pu.diff) / PUP_TH } : null;
+  if (ocA && ocB && ocA.side !== ocB.side && ocA.side !== '両側') { const [w, l] = ocA.s >= ocB.s ? [ocA, ocB] : [ocB, ocA];
+    cn.push({ ...w, why: `${w.why}（${l.side}側にも ${l.why}。しきい値の ${f2(w.s)}倍と ${f2(l.s)}倍で、差がはっきりしたこちらを読む）` }); M.ocOther = l; }
+  else { if (ocA) cn.push(ocA); if (ocB) cn.push(ocB); }
   if (hr) cn.push({ n: '内耳神経', side: hr, why: `${hr}の耳が聞こえにくい（質問）` });
   // 2026-10-14 足した検査（BDC）：口の開け方＝三叉神経（橋）。のどの奥（口蓋）・肩すくめ（副神経）は「うまく取れない」で外した（2026-10-14・10-15 宮崎さん）
   const jw = RUN.jaw;
@@ -2234,7 +2239,7 @@ function summaryLines() {
   if (nk) L.push(`3. 首の左右・上下：線の上 左右${nk.H?.follow ?? '—'}%・上下${nk.V?.follow ?? '—'}%／ずれた割合 ${['toR', 'toL', 'up', 'down'].map(k => `${LEGJ[k]}${nk.legs?.[k]?.off ?? '—'}%（速さ${nk.legs?.[k]?.speed ?? '—'}%）`).join('・')}／気持ち悪さ ${nk.nausea || '—'}`);
   if (f) L.push(`4. 表情：口角 右${f2(f.m0)}・左${f2(f.m1)}／眉 右${f2(f.b0)}・左${f2(f.b1)}／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%／真顔の下がり 口角${f2(f.mouthDrop)}・眉${f2(f.browDrop)}（＋＝右が下）／目じりのしわ 右${f2(f.wk0)}・左${f2(f.wk1)}`);
   if (RUN.calib) L.push(`5. 目の準備（検査ではない・測るための合わせ）：横 ${RUN.calib.x?.nm}（見分け${RUN.calib.x?.sep}）・たて ${RUN.calib.y?.nm}（見分け${RUN.calib.y?.sep}）・近さ ${f2(RUN.eyeGate?.eye)}`);
-  if (p && p.dir) L.push(`6. 追従：${DIRS.map(k => `${DJ[k]}${p.dir[k] ? (p.dir[k].q ?? '読めず') : '—'}`).join('・')}`);
+  if (p && p.dir) L.push(`6. 追従：${DIRS.map(k => `${DJ[k]}${p.dir[k] ? (p.dir[k].q ?? '読めず') : '—'}`).join('・')}（読み方 ${(p.segs || []).map(x => `${x.k}＝${x.nm || '—'}・説明できた割合 ${f2(x.r2)}・倍率 ${f2(x.amp)}`).join('／')}）`);
   if (false && s && s.dir) L.push(`7. サッカード（反応ms／速さ）：${DIRS.map(k => `${DJ[k]}${s.dir[k] ? `${s.dir[k].lat ?? '—'}/${f2(s.dir[k].pv)}` : '—'}`).join('・')}${s.metria ? `／行き過ぎ・届かない 右へ${s.metria.right.hyper}・${s.metria.right.hypo}／${s.metria.right.n}回・左へ${s.metria.left.hyper}・${s.metria.left.hypo}／${s.metria.left.n}回` : ''}`);
   if (false && x && x.ok) L.push(`8. 注視：揺れ よこ${f2(x.sdX)}・たて${f2(x.sdY)}／広さ${f2(x.bcea)}／外れ${x.intrusions}回`);
   const ok9 = RUN.okn; if (ok9 && ok9.R && ok9.R.ok && ok9.L && ok9.L.ok) L.push(`7. 流れる縞（OKN）：素早く戻る 右へ流す${ok9.R.beats}回・左へ流す${ok9.L.beats}回／流される速さ 右${f2(ok9.R.gain)}・左${f2(ok9.L.gain)}`);
