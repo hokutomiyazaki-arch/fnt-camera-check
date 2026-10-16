@@ -1951,9 +1951,12 @@ function drawTongue(fr, o) {
 // 構造（顎関節）の問題も関わるので一概には言えない、とも BDC は言っている（2026-10-14 宮崎さん「口をゆっくり開けさせて、どっち方向に口がずれるかで三叉神経のテスト」）
 // 中心線は眉間（168）と鼻の下（2）を通る線（どちらも頭と一緒に動き、あごとは動かない）。各回、口を閉じていたときのずれを0として差し引く
 const JAW_TH = 0.04, JAW_OPEN = 0.2;   // あごのずれ・開いた量（目じりの間の長さ＝1）。どちらも仮。ずれは写真の模様で測る（2026-10-16 0.05→0.04：写真のあごを 0.075 ずらして 0.04〜0.05 と読めた）
+// 2026-10-16 夜（宮崎さん「わざとずらしながら開いても何も検知されない。顎の周りについた点が、左右にズレながら開くのを検知して」）：
+// あご先の1点だけでなく、下あごの輪郭の点（あご先 152 と左右の 148・377・176・400）の中心線からのずれの平均も出す（jaw）。写真の模様が読めないコマでも読める
+const JAW_PTS = [152, 148, 377, 176, 400], JAW_LM_TH = 0.03;   // 下あごの輪郭の点のずれのしきい値（目じりの間の長さ＝1・仮。作り物の写真で、まっすぐ開けると 0.014 動いた）
 function jawGeom(pts) {
-  const { f } = frame(pts), c = f(pts[152]), a = f(pts[168]), b = f(pts[2]);
-  return { dev: -(c.x - (a.x + (b.x - a.x) * (c.y - a.y) / (b.y - a.y))), open: c.y - b.y };   // dev：＋＝本人の右
+  const { f } = frame(pts), c = f(pts[152]), a = f(pts[168]), b = f(pts[2]), dx = q => -(q.x - (a.x + (b.x - a.x) * (q.y - a.y) / (b.y - a.y)));
+  return { dev: dx(c), jaw: mean(JAW_PTS.map(k => dx(f(pts[k])))), open: c.y - b.y };   // dev・jaw：＋＝本人の右
 }
 // 下あごの横ずれを、写真の模様で測る（2026-10-16 宮崎さん「開く途中で左にずらしながら開いているのに、全然認識されない」）。
 // 顔の点のあご先（152）は、あごの実際の横ずれの2割ほどしか動かない（写真のあごを目じりの間の 0.15 だけ横へずらして MediaPipe に通すと、0.02〜0.04 しか動かなかった）。
@@ -1993,18 +1996,19 @@ async function stepJaw() {
     grab = { lastT: 0, fr: [], every: 120, proc: (pts, img) => { const o = jawGeom(pts).open, op = JS.o0 == null ? null : o - JS.o0; let m = { ok: false, op };
       if (op != null && op < JAW_OPEN * 0.3) JS.ref = chinPatch(pts, img);
       else if (op != null && JS.ref) { const c = chinShift(JS.ref, pts, img); m.sh = c.sh; m.s = c.s; }
+      if (STAFF && op != null) { const j = jawGeom(pts).jaw - (JS.j0 ?? jawGeom(pts).jaw); if (op < JAW_OPEN * 0.3) JS.j0 = jawGeom(pts).jaw; note(`いまのあごの横ずれ（＋右・−左）：写真 ${Number.isFinite(m.sh) ? f2(m.sh) : '—'}（重なり ${Number.isFinite(m.s) ? f2(m.s) : '—'}）・あごの周りの点 ${f2(j)}`); }   // スタッフ表示：ずらしたのを読めているか、その場で見える
       if (o > best) { best = o; m.ok = true; } return m; } };
     const reps = [];
     for (let i = 1; i <= 3; i++) {
       // 開いたのを読み取れたら閉じる合図、閉じたのを読み取れたら次の回へ（2026-10-15 宮崎さん）。開き始めの高さは、合図を出した時の口の開き
       const o0 = last ? jawGeom(last).open : null, op = pts => o0 == null ? false : jawGeom(pts).open - o0;
-      JS.o0 = o0; JS.ref = null;
+      JS.o0 = o0; JS.ref = null; JS.j0 = null;
       cue(`ゆっくり開けて<small>${i}回目／3</small>`, 'low', 'ゆっくり開けて'); const hist = [], wide = pts => { const v = op(pts), t = performance.now(); hist.push([t, v]); while (hist.length && t - hist[0][0] > 300) hist.shift(); return v >= JAW_OPEN * 1.5 && Math.abs(v - hist[0][1]) < 0.03; };   // 大きく開いて、それ以上開かなくなった
       const a = await recordUntil(wide, { max: 6000, hold: 300 }); if (my !== tok) { grab = null; return; }
       cue(`ゆっくり閉じて<small>${i}回目／3</small>`, 'low', 'ゆっくり閉じて'); const b = await recordUntil(pts => op(pts) <= JAW_OPEN * 0.4, { max: 4000, hold: 300 }); if (my !== tok) { grab = null; return; }
       reps.push([...a, ...b]);
     }
-    const g = grab; grab = null;
+    const g = grab; grab = null; note('');
     cue(STAFF ? '' : '終わりました'); analyzeJaw(reps, g && g.img, g ? g.fr : []);
   });
 }
@@ -2016,25 +2020,32 @@ function analyzeJaw(reps, img, gf = []) {
     const o0 = med(op.slice(0, n0)), d0 = med(dv.slice(0, n0)), mx = Math.max(...op), gain = mx - o0;
     if (gain < JAW_OPEN) return { ok: false, why: '口の開きが小さい', gain: r3(gain) };
     const lmWide = med(dv.filter((_, i) => op[i] - o0 >= 0.85 * gain).map(x => x - d0));   // 顔の点のあご先（参考。実際のずれの2割ほどしか動かない）
-    // 写真の模様で測った横ずれ（chinShift）：開いている間（開いた量が最大の3割以上）のコマ。読み取りの重なりが弱いコマ（0.6未満）は使わない
-    const t0 = fr[0].t, t1 = fr[fr.length - 1].t, ps = gf.filter(o => o.t >= t0 && o.t <= t1 && o.m && Number.isFinite(o.m.sh) && o.m.s >= 0.6 && o.m.op >= 0.3 * gain);
-    if (ps.length < 3) return { ok: false, why: 'あごの模様を読めない', gain: r3(gain), lm: r3(lmWide) };
+    // 下あごの輪郭の点：閉じていたときからのずれ。開いている間（最大の3割以上）でいちばんずれた所と、開き切った所
+    const jl = sm(v.map(o => o.jaw)), j0 = med(jl.slice(0, n0)), jo = jl.map((x, i) => ({ x: x - j0, op: op[i] - o0 })).filter(q => q.op >= 0.3 * gain);
+    const lmPath = jo.reduce((a, q) => Math.abs(q.x) > Math.abs(a) ? q.x : a, 0), lmEnd = med(jo.filter(q => q.op >= 0.85 * gain).map(q => q.x));
+    const L = { lmPath: r3(lmPath), lmEnd: r3(Number.isFinite(lmEnd) ? lmEnd : lmPath) };
+    // 写真の模様で測った横ずれ（chinShift）：開いている間（開いた量が最大の3割以上）のコマ。読み取りの重なりが弱いコマ（0.45未満）は使わない
+    const t0 = fr[0].t, t1 = fr[fr.length - 1].t, ps = gf.filter(o => o.t >= t0 && o.t <= t1 && o.m && Number.isFinite(o.m.sh) && o.m.s >= 0.45 && o.m.op >= 0.3 * gain);   // 重なりの下限 0.6→0.45（2026-10-16 夜：口を開けると模様が変わり、ほとんどのコマが落ちていたおそれ）
+    if (ps.length < 3) return { ok: true, img: false, gain: r3(gain), lm: r3(lmWide), ...L, why: 'あごの模様を読めない（輪郭の点だけで読む）' };
     const sh = ps.map((o, i) => med(ps.slice(Math.max(0, i - 1), i + 2).map(q => q.m.sh)));   // 3コマの中央値で、1コマだけの外れを消す
     const path = sh.reduce((a, b) => Math.abs(b) > Math.abs(a) ? b : a, 0);   // 開く途中でいちばんずれた所
     const wide = med(sh.filter((_, i) => ps[i].m.op >= 0.85 * gain));        // いちばん開いた所でのずれ
-    return { ok: true, gain: r3(gain), path: r3(path), dev: r3(Number.isFinite(wide) ? wide : path), lm: r3(lmWide), n: ps.length };
+    return { ok: true, img: true, gain: r3(gain), path: r3(path), dev: r3(Number.isFinite(wide) ? wide : path), lm: r3(lmWide), ...L, n: ps.length };
   });
   const ok = R.filter(r => r.ok), LR = x => x > 0 ? '右' : '左';
   // 2026-10-16 宮崎さん「顎を開く途中で左にずらしながら開いているのに、全然認識されない」：前は いちばん開いた所のずれだけで読み、途中のずれ（path）は数字を出すだけだった。
   // しかも顔の点のあご先で測っていて、実際のずれの2割ほどしか動かなかった。いまは写真の模様で測り、途中のずれも読む。3回のうち2回以上、同じ向きへ ${JAW_TH} 以上
-  const vote = key => { if (ok.length < 2) return null; const m = med(ok.map(r => r[key])), same = ok.filter(r => Math.abs(r[key]) >= JAW_TH && Math.sign(r[key]) === Math.sign(m)).length; return Math.abs(m) >= JAW_TH && same >= 2 ? LR(m) : null; };
-  const endSide = vote('dev'), pathSide = vote('path'), side = endSide || pathSide;
-  RUN.jaw = { reps: R, side, endSide, pathSide, dev: ok.length ? r3(med(ok.map(r => r.dev))) : null, path: ok.length ? r3(med(ok.map(r => r.path))) : null, th: JAW_TH, how: 'image' };
+  const vote = (key, th = JAW_TH) => { const q = ok.filter(r => Number.isFinite(r[key])); if (q.length < 2) return null; const m = med(q.map(r => r[key])), same = q.filter(r => Math.abs(r[key]) >= th && Math.sign(r[key]) === Math.sign(m)).length; return Math.abs(m) >= th && same >= 2 ? LR(m) : null; };
+  // 写真の模様（dev・path）と、下あごの輪郭の点（lmEnd・lmPath）のどちらかで、3回のうち2回以上同じ向きにずれたら読む。2つが逆を向いたら写真の模様を採る
+  const endSide = vote('dev'), pathSide = vote('path'), lmEndSide = vote('lmEnd', JAW_LM_TH), lmPathSide = vote('lmPath', JAW_LM_TH), imgSide = endSide || pathSide, lmSide = lmEndSide || lmPathSide, side = imgSide || lmSide;
+  const mf = k => { const q = ok.map(r => r[k]).filter(Number.isFinite); return q.length ? r3(med(q)) : null; };
+  RUN.jaw = { reps: R, side, endSide, pathSide, lmEndSide, lmPathSide, dev: mf('dev'), path: mf('path'), lmEnd: mf('lmEnd'), lmPath: mf('lmPath'), th: JAW_TH, lmTh: JAW_LM_TH, how: 'image+landmarks' };
   if (ok.length < 2) return fail(stepJaw, '口の開き方を読み取れませんでした');
   if (STAFF && img) drawJaw(img);
-  const why = endSide ? `口を開けると下あごが${endSide}へずれる（いちばん開いた所で ${f2(Math.abs(RUN.jaw.dev))}）` : `口を開く途中で下あごが${pathSide}へずれる（途中でいちばん ${f2(Math.abs(RUN.jaw.path))}・開き切ると戻る）`;
-  staff(`口を開けたときの下あごの横ずれ（＋＝本人の右・目じりの間の長さ＝1・写真の模様で測る）：<br>${R.map((r, i) => `${i + 1}回目 ${r.ok ? `開く途中でいちばん <b>${f2(r.path)}</b>・開き切った所 <b>${f2(r.dev)}</b>（開いた量 ${f2(r.gain)}・顔の点のあご先 ${f2(r.lm)}）` : r.why}`).join('<br>')}
-  <div class="res judge">内部の読み（仮）：${side ? `<b>${side}の三叉神経（運動核・橋）</b>の働き低下の可能性 — ${why}` : '目立ったずれなし'}<br><span class="small">BDC「CN5 三叉神経運動核」：問題のある方向に顎がずれる。橋の神経核なので、ほかの橋の働き（顔面神経など）と一緒に見る。顎関節の構造の問題でもずれるので一概には言えない。3回のうち2回以上、同じ向きへ ${JAW_TH} 以上（仮）。写真：黄色の点線＝顔の中心・水色の点＝あご先の点</span></div>`);
+  const why = endSide ? `口を開けると下あごが${endSide}へずれる（いちばん開いた所で ${f2(Math.abs(RUN.jaw.dev))}）` : pathSide ? `口を開く途中で下あごが${pathSide}へずれる（途中でいちばん ${f2(Math.abs(RUN.jaw.path))}・開き切ると戻る）`
+    : lmEndSide ? `口を開けると、あごの周りの点が${lmEndSide}へずれる（いちばん開いた所で ${f2(Math.abs(RUN.jaw.lmEnd))}）` : `口を開く途中で、あごの周りの点が${lmPathSide}へずれる（途中でいちばん ${f2(Math.abs(RUN.jaw.lmPath))}）`;
+  staff(`口を開けたときの下あごの横ずれ（＋＝本人の右・目じりの間の長さ＝1・写真の模様で測る）：<br>${R.map((r, i) => `${i + 1}回目 ${r.ok ? `写真の模様：${r.img ? `開く途中でいちばん <b>${f2(r.path)}</b>・開き切った所 <b>${f2(r.dev)}</b>` : '読めず'}／あごの周りの点：途中でいちばん <b>${f2(r.lmPath)}</b>・開き切った所 <b>${f2(r.lmEnd)}</b>（開いた量 ${f2(r.gain)}・あご先の1点 ${f2(r.lm)}）` : r.why}`).join('<br>')}
+  <div class="res judge">内部の読み（仮）：${side ? `<b>${side}の三叉神経（運動核・橋）</b>の働き低下の可能性 — ${why}` : '目立ったずれなし'}<br><span class="small">BDC「CN5 三叉神経運動核」：問題のある方向に顎がずれる。橋の神経核なので、ほかの橋の働き（顔面神経など）と一緒に見る。顎関節の構造の問題でもずれるので一概には言えない。3回のうち2回以上、同じ向きへ、写真の模様で ${JAW_TH} 以上か、あごの周りの点（あご先と左右の輪郭5点の平均）で ${JAW_LM_TH} 以上（仮）。写真：黄色の点線＝顔の中心・水色の点＝あご先の点</span></div>`);
   recorded(stepJaw, stepSvv, '次へ（線をまっすぐにする）');
 }
 function drawJaw({ img, pts }) {
