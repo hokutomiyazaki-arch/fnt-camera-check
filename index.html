@@ -140,7 +140,7 @@ let delegate = '', toCPU = async () => {}, switching = false, gpuMiss = 0;
 
 async function load() {
   const fs = await FilesetResolver.forVisionTasks(WASM);
-  const opt = d => ({ baseOptions: { modelAssetPath: MODEL, delegate: d }, runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true });
+  const opt = d => ({ baseOptions: { modelAssetPath: MODEL, delegate: d }, runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true });   // 顔の向きの行列：首を横に倒すときに混ざる回旋・上下を読む（2026-10-16）
   try { lm = await FaceLandmarker.createFromOptions(fs, opt('GPU')); delegate = 'GPU'; }
   catch (e) { lm = await FaceLandmarker.createFromOptions(fs, opt('CPU')); delegate = 'CPU'; }
   toCPU = async () => { if (delegate === 'CPU' || switching) return; switching = true; try { lm = await FaceLandmarker.createFromOptions(fs, opt('CPU')); delegate = 'CPU'; } finally { switching = false; } };
@@ -289,7 +289,12 @@ function loop() {
       for (let i = 0; i < pts.length; i += 2) oc.fillRect(pts[i].x - 1.3 * u, pts[i].y - 1.3 * u, 2.6 * u, 2.6 * u);
       oc.fillStyle = '#ffcc00';
       for (const i of [...P.iris, 1]) { oc.beginPath(); oc.arc(pts[i].x, pts[i].y, 3.5 * u, 0, 7); oc.fill(); }
-      if (rec) rec.push({ t, pts, bs });
+      // 頭から見たカメラの向き（頭の回旋・上下）。首を横に倒しても（顔の線が傾いても）値が変わらない取り方。
+      // 公開データ（Pointing'04・15人×2回）で、40°傾けても回旋・上下の読みが ±1° しか動かないことを確かめた。＋回旋＝本人の右へ、＋上下＝上を向く
+      let hp = null; const M = r.facialTransformationMatrixes && r.facialTransformationMatrixes[0];
+      if (M && M.data) { const m = M.data; hp = { rot: Math.atan2(m[2], m[10]) * 180 / Math.PI, up: -Math.atan2(m[6], m[10]) * 180 / Math.PI }; }
+      window.__hp = hp;
+      if (rec) rec.push({ t, pts, bs, hp });
       if (grab && t - grab.lastT >= (grab.every || 200)) {   // 舌：写真のコマを取っておく（端末の中だけ）
         grabC.width = video.videoWidth; grabC.height = video.videoHeight; grabX.drawImage(video, 0, 0);
         const img = grabX.getImageData(0, 0, grabC.width, grabC.height);
@@ -542,6 +547,9 @@ async function stepSide() {
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepSide, '顔が見つかりませんでした');
     await voiceQuiet();
+    // 倒す前に、まっすぐの顔の向きを1.5秒とる（回旋・上下は、この人のまっすぐからの変化で読む）
+    cue('まず<br>まっすぐ前を見て', 'thin low'); await sleep(1200); if (my !== tok) return;
+    const base = await record(1500);
     const segs = [];
     for (let k = 0; k < SIDE_REPS && my === tok; k++) for (const s of ['右', '左']) {
       if (my !== tok) return;
@@ -553,7 +561,7 @@ async function stepSide() {
       cue('もどして', 'thin low'); await sleep(1500);
     }
     if (my !== tok) return;
-    cue(''); analyzeSide(segs, mot);
+    cue(''); analyzeSide(segs, mot, base);
   });
 }
 // 1回分の角度（＋＝本人の右へ倒れた）。手が一緒に傾いた分（スマホの傾き）を足し戻す。止めている間の中央値
@@ -562,20 +570,39 @@ function sideOne(seg) {
   const a = seg.r.map(({ t, pts }) => { const raw = -frame(pts).ang * 180 / Math.PI, p = near(t); return { raw, deg: raw + (p ?? 0), p }; });
   if (a.length < 8) return { s: seg.s, ok: false, n: a.length };
   const deg = med(a.map(x => x.deg)), ps = a.filter(x => x.p != null).map(x => x.p);
-  return { s: seg.s, ok: true, n: a.length, deg: r1(deg), raw: r1(med(a.map(x => x.raw))), phone: ps.length ? r1(med(ps)) : null };
+  const hp = seg.r.filter(x => x.hp);
+  return { s: seg.s, ok: true, n: a.length, deg: r1(deg), raw: r1(med(a.map(x => x.raw))), phone: ps.length ? r1(med(ps)) : null,
+    rot: hp.length >= 8 ? med(hp.map(x => x.hp.rot)) : null, up: hp.length >= 8 ? med(hp.map(x => x.hp.up)) : null };
+}
+// 倒したときに混ざった回旋・上下（まっすぐのときからの変化）。顔の点の部品は、回旋を本当の角度の8割ほど、上下を半分ほどに小さく読む（公開データ）ので、目安の数字
+const SIDE_ROT = 8, SIDE_UP = 5;   // 度（仮）。これ以上混ざったら「まっすぐ倒せていない」と記録に残す
+function sideMix(x, b0) {
+  if (!b0 || x.rot == null) return null;
+  const rot = r1(x.rot - b0.rot), up = r1(x.up - b0.up), w = [];
+  if (Math.abs(rot) >= SIDE_ROT) w.push(`${rot > 0 ? '右' : '左'}へ回る`);
+  if (Math.abs(up) >= SIDE_UP) w.push(up > 0 ? '上を向く' : '下を向く');
+  return { rot, up, w };
 }
 const SIDE_GAP = 10;   // 度（仮）。左右の差がこれ以上なら「倒れにくい側」を記録に残す（読みは未定）
-function analyzeSide(segs, mot) {
-  const each = segs.map(sideOne), got = s => each.filter(x => x.s === s && x.ok);
+function analyzeSide(segs, mot, base) {
+  const bh = (base || []).filter(x => x.hp), b0 = bh.length >= 5 ? { rot: med(bh.map(x => x.hp.rot)), up: med(bh.map(x => x.hp.up)) } : null;
+  const each = segs.map(sideOne); each.forEach(x => { if (x.ok) x.mix = sideMix(x, b0); delete x.rot; delete x.up; });
+  const got = s => each.filter(x => x.s === s && x.ok);
   const R = got('右'), L = got('左');
   if (!R.length || !L.length) return fail(stepSide, '顔が見えている時間が短すぎました');
   // 倒した向きへの角度。反対へ傾いていたら 0°（倒せなかった）として数える
   const mR = Math.max(0, ...R.map(x => x.deg)), mL = Math.max(0, ...L.map(x => -x.deg)), gap = mR - mL;
   const phoneOk = each.some(x => x.phone != null);
-  RUN.side = { R: r1(mR), L: r1(mL), gap: r1(gap), less: Math.abs(gap) >= SIDE_GAP ? (gap > 0 ? '左' : '右') : null, each, phone: phoneOk, threshold: SIDE_GAP };
+  // 混ざり方は、くり返し（2回とも）出たものだけを読む。数字は2回の中央
+  const mixOf = s => { const m = each.filter(x => x.s === s && x.ok && x.mix).map(x => x.mix); if (!m.length) return null;
+    const ww = m[0].w.filter(w => m.every(o => o.w.includes(w)));
+    return { rot: r1(med(m.map(o => o.rot))), up: r1(med(m.map(o => o.up))), w: m.length >= 2 ? ww : [], n: m.length }; };
+  const mix = { R: mixOf('右'), L: mixOf('左') };
+  RUN.side = { R: r1(mR), L: r1(mL), gap: r1(gap), less: Math.abs(gap) >= SIDE_GAP ? (gap > 0 ? '左' : '右') : null, each, phone: phoneOk, threshold: SIDE_GAP, mix, mixTh: { rot: SIDE_ROT, up: SIDE_UP } };
   const S = RUN.side;
-  staff(`首を横に倒した角度：<b>右 ${S.R}°・左 ${S.L}°</b>（差 ${Math.abs(S.gap).toFixed(1)}°）<br><span class="small">各回 ${each.map(x => x.ok ? `${x.s}${Math.abs(x.deg).toFixed(1)}°（顔の線${Math.abs(x.raw).toFixed(1)}°・スマホ${x.phone ?? '—'}°）` : `${x.s}読めず`).join('／')}</span>
-  <div class="res judge">記録のみ（読みは未定）：${S.less ? `<b>${S.less}へ倒れにくい</b>（${SIDE_GAP}°以上の差・仮）` : '左右の差は小さい'}${phoneOk ? '' : '<br>※スマホの傾きを測れていない。スマホが手と一緒に傾いた分は入っていない'}<br><span class="small">2回のうち大きいほう。目じりを結んだ線の傾き＋スマホの傾き。肩や体ごと倒すとその分も入る</span></div>`);
+  const mixT = (k, o) => !o ? `${k}へ倒したとき：顔の向きを読めず` : `${k}へ倒したとき：${o.w.length ? '<b>' + o.w.join('・') + '</b>' : 'まっすぐ倒せている'}（回旋 ${o.rot > 0 ? '右' : '左'}${Math.abs(o.rot)}°・上下 ${o.up > 0 ? '上' : '下'}${Math.abs(o.up)}°）`;
+  staff(`首を横に倒した角度：<b>右 ${S.R}°・左 ${S.L}°</b>（差 ${Math.abs(S.gap).toFixed(1)}°）<br>${mixT('右', S.mix.R)}<br>${mixT('左', S.mix.L)}<br><span class="small">各回 ${each.map(x => x.ok ? `${x.s}${Math.abs(x.deg).toFixed(1)}°（顔の線${Math.abs(x.raw).toFixed(1)}°・スマホ${x.phone ?? '—'}°）` : `${x.s}読めず`).join('／')}</span>
+  <div class="res judge">記録のみ（読みは未定）：${S.less ? `<b>${S.less}へ倒れにくい</b>（${SIDE_GAP}°以上の差・仮）` : '左右の差は小さい'}${phoneOk ? '' : '<br>※スマホの傾きを測れていない。スマホが手と一緒に傾いた分は入っていない'}<br><span class="small">2回のうち大きいほう。目じりを結んだ線の傾き＋スマホの傾き。肩や体ごと倒すとその分も入る。回旋・上下は倒す前のまっすぐからの変化で、回旋${SIDE_ROT}°・上下${SIDE_UP}°以上が2回とも出たときだけ「まっすぐ倒せていない」と読む（仮）。カメラは回旋を8割ほど・上下を半分ほどに小さく読むので目安</span></div>`);
   recorded(stepSide, stepEight, '次へ（首の8の字）');
 }
 
@@ -2363,7 +2390,7 @@ function mitateHTML() {
 function summaryLines() {
   const L = [], e = RUN.eight, nk = RUN.neck, f = RUN.face, p = RUN.pursuit, s = RUN.saccade, x = RUN.fixation, c = RUN.conv, t = RUN.tongue;
   if (RUN.tilt) L.push(`1. ふだんの首の傾き：${Math.abs(RUN.tilt.deg) < 0.5 ? 'ほぼまっすぐ' : (RUN.tilt.deg > 0 ? '右' : '左') + 'へ' + Math.abs(RUN.tilt.deg) + '°'}（スマホの傾き ${RUN.tilt.phone ?? '—'}°）`);
-  const sd2 = RUN.side; if (sd2) L.push(`2. 首を横に倒す：右${sd2.R}°・左${sd2.L}°（差${Math.abs(sd2.gap)}°${sd2.less ? '・' + sd2.less + 'へ倒れにくい' : ''}${sd2.phone ? '' : '・スマホの傾きなし'}）`);
+  const sd2 = RUN.side; if (sd2) L.push(`2. 首を横に倒す：右${sd2.R}°・左${sd2.L}°（差${Math.abs(sd2.gap)}°${sd2.less ? '・' + sd2.less + 'へ倒れにくい' : ''}${sd2.phone ? '' : '・スマホの傾きなし'}）／混ざり ${['R', 'L'].map(k => { const o = sd2.mix && sd2.mix[k]; return `${k === 'R' ? '右' : '左'}：${o ? `回旋${o.rot > 0 ? '右' : '左'}${Math.abs(o.rot)}°・上下${o.up > 0 ? '上' : '下'}${Math.abs(o.up)}°${o.w.length ? '→' + o.w.join('・') : ''}` : '—'}`; }).join('／')}`);
   if (e) L.push(`3. 首の8の字：点について線の上 最初${e.fwd.follow}%・反対${e.rev.follow}%／なぞれた範囲 右の輪 ${e.fwd.covR}%・${e.rev.covR}%／左の輪 ${e.fwd.covL}%・${e.rev.covL}%／ずれた割合 ${['UR', 'UL', 'DR', 'DL'].map(k => `${LEGJ[k].slice(4)}${e.legs?.[k]?.off ?? '—'}%`).join('・')}／気持ち悪さ ${e.nausea || '—'}`);
   if (nk) L.push(`4. 首の左右・上下：線の上 左右${nk.H?.follow ?? '—'}%・上下${nk.V?.follow ?? '—'}%／ずれた割合 ${['toR', 'toL', 'up', 'down'].map(k => `${LEGJ[k]}${nk.legs?.[k]?.off ?? '—'}%（速さ${nk.legs?.[k]?.speed ?? '—'}%）`).join('・')}／気持ち悪さ ${nk.nausea || '—'}`);
   if (f) L.push(`5. 表情：顔全体の動きの量 右${f2(f.mv0)}・左${f2(f.mv1)}（笑う ${f.mv && f.mv.smile ? f.mv.smile.join('・') : '—'}／眉 ${f.mv && f.mv.brow ? f.mv.brow.join('・') : '—'}／目 ${f.mv && f.mv.eye ? f.mv.eye.join('・') : '—'}）／口角 右${f2(f.m0)}・左${f2(f.m1)}（笑いの値 右${f2(f.ms0)}・左${f2(f.ms1)}／笑ったときの高さの差 ${f2(f.mh)}・＋＝右が低い）／眉 右${f2(f.b0)}・左${f2(f.b1)}／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%／真顔の下がり 口角${f2(f.mouthDrop)}・眉${f2(f.browDrop)}（＋＝右が下）／目のまわりのしわ（目じり＋目がしら） 右${f2(f.wk0)}・左${f2(f.wk1)}（目じり 右${f2(f.wo0)}・左${f2(f.wo1)}／目がしら 右${f2(f.wi0)}・左${f2(f.wi1)}）（真顔→閉じた 右${f2(f.wb0)}→${f2(f.we0)}・左${f2(f.wb1)}→${f2(f.we1)}）`);
@@ -2411,7 +2438,7 @@ $('bStart').onclick = async () => {
   stepAlign();
 };
 // 確かめ用（自動の試験から各段を直接呼ぶ）
-window.__steps = { analyzeSide, sideOne, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
+window.__steps = { analyzeSide, sideOne, sideMix, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
   analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, judgeHTML, mitate, mitateHTML, saccJudge, analyzeTilt, analyzeFace, analyzePupil, pupilOne, wrinkleCount, stepTilt, stepPupil, stepAsk, get RUN() { return RUN; }, setCAL: c => { CAL = c; }, PT, DV };
 </script>
 </body>
