@@ -1208,7 +1208,7 @@ function pursuitWhy(dir, ks) {
 const grpQ = (dir, ks) => { const v = ks.map(k => dir[k] && dir[k].q).filter(Number.isFinite); return v.length ? Math.round(mean(v)) : null; };
 function pursuitHTML(o) {
   const d = o.dir, cell = k => d[k] ? (d[k].weak ? `${DJ[k]} <b>読めず</b>（カメラで目の動きが小さくしか写らなかった・倍率 ${f2(d[k].amp)}。点数に入れない）` : `${DJ[k]} <b>${d[k].q}</b>（遅れ ${f2(d[k].behind)}・つっかえ ${f2(d[k].err)}・線から外れる ${f2(d[k].off)}）`) : `${DJ[k]} —（読めず）`;
-  return `追従の点数（向きごと。100＝ぴったり）<br>${DIRS.map(cell).join('<br>')}<br><span class="small">（ ）＝点の振れ幅を1とした、点からのずれ。カメラの遅れ（${(o.segs || []).map(x => x.lag).join('・')}ms と読んだ）・目の合わせの倍率（${(o.segs || []).map(x => f2(x.amp)).join('・')}）・点の動きで説明できた割合（${(o.segs || []).map(x => f2(x.r2)).join('・')}）・使った読み方（${(o.segs || []).map(x => x.nm || '—').join('／')}）・読み取りの揺れは差し引いてある。遅れ（反対の向きと比べて点の後ろにいた量）も足し、ずれ ${PUR_E0} を超えると点数を下げ、${f2(PUR_E0 + PUR_E1)} で0点（仮）。倍率 ${PUR_AMP} 未満か説明できた割合 ${PUR_R2} 未満の組は「読めず」。どの向きも ${PUR_ABS} 点未満なら、左右の差が無くても読む。まばたき等で除いたコマ ${Math.round(o.blinkFrac * 100)}%・${o.fps}コマ/秒</span>${judgeHTML()}`;
+  return `追従の点数（向きごと。100＝ぴったり）<br>${DIRS.map(cell).join('<br>')}<br><span class="small">（ ）＝点の振れ幅を1とした、点からのずれ。カメラの遅れ（${(o.segs || []).map(x => x.lag).join('・')}ms と読んだ）・目の合わせの倍率（${(o.segs || []).map(x => f2(x.amp)).join('・')}）・点の動きで説明できた割合（${(o.segs || []).map(x => f2(x.r2)).join('・')}）・使った読み方（${(o.segs || []).map(x => x.nm || '—').join('／')}）・読み取りの揺れは差し引いてある。遅れ（反対の向きと比べて点の後ろにいた量）も足し、ずれ ${PUR_E0} を超えると点数を下げ、${f2(PUR_E0 + PUR_E1)} で0点（仮）。倍率 ${PUR_AMP} 未満か説明できた割合 ${PUR_R2} 未満の組は「読めず」。どの向きも ${PUR_ABS} 点未満なら、左右の差が無くても読む。まばたき等で除いたコマ ${Math.round(o.blinkFrac * 100)}%・${o.fps}コマ/秒</span>${judgeHTML('pursuit')}`;
 }
 // 内部の判定（お客さんには見せない）。しきい値は仮（2026-10-14 宮崎さん：判定のしかたは後で伝える）
 // ・右／右上／右下へ ついていけない（カクつく）→ 右の皮質　・左／左上／左下 → 左の皮質（同側の皮質。アドバンス教材 §7.1 で確定 2026-10-14）
@@ -1228,6 +1228,7 @@ function judge() {
   RUN.judgeNote = d && RUN.calib && !RUN.calib.reliable ? '目の合わせが不安定（見分け ' + CAL_MIN + ' 未満）なので、目の動きの判定は参考' : null;
   const unread = RUN.pursuit && (RUN.pursuit.segs || []).filter(x => x.unread).map(x => x.k);
   if (unread && unread.length) RUN.judgeNote = [RUN.judgeNote, `追従の${unread.join('・')}は、カメラで目の動きが小さくしか写らず読めなかった（判定に入れていない。もう一度やるか、スマホを顔に近づけて）`].filter(Boolean).join('／');
+  const p0 = J.length;   // ここから下の追従の分に印を付ける（追従の画面には、追従だけの読みを出すため）
   if (d) {
     const qR = grpQ(d, ['R', 'UR', 'DR']), qL = grpQ(d, ['L', 'UL', 'DL']), qV = grpQ(d, ['U', 'D']), qH = grpQ(d, ['R', 'L']);
     const lowR = qR != null && qR < PUR_ABS, lowL = qL != null && qL < PUR_ABS;
@@ -1246,6 +1247,7 @@ function judge() {
     else if (qV != null && qV < PUR_ABS) J.push({ k: '中脳', why: `上下の追従が ${qV} 点（${PUR_ABS} 点未満）${pursuitWhy(d, ['U', 'D'])}` });
     RUN.pursuitGroups = { right: qR, left: qL, vertical: qV, horizontal: qH, threshold: JTH, abs: PUR_ABS, note: 'しきい値は仮' };
   }
+  for (const j of J.slice(p0)) j.from = 'pursuit';
   const oj = RUN.okn && RUN.okn.judge; if (oj && oj.side) J.push({ k: `${oj.side}の皮質`, src: 'OKN', why: oj.why });
   const tg = RUN.tongue; if (tg && tg.unstable) J.push({ k: '小脳虫部・延髄（舌下神経）', src: '舌', why: `舌を出してキープすると安定しない（舌の先の揺れ 横${f2(tg.wobble.side)}・前後${f2(tg.wobble.prot)}）。BDC「CN12 舌下神経」：舌が小刻みに動く＝舌下神経・小脳虫部` });
   const sv = RUN.svv;   // 線をまっすぐにする：傾いた側の耳石（Z-Health Next Evolution）
@@ -1253,10 +1255,12 @@ function judge() {
   if (sv && sv.H && sv.H.side) J.push({ k: `${sv.H.side}の耳石（SVH）`, src: 'SVH', side: sv.H.side, why: `線をまっすぐ横にすると${sv.H.side}の端が下がる 平均 ${Math.abs(sv.H.mean).toFixed(1)}°（${SVH_TH}°以上で異常。卵形嚢寄り）` });
   RUN.judge = J;
 }
-function judgeHTML() {
-  const J = RUN.judge || [];
+// only を渡すと、その検査の分だけを出す（2026-10-16 宮崎さん「各テストの後に出る読みはそのテストだけでの読みに。最終的な判定に全部を統合した読みとして出して」）。
+// 前は追従の画面でも全部の判定を出していたので、先にやった8の字・首の結果まで追従の読みに混ざって見えた
+function judgeHTML(only) {
+  const J = (RUN.judge || []).filter(j => !only || j.from === only);
   const G = RUN.pursuitGroups, ud = G && G.vertical != null ? `<br><span class="small">追従の上下 ${G.vertical}・左右 ${G.horizontal}（上下が左右より ${JTH} 以上低い → 中脳）</span>` : '';
-  return `<div class="res judge">内部の判定（仮・お客さんには出ない）：${J.length ? J.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : '<br>目立った差なし'}${RUN.judgeNote ? '<br>※' + RUN.judgeNote : ''}${ud}</div>`;
+  return `<div class="res judge">${only ? 'この検査だけの読み（仮・お客さんには出ない）' : 'すべての検査を合わせた判定（仮・お客さんには出ない）'}：${J.length ? J.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : '<br>目立った差なし'}${RUN.judgeNote ? '<br>※' + RUN.judgeNote : ''}${ud}</div>`;
 }
 
 // ════ 5. サッカード（跳ぶ点を見る）：8方向へ跳んで、真ん中へ戻る。間はばらばら（1.0〜1.6秒）にして先読みを防ぐ
@@ -2305,7 +2309,7 @@ $('bStart').onclick = async () => {
 };
 // 確かめ用（自動の試験から各段を直接呼ぶ）
 window.__steps = { analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
-  analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, mitate, mitateHTML, saccJudge, analyzeTilt, analyzeFace, analyzePupil, pupilOne, wrinkleCount, stepTilt, stepPupil, stepAsk, get RUN() { return RUN; }, setCAL: c => { CAL = c; }, PT, DV };
+  analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, judgeHTML, mitate, mitateHTML, saccJudge, analyzeTilt, analyzeFace, analyzePupil, pupilOne, wrinkleCount, stepTilt, stepPupil, stepAsk, get RUN() { return RUN; }, setCAL: c => { CAL = c; }, PT, DV };
 </script>
 </body>
 </html>
