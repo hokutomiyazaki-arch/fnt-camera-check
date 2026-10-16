@@ -365,6 +365,9 @@ function say(html) {
   try { speechSynthesis.cancel(); const x = new SpeechSynthesisUtterance(u); x.lang = 'ja-JP'; x.rate = 1.1;
     jaV = jaV || speechSynthesis.getVoices().find(v => /^ja/i.test(v.lang)); if (jaV) x.voice = jaV; speechSynthesis.speak(x); } catch (e) {}
 }
+// 読み上げが終わるまで待つ（2026-10-16 夜 宮崎さん「VOR で音声の説明が読み終わる前に次に進んでしまう」）。鳴っていなければすぐ返る。max ミリ秒で打ち切る
+async function voiceQuiet(max = 9000) { const my = tok, t0 = performance.now(); await sleep(150);
+  while (my === tok && VOICE && performance.now() - t0 < max && ((!VA.paused && !VA.ended) || (window.speechSynthesis && speechSynthesis.speaking))) await sleep(100); }
 // 鳴らせなかった文は覚えておき、次に画面をさわったとき（押した中なら必ず鳴らせる）に鳴らす。
 // スマホは、押した瞬間の外で鳴らそうとすると断られることがある（2026-10-15 宮崎さん「また音声が出なくなっている」）
 let vPend = null;
@@ -388,7 +391,7 @@ const clearBtns = () => { $('btns').innerHTML = ''; $('result').innerHTML = ''; 
 function staff(html) { $('result').innerHTML = STAFF ? `<div class="res">${html}</div>` : ''; }
 const calWarn = () => CAL && !CAL.reliable ? '<br><span style="color:#ff8a65">※目の合わせが不安定なので、この数字は信用しない</span>' : '';
 // やり直しで段が変わったら、前の段のカウントダウンを止める（新しい段の指示を上書きしない）
-async function countdown(n = 3, pre = '', at = '') { const my = tok; for (let i = n; i > 0 && my === tok; i--) { cue(pre ? `${pre}<br><span style="font-size:1.8em">${i}</span>` : String(i), (pre ? '' : 'huge ') + at); await sleep(800); } if (my === tok) cue(''); }
+async function countdown(n = 3, pre = '', at = '') { const my = tok; for (let i = n; i > 0 && my === tok; i--) { cue(pre ? `${pre}<br><span style="font-size:1.8em">${i}</span>` : String(i), (pre ? '' : 'huge ') + at); await sleep(800); if (pre && i === n) await voiceQuiet(); } if (my === tok) cue(''); }   // 前置きの文は読み終えてから 2・1 へ（数字で前置きの声を切っていた）
 async function record(ms, onTick) {
   const mine = rec = [], my = tok, t0 = performance.now();   // やり直しで段が変わったら、すぐ抜ける（次の段の記録を横取りしない）
   while (performance.now() - t0 < ms && my === tok) { if (onTick) onTick((performance.now() - t0) / ms); await sleep(16); }
@@ -994,7 +997,7 @@ async function gate() {
     await sleep(150);
   }
   sk.remove();
-  if (done) { cue('<span class="ok">OK ✓</span><br>この近さのまま'); await sleep(800); }
+  if (done) { cue('<span class="ok">OK ✓</span><br>この近さのまま'); await sleep(800); await voiceQuiet(2500); }
   return { eye: last ? r3(eyeSize(last)) : null, ok: done };
 }
 // 1コマから目の特徴を取る。右目（s=0）・左目（s=1）は本人の向き
@@ -1571,6 +1574,7 @@ async function stepVor() {
   btn('始める', async () => {
     const my = tok; clearBtns(); note('');
     try { const A = window.AudioContext || window.webkitAudioContext; endBeep.a = endBeep.a || new A(); endBeep.a.resume(); } catch (e) {}   // 音はボタンを押したときに用意しないと鳴らない端末がある
+    await voiceQuiet(); if (my !== tok) return;   // やり方の説明を読み終えてから始める（早く押しても声を切らない）
     G = null; const g0 = await eyeStepStart(stepVor); if (!g0) return;
     if (my !== tok) return;
     dark(false); hideDot(); placeVor();
@@ -1578,7 +1582,7 @@ async function stepVor() {
     const t1 = performance.now(); let okN = 0;
     while (my === tok && performance.now() - t1 < 6000) { const n = last && last[VOR_AIM]; okN = n && dist(n, { x: G.cx, y: G.cy }) < 0.15 * G.d ? okN + 1 : 0; if (okN >= 4) break;
       cue('眉間（赤い点）を<br>黄色い点に合わせて', 'top'); await sleep(150); }
-    if (my !== tok) return;
+    await voiceQuiet(); if (my !== tok) return;   // すぐ合っても「合わせて」を読み終えてから数える
     await countdown(3, '目はずっと点を見たまま', 'top'); if (my !== tok) return;
     const order = []; for (let i = 0; i < VOR_N; i++) order.push(...[...DIRS].sort(() => Math.random() - 0.5));
     rec = []; const flicks = [], t0 = performance.now();
