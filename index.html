@@ -877,7 +877,10 @@ function wrinkleCount({ pts, img }, s, zone = 'out') {
   }
   return cols.length >= 5 ? mean(cols) : NaN;
 }
-const DROOP = 0.025, WRK_GAP = 30, SMILE_GAP = 30, EYE_GAP = 30;   // 口角・眉の下がり（目の間の長さ＝1）・しわの増え方の左右差（％）。どちらも仮
+const DROOP = 0.025, WRK_GAP = 30, SMILE_GAP = 15, EYE_GAP = 30;   // 口角・眉の下がり（目の間の長さ＝1）・しわの増え方の左右差（％）。どちらも仮
+// 口角は少しの差でも読む（2026-10-16 宮崎さん「左が少し高くても右の問題とは出ない。少し高いくらいでも明らかな差と読んでほしい」）：
+// 上がりの差 30%→15%、真顔の口角の下がり 0.025→0.015、笑いがいちばん強いときの口角の高さの差 0.03（こちらは目がしらの間＝1。目がしらの間≒3cm なので約1mm）。どれも仮
+const DROOP_M = 0.015, SMILE_H = 0.03;
 function analyzeFace(seg, imgs = {}) {
   if (seg.base.length < 8 || seg.smile.length < 8) return fail(stepFace, '顔が見えている時間が短すぎました');
   const avg = (arr, fn) => arr.reduce((s, x) => s + fn(x), 0) / arr.length;
@@ -892,7 +895,9 @@ function analyzeFace(seg, imgs = {}) {
   const mouthAt = (fr, s) => { const f = frame(fr.pts, P.eyeIn).f, c = f(fr.pts[P.mouth[s]]), n = f(fr.pts[2]); return { up: n.y - c.y, out: Math.abs(c.x - n.x) }; };
   const mb = [0, 1].map(s => ({ up: avg(seg.base, fr => mouthAt(fr, s).up), out: avg(seg.base, fr => mouthAt(fr, s).out) }));
   const sm = seg.smile.map(fr => [0, 1].map(s => { const m = mouthAt(fr, s); return (m.up - mb[s].up) + (m.out - mb[s].out); }));
-  const topSm = [...sm].sort((a, b) => (b[0] + b[1]) - (a[0] + a[1])).slice(0, Math.max(3, Math.round(sm.length * 0.2)));
+  const topI = sm.map((v, i) => i).sort((a, b) => (sm[b][0] + sm[b][1]) - (sm[a][0] + sm[a][1])).slice(0, Math.max(3, Math.round(sm.length * 0.2))), topSm = topI.map(i => sm[i]);
+  // 笑いがいちばん強いときの口角の高さそのものの左右差（＋＝右が低い）。真顔からの増え方とは別に、見た目の「片方が高い」を読む
+  res.mh = r3(mean(topI.map(i => { const fr = seg.smile[i]; return mouthAt(fr, 1).up - mouthAt(fr, 0).up; })));
   // 2026-10-16（宮崎さん「左だけ上げてみたけれども、全然問題とならない」2回目）：顔の点の口角は、片側だけの笑いでも反対側まで一緒に動いて見えることがある（顔の点は左右そろった形に寄せて読まれる）。
   // そこで MediaPipe の笑いの値（mouthSmileLeft／Right）も使う。写真の片方の口角だけを下げて通すと、下げた側の値だけ下がり、Left＝本人の左だった（実測）。
   // 笑いがいちばん強かったコマ（両側の合計の上位2割）で、真顔からの増え方を左右で比べる。顔の点と笑いの値の、どちらかで差が出たら読む
@@ -929,7 +934,7 @@ function analyzeFace(seg, imgs = {}) {
   }
   // 顔面神経：口角・眉が下がっている側、目を閉じたときのしわが少ない側（2026-10-14 宮崎さん）
   const v = [], LR = x => x > 0 ? '右' : '左';
-  if (Math.abs(res.mouthDrop) >= DROOP) v.push({ side: LR(res.mouthDrop), why: `真顔で${LR(res.mouthDrop)}の口角が下がっている（差 ${f2(Math.abs(res.mouthDrop))}）` });
+  if (Math.abs(res.mouthDrop) >= DROOP_M) v.push({ side: LR(res.mouthDrop), why: `真顔で${LR(res.mouthDrop)}の口角が下がっている（差 ${f2(Math.abs(res.mouthDrop))}）` });
   if (Math.abs(res.browDrop) >= DROOP) v.push({ side: LR(res.browDrop), why: `真顔で${LR(res.browDrop)}の眉が下がっている（差 ${f2(Math.abs(res.browDrop))}）` });
   if (Number.isFinite(res.wk0) && Number.isFinite(res.wk1) && Math.max(res.wk0, res.wk1) >= 0.5 && pct(res.wk0, res.wk1) >= WRK_GAP) {
     const lo = res.wk0 < res.wk1 ? '右' : '左';
@@ -942,9 +947,13 @@ function analyzeFace(seg, imgs = {}) {
   }
   // 笑ったときの口角の上がりが悪い側（よく上がる側の 7 割に届かない。仮）
   const smG = Math.max(res.m0, res.m1) >= 0.03 && pct(res.m0, res.m1) >= SMILE_GAP, smB = res.ms0 != null && Math.max(res.ms0, res.ms1) >= 0.15 && pct(res.ms0, res.ms1) >= SMILE_GAP;
-  if (smB || smG) {
-    const lo = smB ? (res.ms0 < res.ms1 ? '右' : '左') : (res.m0 < res.m1 ? '右' : '左');
-    v.push({ side: lo, why: `笑ったときに${lo}の口角の上がりが悪い（笑いの値 右${f2(res.ms0)}・左${f2(res.ms1)}、差 ${res.ms0 != null ? pct(res.ms0, res.ms1) : '—'}%／顔の点 右${f2(res.m0)}・左${f2(res.m1)}、差 ${pct(res.m0, res.m1)}%）` });
+  const smH = Number.isFinite(res.mh) && Math.abs(res.mh) >= SMILE_H;
+  if (smB || smG || smH) {
+    // 3つの読みで向きが割れたら多いほうを、同数なら高さの差を採る（見た目にいちばん近い）
+    const vs = [smB && (res.ms0 < res.ms1 ? '右' : '左'), smG && (res.m0 < res.m1 ? '右' : '左'), smH && LR(res.mh)].filter(Boolean);
+    const nR = vs.filter(x => x === '右').length, nL = vs.length - nR;
+    const lo = nR > nL ? '右' : nL > nR ? '左' : (smH ? LR(res.mh) : vs[0]);
+    v.push({ side: lo, why: `笑ったときに${lo}の口角の上がりが悪い（笑ったときの高さ ${Math.abs(res.mh) < 0.003 ? 'ほぼ同じ' : LR(res.mh) + 'が低い ' + f2(Math.abs(res.mh))}／笑いの値 右${f2(res.ms0)}・左${f2(res.ms1)}、差 ${res.ms0 != null ? pct(res.ms0, res.ms1) : '—'}%／顔の点 右${f2(res.m0)}・左${f2(res.m1)}、差 ${pct(res.m0, res.m1)}%）` });
   }
   // 左右で出た数が多い側を読む（前は1つでも反対側が出ると「左右がまちまち」で側を出さず、口角の差が見えなくなっていた）
   const nS = sd => v.filter(x => x.side === sd).length, side7 = nS('右') > nS('左') ? '右' : nS('左') > nS('右') ? '左' : null;
@@ -954,10 +963,11 @@ function analyzeFace(seg, imgs = {}) {
   staff(`真顔の下がり：口角 ${Math.abs(res.mouthDrop) < 0.005 ? 'ほぼ同じ' : LR(res.mouthDrop) + 'が下 ' + f2(Math.abs(res.mouthDrop))}・眉 ${Math.abs(res.browDrop) < 0.005 ? 'ほぼ同じ' : LR(res.browDrop) + 'が下 ' + f2(Math.abs(res.browDrop))}<br>
   目をギュッと閉じたときの目のまわりのしわ（増えた本数・目じり＋目がしら）：右 <b>${f2(res.wk0)}</b>・左 <b>${f2(res.wk1)}</b>（目じり 右${f2(res.wo0)}・左${f2(res.wo1)}／目がしら 右${f2(res.wi0)}・左${f2(res.wi1)}）<br>
   口角の上がり（笑いの値）：右 <b>${f2(res.ms0)}</b>・左 <b>${f2(res.ms1)}</b> → ${res.ms0 != null ? sideWord(res.ms0, res.ms1, 'よく上がる') : '読めず'}（差 ${res.ms0 != null ? pct(res.ms0, res.ms1) : '—'}%）<br>
+  笑ったときの口角の高さ：${Math.abs(res.mh) < 0.003 ? 'ほぼ同じ' : LR(res.mh) + 'が低い ' + f2(Math.abs(res.mh))}（${SMILE_H} 以上で差とみる）<br>
   口角の上がり（顔の点）：右 <b>${f2(res.m0)}</b>・左 <b>${f2(res.m1)}</b> → ${sideWord(res.m0, res.m1, 'よく上がる')}（差 ${pct(res.m0, res.m1)}%）<br>
   眉の上がり：右 <b>${f2(res.b0)}</b>・左 <b>${f2(res.b1)}</b> → ${sideWord(res.b0, res.b1, 'よく上がる')}（差 ${pct(res.b0, res.b1)}%）<br>
   目の閉じ方：右 <b>${Math.round(res.e0 * 100)}%</b>・左 <b>${Math.round(res.e1 * 100)}%</b> → ${sideWord(res.e0, res.e1, 'よく閉じる')}
-  <div class="res judge">内部の読み（仮）：${C7.side ? `<b>${C7.side}の顔面神経</b>の働き低下の可能性 — ${C7.items.map(i => (i.side === C7.side ? '' : `（反対の${i.side}：`) + i.why + (i.side === C7.side ? '' : '）')).join('・')}` : C7.mixed ? `左右がまちまち — ${C7.items.map(i => i.why).join('・')}` : '目立った左右差なし'}<br><span class="small">下がりは目の間の長さを1として ${DROOP} 以上・しわは増えた本数の差 ${WRK_GAP}% 以上・口角の上がりは差 ${SMILE_GAP}% 以上・目の閉じ方は両目がいちばん閉じたときの差 ${EYE_GAP}% 以上（どれも仮）。しわは照明の当たり方で左右差が出ることがある</span></div>`);
+  <div class="res judge">内部の読み（仮）：${C7.side ? `<b>${C7.side}の顔面神経</b>の働き低下の可能性 — ${C7.items.map(i => (i.side === C7.side ? '' : `（反対の${i.side}：`) + i.why + (i.side === C7.side ? '' : '）')).join('・')}` : C7.mixed ? `左右がまちまち — ${C7.items.map(i => i.why).join('・')}` : '目立った左右差なし'}<br><span class="small">下がりは目の間の長さを1として 口角 ${DROOP_M}・眉 ${DROOP} 以上・しわは増えた本数の差 ${WRK_GAP}% 以上・口角の上がりは差 ${SMILE_GAP}% 以上・目の閉じ方は両目がいちばん閉じたときの差 ${EYE_GAP}% 以上（どれも仮）。しわは照明の当たり方で左右差が出ることがある</span></div>`);
   recorded(stepFace, stepEyePrep, '次へ（目の準備）');
 }
 
@@ -2247,7 +2257,7 @@ function summaryLines() {
   if (RUN.tilt) L.push(`1. ふだんの首の傾き：${Math.abs(RUN.tilt.deg) < 0.5 ? 'ほぼまっすぐ' : (RUN.tilt.deg > 0 ? '右' : '左') + 'へ' + Math.abs(RUN.tilt.deg) + '°'}（スマホの傾き ${RUN.tilt.phone ?? '—'}°）`);
   if (e) L.push(`2. 首の8の字：点について線の上 最初${e.fwd.follow}%・反対${e.rev.follow}%／なぞれた範囲 右の輪 ${e.fwd.covR}%・${e.rev.covR}%／左の輪 ${e.fwd.covL}%・${e.rev.covL}%／ずれた割合 ${['UR', 'UL', 'DR', 'DL'].map(k => `${LEGJ[k].slice(4)}${e.legs?.[k]?.off ?? '—'}%`).join('・')}／気持ち悪さ ${e.nausea || '—'}`);
   if (nk) L.push(`3. 首の左右・上下：線の上 左右${nk.H?.follow ?? '—'}%・上下${nk.V?.follow ?? '—'}%／ずれた割合 ${['toR', 'toL', 'up', 'down'].map(k => `${LEGJ[k]}${nk.legs?.[k]?.off ?? '—'}%（速さ${nk.legs?.[k]?.speed ?? '—'}%）`).join('・')}／気持ち悪さ ${nk.nausea || '—'}`);
-  if (f) L.push(`4. 表情：口角 右${f2(f.m0)}・左${f2(f.m1)}／眉 右${f2(f.b0)}・左${f2(f.b1)}／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%／真顔の下がり 口角${f2(f.mouthDrop)}・眉${f2(f.browDrop)}（＋＝右が下）／目のまわりのしわ（目じり＋目がしら） 右${f2(f.wk0)}・左${f2(f.wk1)}（目じり 右${f2(f.wo0)}・左${f2(f.wo1)}／目がしら 右${f2(f.wi0)}・左${f2(f.wi1)}）（真顔→閉じた 右${f2(f.wb0)}→${f2(f.we0)}・左${f2(f.wb1)}→${f2(f.we1)}）`);
+  if (f) L.push(`4. 表情：口角 右${f2(f.m0)}・左${f2(f.m1)}（笑いの値 右${f2(f.ms0)}・左${f2(f.ms1)}／笑ったときの高さの差 ${f2(f.mh)}・＋＝右が低い）／眉 右${f2(f.b0)}・左${f2(f.b1)}／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%／真顔の下がり 口角${f2(f.mouthDrop)}・眉${f2(f.browDrop)}（＋＝右が下）／目のまわりのしわ（目じり＋目がしら） 右${f2(f.wk0)}・左${f2(f.wk1)}（目じり 右${f2(f.wo0)}・左${f2(f.wo1)}／目がしら 右${f2(f.wi0)}・左${f2(f.wi1)}）（真顔→閉じた 右${f2(f.wb0)}→${f2(f.we0)}・左${f2(f.wb1)}→${f2(f.we1)}）`);
   if (RUN.calib) L.push(`5. 目の準備（検査ではない・測るための合わせ）：横 ${RUN.calib.x?.nm}（見分け${RUN.calib.x?.sep}）・たて ${RUN.calib.y?.nm}（見分け${RUN.calib.y?.sep}）・近さ ${f2(RUN.eyeGate?.eye)}`);
   if (p && p.dir) L.push(`6. 追従：${DIRS.map(k => `${DJ[k]}${p.dir[k] ? (p.dir[k].q ?? '読めず') : '—'}`).join('・')}（読み方 ${(p.segs || []).map(x => `${x.k}＝${x.nm || '—'}・説明できた割合 ${f2(x.r2)}・倍率 ${f2(x.amp)}`).join('／')}）`);
   if (false && s && s.dir) L.push(`7. サッカード（反応ms／速さ）：${DIRS.map(k => `${DJ[k]}${s.dir[k] ? `${s.dir[k].lat ?? '—'}/${f2(s.dir[k].pv)}` : '—'}`).join('・')}${s.metria ? `／行き過ぎ・届かない 右へ${s.metria.right.hyper}・${s.metria.right.hypo}／${s.metria.right.n}回・左へ${s.metria.left.hyper}・${s.metria.left.hypo}／${s.metria.left.n}回` : ''}`);
