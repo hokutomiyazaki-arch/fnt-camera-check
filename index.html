@@ -2009,7 +2009,8 @@ async function stepSvv() {
   });
 }
 function analyzeSvv(T) {
-  const one = (kind, th) => { const a = T.filter(t => t.kind === kind && t.ok && !t.off);   // 平均は、合わせられた回（ずれ10°以内）だけで出す if (a.length < 2) return { ok: false, n: a.length };
+  const one = (kind, th) => { const a = T.filter(t => t.kind === kind && t.ok && !t.off);   // 平均は、合わせられた回（ずれ10°以内）だけで出す
+    if (a.length < 2) return { ok: false, n: a.length };
     const e = a.map(t => t.err), m = mean(e), side = Math.abs(m) >= th ? (m > 0 ? '右' : '左') : null, hd = a.map(t => t.head).filter(Number.isFinite);
     return { ok: true, n: a.length, mean: r1(m), sd: r1(sd(e)), each: e, side, th, head: hd.length ? r1(med(hd)) : null }; };
   const V = one('V', SVV_TH), H = one('H', SVH_TH);
