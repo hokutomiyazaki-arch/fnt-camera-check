@@ -532,7 +532,9 @@ function analyzeTilt(r, ph) {
 const CANAL = { UR: '右の後半規管', UL: '左の後半規管', DR: '左の前半規管', DL: '右の前半規管', toR: '右の水平半規管', toL: '左の水平半規管', up: '両方の後半規管', down: '両方の前半規管' };
 const LEGJ = { UR: '真ん中→右上', UL: '真ん中→左上', DR: '真ん中→右下', DL: '真ん中→左下', toR: '左→右', toL: '右→左', up: '下→上', down: '上→下' };
 const cereb = c => c.startsWith('右') ? '右の小脳' : c.startsWith('左') ? '左の小脳' : '左右の小脳';
-const OFF_MIN = 35, OFF_GAP = 15, SPD_GAP = 15, SPD_LOW = 80, TOLF = 0.2;   // しきい値は仮（ずれの割合・速さの差は％ポイント）
+const OFF_MIN = 35, OFF_GAP = 15, SPD_GAP = 15, SPD_LOW = 80, TOLF = 0.2, TOLL = 0.12;   // しきい値は仮（ずれの割合・速さの差は％ポイント）。TOLL：線から外れたとみなす距離（目じりの間＝1）
+// 2026-10-16 宮崎さん「鼻先の追従は、黄色の点から遅れることはそんなに気にしなくていい。線からの逸脱を読み取って」：
+// 前は「ずれた」を黄色の点との距離（TOLF）で数えていて、線の上にいても点から遅れると「ずれた」になった。いまは線（∞・左右・上下の線）からの距離で数える。点からの遅れ・速さは記録だけ
 // 線は画面の真ん中に固定したので、鼻の位置とのずれは ±0.8（目じりの間を1）まで探す
 function fitTrack(rs, at, d) {   // 人の遅れ（0〜1.2秒）と体ごとのずれを探して差し引く
   let best = { lag: 0, ox: 0, oy: 0, e: Infinity }; const sub = rs.filter((_, i) => i % 3 === 0);
@@ -695,7 +697,8 @@ function analyzeEight(seg, g) {
   const out = {};
   for (const s of seg) {
     const fb = fits[s.k], rs = rows.filter(r => r.s === s), n = rs.map(r => ({ x: r.n.x + fb.ox, y: r.n.y + fb.oy }));
-    const on = rs.filter((r, i) => dist(at(r, fb.lag), n[i]) / g.d < TOLF).length;
+    const offL = p => Math.min(...curve.map(c => dist(c, p))) / g.d;   // 線（∞）からの距離
+    const on = n.filter(p => offL(p) < TOLL).length;
     const cov = side => { const cs = curve.filter(c => side * (g.cx - c.x) > 1e-6); const hit = cs.filter(c => n.some(p => dist(c, p) / g.d < TOL)).length; return cs.length ? Math.round(hit / cs.length * 100) : 0; };
     const xs = n.map(p => (g.cx - p.x) / (GA * g.d));
     out[s.k] = { lag: fb.lag, n: rs.length, follow: rs.length ? Math.round(on / rs.length * 100) : 0, covR: cov(1), covL: cov(-1), wR: r3(Math.max(0, ...xs)), wL: r3(Math.max(0, ...xs.map(v => -v))) };
@@ -708,7 +711,8 @@ function analyzeEight(seg, g) {
       const a = at(r, fb.lag), b = gPos(g, s.dir * 2 * Math.PI * (e + 60) / LAP);
       const ux = g.cx - a.x, uy = g.cy - a.y, vx = a.x - b.x, vy = a.y - b.y;   // 本人の右・上が＋
       if (ux * vx + uy * vy <= 0 || Math.hypot(ux, uy) < g.d * 0.03) continue;
-      addLeg(legs, (uy > 0 ? 'U' : 'D') + (ux > 0 ? 'R' : 'L'), Math.floor(e / LAP), dist(a, { x: r.n.x + fb.ox, y: r.n.y + fb.oy }) / g.d >= TOLF ? 1 : 0);
+      const q = { x: r.n.x + fb.ox, y: r.n.y + fb.oy };
+      addLeg(legs, (uy > 0 ? 'U' : 'D') + (ux > 0 ? 'R' : 'L'), Math.floor(e / LAP), Math.min(...curve.map(c => dist(c, q))) / g.d >= TOLL ? 1 : 0);   // 線から外れたか（点からの遅れは数えない）
     }
   }
   const S = legSummary(legs);
@@ -716,9 +720,9 @@ function analyzeEight(seg, g) {
   out.legs = S;
   RUN.eight = out;
   const F = out.fwd, B = out.rev, low = Math.min(F.follow, B.follow);
-  RUN.eightJudge = { overall: low < 60 ? `8の字で鼻先が線についていけた割合が低い（最初 ${F.follow}%・反対 ${B.follow}%）` : null, canals: legFlags(S, others) };
+  RUN.eightJudge = { overall: low < 60 ? `8の字で鼻先が線の上にいた割合が低い（最初 ${F.follow}%・反対 ${B.follow}%）` : null, canals: legFlags(S, others) };
   if (STAFF) {   // 結果の絵（スタッフだけ）：ガイドの線と鼻先の通り道（緑＝線の上・赤＝外れ）
-    const near = p => Math.min(...curve.map(c => dist(c, { x: p.x + best.ox, y: p.y + best.oy }))) / g.d;
+    const near = (p, fb) => Math.min(...curve.map(c => dist(c, { x: p.x + fb.ox, y: p.y + fb.oy }))) / g.d;   // その回り（最初・反対）の体ごとのずれを差し引いて、線からの距離
     gd.width = gd.clientWidth * 2; gd.height = gd.clientHeight * 2;
     const sc = Math.min(gd.width / (2.8 * GA), gd.height / (2.8 * 2 * GB)) / g.d;
     const T = (p, o = 0) => ({ x: gd.width / 2 - (p.x + o * best.ox - g.cx) * sc, y: gd.height / 2 + (p.y + o * best.oy - g.cy) * sc });
@@ -728,10 +732,10 @@ function analyzeEight(seg, g) {
     gc.lineWidth = 4;
     for (const s of seg) for (let i = 1; i < s.r.length; i++) {
       const a = T(s.r[i - 1].pts[1], 1), b = T(s.r[i].pts[1], 1);
-      gc.strokeStyle = near(s.r[i].pts[1]) < TOL ? (s.dir > 0 ? '#5ad18b' : '#4fc3f7') : '#ff6b6b';
+      gc.strokeStyle = near(s.r[i].pts[1], fits[s.k]) < TOLL ? (s.dir > 0 ? '#5ad18b' : '#4fc3f7') : '#ff6b6b';
       gc.beginPath(); gc.moveTo(a.x, a.y); gc.lineTo(b.x, b.y); gc.stroke();
     }
-    staff(`点について線の上：最初 <b>${F.follow}%</b>・反対 <b>${B.follow}%</b><br>なぞれた範囲 右の輪：<b>${F.covR}%</b>・<b>${B.covR}%</b>　左の輪：<b>${F.covL}%</b>・<b>${B.covL}%</b><br>届いた横幅 右 <b>${f2(Math.max(F.wR, B.wR))}</b>・左 <b>${f2(Math.max(F.wL, B.wL))}</b><br><span class="small">緑＝最初の向き・水色＝反対回りで線の上、赤＝外れ。遅れ ${(F.lag / 1000).toFixed(1)}／${(B.lag / 1000).toFixed(1)}秒。${F.n + B.n}コマ</span>
+    staff(`線の上（${TOLL} 以内）：最初 <b>${F.follow}%</b>・反対 <b>${B.follow}%</b><br>なぞれた範囲 右の輪：<b>${F.covR}%</b>・<b>${B.covR}%</b>　左の輪：<b>${F.covL}%</b>・<b>${B.covL}%</b><br>届いた横幅 右 <b>${f2(Math.max(F.wR, B.wR))}</b>・左 <b>${f2(Math.max(F.wL, B.wL))}</b><br><span class="small">緑＝最初の向き・水色＝反対回りで線の上、赤＝外れ。遅れ ${(F.lag / 1000).toFixed(1)}／${(B.lag / 1000).toFixed(1)}秒。${F.n + B.n}コマ</span>
     <br>真ん中から外へ向かう所でずれた割合：${['UR', 'UL', 'DR', 'DL'].map(k => `${LEGJ[k].slice(4)} <b>${S[k] ? S[k].off + '%' : '—'}</b>${S[k] ? `（${S[k].laps}回中${S[k].lapsOff}回）` : ''}`).join('・')}
     ${headJudgeHTML(RUN.eightJudge)}`);
   }
@@ -798,7 +802,8 @@ function analyzeNeck(seg, g0) {
       const q = L.laps[lap] || (L.laps[lap] = { n: 0, sum: 0 }); q.n++; q.sum += clamp(ratio, -1, 2);
     }
     for (const r of rs) {
-      const e = r.t - fb.lag - s.t0, off = dist(at(r, fb.lag), { x: r.n.x + fb.ox, y: r.n.y + fb.oy }) / g.d >= TOLF ? 1 : 0; on += 1 - off;
+      const pd = s.ax === 'H' ? (r.n.y + fb.oy - g.cy) / g.d : (r.n.x + fb.ox - g.cx) / g.d;   // 線に直角な向きの距離（点からの遅れは数えない）
+      const e = r.t - fb.lag - s.t0, off = Math.abs(pd) >= TOLL ? 1 : 0; on += 1 - off;
       const c = Math.cos(2 * Math.PI * e / LPER); if (e < 0 || Math.abs(c) < 0.3) continue;   // 折り返しの所は、向きが決まらないので数えない
       addLeg(legs, s.ax === 'H' ? (c > 0 ? 'toR' : 'toL') : (c > 0 ? 'up' : 'down'), Math.floor(e / LPER), off);
     }
@@ -809,20 +814,21 @@ function analyzeNeck(seg, g0) {
   for (const k in S) if (V[k]) S[k].speed = V[k].pct;
   out.legs = S; RUN.neck = out;
   const canals = legFlags(S, k => S[OPP[k]] ? S[OPP[k]].off : null);
-  for (const k in V) { const v = V[k], o = V[OPP[k]]; if (!o || v.n < 10 || o.pct < 60 || canals.some(c => c.leg === k)) continue;   // 反対向きも追えていないときは、向きの差として読まない
+  // 速さ（点から遅れる）は 2026-10-16 から判定に使わない（宮崎さん「遅れることはそんなに気にしなくていい」）。数字は記録とスタッフ表示に残す
+  if (false) for (const k in V) { const v = V[k], o = V[OPP[k]]; if (!o || v.n < 10 || o.pct < 60 || canals.some(c => c.leg === k)) continue;   // 反対向きも追えていないときは、向きの差として読まない
     // 遅い向きは、点の速さの 8 割に届かないときだけ（2026-10-15 夜 宮崎さん「ずっと点についていっているのに後半規管と出る」）。
     // 前は反対向きとの差だけで見ていて、作り物の首で 上 108%・下 92%（どちらも点についていけている）を「下が遅い」と読んだ
     const slow = v.laps.filter(x => x <= Math.min(o.pct - SPD_GAP, SPD_LOW)).length;
     if (o.pct - v.pct >= SPD_GAP && v.pct <= SPD_LOW && slow >= 2) canals.push({ k: CANAL[k], cb: cereb(CANAL[k]), leg: k, why: `${LEGJ[k]} の鼻先の速さが点の ${v.pct}%（反対向き ${o.pct}%）・${v.laps.length}回中${slow}回くり返し遅い` }); }
   const low = Math.min(out.H?.follow ?? 100, out.V?.follow ?? 100), ov = [];
-  if (low < 60) ov.push(`首の左右・上下で鼻先が線についていけた割合が低い（左右 ${out.H?.follow ?? '—'}%・上下 ${out.V?.follow ?? '—'}%）`);
+  if (low < 60) ov.push(`首の左右・上下で鼻先が線の上にいた割合が低い（左右 ${out.H?.follow ?? '—'}%・上下 ${out.V?.follow ?? '—'}%）`);
   // 線から横へのぶれ（2026-10-16 宮崎さん「上下に線を鼻先で追うテストで、左右にブレさせてみたけれども、全然エラーが出ない」）：
   // 前は点との距離（0.2 以上で「ずれた」）と、向きどうしの差だけで見ていた。上下どちらへ動くときも同じように横へぶれると差が出ず、距離も 0.2 に届かないので正常になった。
   // 線に直角な向きのぶれを別に数える。上下の線なら横、左右の線ならたて。ぶれた側が決まらないので、側を言わず「小脳虫部・前庭機能」として読む
   for (const [ax, lab, dir] of [['V', '上下', '横'], ['H', '左右', 'たて']]) { const q = out[ax]?.perp; if (q && q.frac >= PERP_FRAC) ov.push(`首の${lab}で鼻先が線から${dir}へぶれる（${PERP_TOL} 以上ぶれたコマ ${Math.round(q.frac * 100)}%・いちばん大きいぶれ ${f2(q.p95)}）`); }
   RUN.neckJudge = { overall: ov.length ? ov.join('／') : null, canals };
   const c = k => `${LEGJ[k]} <b>${S[k] ? S[k].off + '%' : '—'}</b>${S[k] ? `（速さ${S[k].speed ?? '—'}%）` : ''}`;
-  staff(`点について線の上：左右 <b>${out.H?.follow ?? '—'}%</b>・上下 <b>${out.V?.follow ?? '—'}%</b><br>線から外へのぶれ（${PERP_TOL} 以上ぶれたコマ）：上下の線で横へ <b>${out.V?.perp ? Math.round(out.V.perp.frac * 100) + '%' : '—'}</b>・左右の線でたてへ <b>${out.H?.perp ? Math.round(out.H.perp.frac * 100) + '%' : '—'}</b>（${PERP_FRAC * 100}% 以上で読む・仮）<br>向きごとにずれた割合（速さ＝鼻先÷点）：${c('toR')}・${c('toL')}<br>${c('up')}・${c('down')}<br><span class="small">遅れ 左右${((out.H?.lag || 0) / 1000).toFixed(1)}／上下${((out.V?.lag || 0) / 1000).toFixed(1)}秒</span>${headJudgeHTML(RUN.neckJudge)}`);
+  staff(`線の上（${TOLL} 以内）：左右 <b>${out.H?.follow ?? '—'}%</b>・上下 <b>${out.V?.follow ?? '—'}%</b><br>線から外へのぶれ（${PERP_TOL} 以上ぶれたコマ）：上下の線で横へ <b>${out.V?.perp ? Math.round(out.V.perp.frac * 100) + '%' : '—'}</b>・左右の線でたてへ <b>${out.H?.perp ? Math.round(out.H.perp.frac * 100) + '%' : '—'}</b>（${PERP_FRAC * 100}% 以上で読む・仮）<br>向きごとに線から外れた割合（速さ＝鼻先÷点。速さは参考・判定に使わない）：${c('toR')}・${c('toL')}<br>${c('up')}・${c('down')}<br><span class="small">遅れ 左右${((out.H?.lag || 0) / 1000).toFixed(1)}／上下${((out.V?.lag || 0) / 1000).toFixed(1)}秒</span>${headJudgeHTML(RUN.neckJudge)}`);
   askNausea('neck', () => recorded(stepNeck, stepFace, '次へ（表情）'));
 }
 
