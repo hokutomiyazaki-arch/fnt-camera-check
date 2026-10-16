@@ -1805,13 +1805,20 @@ function tongueFrame({ pts, img }) {
     for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue; const k = b * nx + a; if (M[k] && !seen[k]) { seen[k] = 1; q.push(k); } } }
   const cells = comp.map(c => ({ x: x0 + (c % nx) * st, y: y0 + ((c / nx) | 0) * st }));
   // 舌の先＝口の真ん中（上下のくちびるの内側の間）からいちばん遠い所。横へ曲がった舌でも先を取れる
+  // 2026-10-16（宮崎さん「右に出したときも左にずれているという判定になる」）：くちびるも肌より赤いので、舌とつながって取られる。
+  // 舌が短い・口を大きく開けたときは、いちばん遠い所がくちびるの角（左右どちらか）になり、舌と関係なく側が決まっていた。
+  // 下くちびるの下の端（顔の点 17）より上を除いた所から先を探す（出した舌の先は下くちびるより下に来る）。除いた残りが少ないときだけ、前のやり方（全部から探す）に戻る。
+  // くちびるの輪郭の内側で除く案は採らない：舌を出すと、顔の点の下くちびるの輪郭が舌の外側を回り込み、舌まで除いてしまった（作り物の写真で確かめた）
+  const ext = cells.filter(c => c.y > lipB.y - 0.05), useExt = ext.length >= 15, cs = useExt ? ext : cells;
   const mc = { x: (up.x + lo.x) / 2, y: (up.y + lo.y) / 2 }, dm = c => Math.hypot(c.x - mc.x, c.y - mc.y);
-  const far = Math.max(...cells.map(dm)), band = cells.filter(c => dm(c) >= far - 0.08);
-  const tipX = mean(band.map(c => c.x)), tipY = mean(band.map(c => c.y)), below = cells.filter(c => c.y > lo.y);
+  const far = Math.max(...cs.map(dm)), band = cs.filter(c => dm(c) >= far - 0.08);
+  const tipX = mean(band.map(c => c.x)), tipY = mean(band.map(c => c.y)), below = useExt ? ext : cells.filter(c => c.y > lo.y);
+  // 顔が横を向くと、前へ出た舌の先は、向いた側へずれて写る。鼻先（顔の点 1）が中心線からずれた分を、顔の向きのずれとして差し引く
+  const ns = f(pts[1]), yaw = -(ns.x - midX(ns.y));
   return {
-    found: true, n: cells.length, gap: r3(lo.y - up.y), prot: r3(far - Math.hypot(lipB.x - mc.x, lipB.y - mc.y)), far: r3(far),
-    off: r3(-(tipX - midX(tipY))),                                                  // ＋＝本人の右へ寄っている
-    cenOff: below.length ? r3(-(mean(below.map(c => c.x)) - mean(below.map(c => midX(c.y))))) : null,
+    found: true, n: cells.length, ext: ext.length, useExt, gap: r3(lo.y - up.y), prot: r3(far - Math.hypot(lipB.x - mc.x, lipB.y - mc.y)), far: r3(far), yaw: r3(yaw),
+    off: r3(-(tipX - midX(tipY)) - yaw), offRaw: r3(-(tipX - midX(tipY))),                  // ＋＝本人の右へ寄っている（顔の向きのずれを差し引いた値・差し引く前）
+    cenOff: below.length ? r3(-(mean(below.map(c => c.x)) - mean(below.map(c => midX(c.y)))) - yaw) : null,
     tip: { x: tipX, y: tipY }, cells, midX, m168, inv,
   };
 }
