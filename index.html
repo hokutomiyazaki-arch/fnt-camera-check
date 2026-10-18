@@ -92,6 +92,7 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
     <p class="small">ここから下はスタッフ用です（お客さんの画面には出ません）。下の［コピー］で記録をそのままチャットに貼れます。</p>
     <textarea id="endText" readonly></textarea>
     <button id="bCopy">コピー</button>
+    <button id="bSideAgain">ドリルのあと：首を横に倒すをもう一度</button>
     <button class="sub" id="bCopyAll">この端末に残っている記録を全部コピー</button>
   </div>
   <button class="sub" id="bAgain">最初からもう一度</button>
@@ -576,10 +577,14 @@ function sideOne(seg) {
 }
 // 倒したときに混ざった回旋・上下（まっすぐのときからの変化）。顔の点の部品は、回旋を本当の角度の8割ほど、上下を半分ほどに小さく読む（公開データ）ので、目安の数字
 const SIDE_ROT = 8, SIDE_UP = 5;   // 度（仮）。これ以上混ざったら「まっすぐ倒せていない」と記録に残す
+// 回旋は倒した側から見て「同側」「反対」で読む（2026-10-18 宮崎さん）：上位頸椎は倒す向きと反対へ回ると動きが良くなる。
+// 反対回旋が混ざる＝側屈を上位頸椎に頼っている＝下位頸椎の動きが悪い、同側回旋が混ざる＝上位頸椎の動きが悪い（見立て）。
+// 頭を基準に読んでいるので、倒した頭の同側回旋がカメラから見て「下を向く」ように写っても、上下ではなく回旋として数える
+const CERV = { same: '上位頸椎の動きが悪い', opp: '下位頸椎の動きが悪い（側屈を上位頸椎に頼っている）' };
 function sideMix(x, b0) {
   if (!b0 || x.rot == null) return null;
-  const rot = r1(x.rot - b0.rot), up = r1(x.up - b0.up), w = [];
-  if (Math.abs(rot) >= SIDE_ROT) w.push(`${rot > 0 ? '右' : '左'}へ回る`);
+  const rot = r1(x.rot - b0.rot), up = r1(x.up - b0.up), w = [], toR = x.s === '右';
+  if (Math.abs(rot) >= SIDE_ROT) w.push(`${(rot > 0) === toR ? '同側回旋' : '反対回旋'}（${rot > 0 ? '右' : '左'}へ回る）`);
   if (Math.abs(up) >= SIDE_UP) w.push(up > 0 ? '上を向く' : '下を向く');
   return { rot, up, w };
 }
@@ -596,15 +601,28 @@ function analyzeSide(segs, mot, base) {
   // 混ざり方は、くり返し（2回とも）出たものだけを読む。数字は2回の中央
   const mixOf = s => { const m = each.filter(x => x.s === s && x.ok && x.mix).map(x => x.mix); if (!m.length) return null;
     const ww = m[0].w.filter(w => m.every(o => o.w.includes(w)));
-    return { rot: r1(med(m.map(o => o.rot))), up: r1(med(m.map(o => o.up))), w: m.length >= 2 ? ww : [], n: m.length }; };
+    const w = m.length >= 2 ? ww : [], rel = w.some(x => x.startsWith('同側')) ? 'same' : w.some(x => x.startsWith('反対')) ? 'opp' : null;
+    return { rot: r1(med(m.map(o => o.rot))), up: r1(med(m.map(o => o.up))), w, n: m.length, rel, cerv: rel ? CERV[rel] : null }; };
   const mix = { R: mixOf('右'), L: mixOf('左') };
-  RUN.side = { R: r1(mR), L: r1(mL), gap: r1(gap), less: Math.abs(gap) >= SIDE_GAP ? (gap > 0 ? '左' : '右') : null, each, phone: phoneOk, threshold: SIDE_GAP, mix, mixTh: { rot: SIDE_ROT, up: SIDE_UP } };
-  const S = RUN.side;
-  const mixT = (k, o) => !o ? `${k}へ倒したとき：顔の向きを読めず` : `${k}へ倒したとき：${o.w.length ? '<b>' + o.w.join('・') + '</b>' : 'まっすぐ倒せている'}（回旋 ${o.rot > 0 ? '右' : '左'}${Math.abs(o.rot)}°・上下 ${o.up > 0 ? '上' : '下'}${Math.abs(o.up)}°）`;
-  staff(`首を横に倒した角度：<b>右 ${S.R}°・左 ${S.L}°</b>（差 ${Math.abs(S.gap).toFixed(1)}°）<br>${mixT('右', S.mix.R)}<br>${mixT('左', S.mix.L)}<br><span class="small">各回 ${each.map(x => x.ok ? `${x.s}${Math.abs(x.deg).toFixed(1)}°（顔の線${Math.abs(x.raw).toFixed(1)}°・スマホ${x.phone ?? '—'}°）` : `${x.s}読めず`).join('／')}</span>
-  <div class="res judge">記録のみ（読みは未定）：${S.less ? `<b>${S.less}へ倒れにくい</b>（${SIDE_GAP}°以上の差・仮）` : '左右の差は小さい'}${phoneOk ? '' : '<br>※スマホの傾きを測れていない。スマホが手と一緒に傾いた分は入っていない'}<br><span class="small">2回のうち大きいほう。目じりを結んだ線の傾き＋スマホの傾き。肩や体ごと倒すとその分も入る。回旋・上下は倒す前のまっすぐからの変化で、回旋${SIDE_ROT}°・上下${SIDE_UP}°以上が2回とも出たときだけ「まっすぐ倒せていない」と読む（仮）。カメラは回旋を8割ほど・上下を半分ほどに小さく読むので目安</span></div>`);
-  recorded(stepSide, stepEight, '次へ（首の8の字）');
+  const S = { R: r1(mR), L: r1(mL), gap: r1(gap), less: Math.abs(gap) >= SIDE_GAP ? (gap > 0 ? '左' : '右') : null, each, phone: phoneOk, threshold: SIDE_GAP, mix, mixTh: { rot: SIDE_ROT, up: SIDE_UP }, at: new Date().toISOString() };
+  const after = SIDE_AFTER && RUN.side; if (after) RUN.sideAfter = S; else RUN.side = S;
+  const mixT = (k, o) => !o ? `${k}へ倒したとき：顔の向きを読めず` : `${k}へ倒したとき：${o.w.length ? '<b>' + o.w.join('・') + '</b>' : 'まっすぐ倒せている'}${o.cerv ? ` → <b>${o.cerv}</b>（見立て）` : ''}（回旋 ${o.rot > 0 ? '右' : '左'}${Math.abs(o.rot)}°・上下 ${o.up > 0 ? '上' : '下'}${Math.abs(o.up)}°）`;
+  staff(`${after ? '<b>ドリルのあと</b><br>' + sideDiff(RUN.side, S).join('<br>') + '<br><br>' : ''}首を横に倒した角度：<b>右 ${S.R}°・左 ${S.L}°</b>（差 ${Math.abs(S.gap).toFixed(1)}°）<br>${mixT('右', S.mix.R)}<br>${mixT('左', S.mix.L)}<br><span class="small">各回 ${each.map(x => x.ok ? `${x.s}${Math.abs(x.deg).toFixed(1)}°（顔の線${Math.abs(x.raw).toFixed(1)}°・スマホ${x.phone ?? '—'}°）` : `${x.s}読めず`).join('／')}</span>
+  <div class="res judge">記録のみ（読みは未定）：${S.less ? `<b>${S.less}へ倒れにくい</b>（${SIDE_GAP}°以上の差・仮）` : '左右の差は小さい'}${phoneOk ? '' : '<br>※スマホの傾きを測れていない。スマホが手と一緒に傾いた分は入っていない'}<br><span class="small">2回のうち大きいほう。目じりを結んだ線の傾き＋スマホの傾き。肩や体ごと倒すとその分も入る。回旋・上下は倒す前のまっすぐからの変化で、回旋${SIDE_ROT}°・上下${SIDE_UP}°以上が2回とも出たときだけ「まっすぐ倒せていない」と読む（仮）。同側回旋＝上位頸椎・反対回旋＝下位頸椎の動きが悪い見立て。カメラは回旋を8割ほど・上下を半分ほどに小さく読むので目安</span></div>`);
+  if (after) { saveRun(); recorded(stepSide, finish, '終わる（記録を見る）'); } else recorded(stepSide, stepEight, '次へ（首の8の字）');
 }
+// ドリルの前後の比べ（2026-10-18 宮崎さん「終わった後に回旋角度も含めてどこまで良くなったかを保存しておく」）。
+// 倒せた角度は大きくなれば良い、混ざった回旋は 0 に近づけば良い
+let SIDE_AFTER = false;
+function sideDiff(a, b) {
+  const sg = v => (v > 0 ? '+' : '') + r1(v), L = [];
+  for (const [k, nm] of [['R', '右'], ['L', '左']]) {
+    const x = a.mix && a.mix[k], y = b.mix && b.mix[k];
+    L.push(`${nm}へ倒す：${a[k]}° → <b>${b[k]}°</b>（${sg(b[k] - a[k])}°）／回旋 ${x ? Math.abs(x.rot) : '—'}° → <b>${y ? Math.abs(y.rot) : '—'}°</b>${x && y ? `（${sg(Math.abs(y.rot) - Math.abs(x.rot))}°）` : ''}${x && x.cerv && !(y && y.cerv) ? '・混ざりが消えた' : ''}`);
+  }
+  return L;
+}
+function sideAgain() { SIDE_AFTER = true; $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepSide(); }
 
 // ── 首の検査（8の字・左右・上下）の読み。右・左は本人から見た向き（2026-10-14 宮崎さん）
 // 8の字：真ん中→左下＝右の前半規管、→右上＝右の後半規管、→右下＝左の前半規管、→左上＝左の後半規管（左上は 2026-10-14 夕方に宮崎さんが VOR の対応として確定。8の字と同じ）
@@ -2351,6 +2369,9 @@ function mitate() {
     const o = s === '右' ? '左' : '右', cb = [...new Set(J.filter(j => j.k.startsWith(`${o}の小脳`)).map(j => j.k))], tl = M.vest && M.vest.side === s;
     M.oto.push({ side: s, from: js.map(j => j.src), tilt: tl, cbOpp: cb });
     L.push(`<b>${s}の耳石</b> — ${js.map(j => j.why).join('／')}${tl ? `<br>　首の傾き（${s}の卵形嚢）と同じ側 → ${s}の耳石の働き低下をより強く疑う` : ''}${cb.length ? `<br>　※${o}の小脳の所見もある（${cb.join('・')}）。小脳の問題でも反対側へ傾くので、耳石だけと決めない` : ''}`); }
+  // 首を横に倒したときの回旋の混ざり（同側＝上位頸椎・反対＝下位頸椎の動きが悪い。2026-10-18 宮崎さん）
+  const sm = RUN.side && RUN.side.mix; M.cerv = [];
+  if (sm) for (const [k, nm] of [['R', '右'], ['L', '左']]) { const o = sm[k]; if (o && o.cerv) { M.cerv.push({ side: nm, rel: o.rel, read: o.cerv, rot: o.rot }); L.push(`<b>頸椎</b> — ${nm}へ倒すと${o.rel === 'same' ? '同側' : '反対'}回旋（${o.rot > 0 ? '右' : '左'}へ${Math.abs(o.rot)}°）→ ${o.cerv}`); } }
   const nz = RUN.eight && RUN.eight.nausea; if (nz && nz !== 'いいえ') { M.nausea = nz; L.push(`<b>前庭</b>の問題を疑う — 首の8の字で気持ち悪さ「${nz}」`); }
   for (const s of pmS) L.push(`<b>${s}の PMRF</b> — ${M.pmrf.filter(p => p.side === s).map(p => p.why).join('・')}`);
   if (M.pain) L.push(`<b>痛み</b>：${M.pain}`);
@@ -2378,7 +2399,7 @@ function mitate() {
   const OL = Object.entries(O).sort((a, b) => b[1].length - a[1].length);
   M.overlap = OL.map(([k, v]) => ({ k, n: v.length, from: v }));
   if (OL.length) L.unshift(`<b>重なり</b>（多い順）：${OL.map(([k, v]) => `${k} ${v.length}件`).join('／')}`);
-  RUN.mitate = { oto: M.oto, cortex: cx, cn: cn.map(({ n, side, why, read }) => ({ n, side, why, read })), vest: M.vest, vor: M.vor, nausea: M.nausea || null, midbrain: !!mb, overlap: M.overlap, pmrf: M.pmrf, pain: M.pain && M.pain.replace(/<\/?b>/g, ''), lines: L.map(x => x.replace(/<\/?b>/g, '')) };
+  RUN.mitate = { oto: M.oto, cortex: cx, cn: cn.map(({ n, side, why, read }) => ({ n, side, why, read })), vest: M.vest, cerv: M.cerv, vor: M.vor, nausea: M.nausea || null, midbrain: !!mb, overlap: M.overlap, pmrf: M.pmrf, pain: M.pain && M.pain.replace(/<\/?b>/g, ''), lines: L.map(x => x.replace(/<\/?b>/g, '')) };
   return L;
 }
 function mitateHTML() {
@@ -2390,7 +2411,8 @@ function mitateHTML() {
 function summaryLines() {
   const L = [], e = RUN.eight, nk = RUN.neck, f = RUN.face, p = RUN.pursuit, s = RUN.saccade, x = RUN.fixation, c = RUN.conv, t = RUN.tongue;
   if (RUN.tilt) L.push(`1. ふだんの首の傾き：${Math.abs(RUN.tilt.deg) < 0.5 ? 'ほぼまっすぐ' : (RUN.tilt.deg > 0 ? '右' : '左') + 'へ' + Math.abs(RUN.tilt.deg) + '°'}（スマホの傾き ${RUN.tilt.phone ?? '—'}°）`);
-  const sd2 = RUN.side; if (sd2) L.push(`2. 首を横に倒す：右${sd2.R}°・左${sd2.L}°（差${Math.abs(sd2.gap)}°${sd2.less ? '・' + sd2.less + 'へ倒れにくい' : ''}${sd2.phone ? '' : '・スマホの傾きなし'}）／混ざり ${['R', 'L'].map(k => { const o = sd2.mix && sd2.mix[k]; return `${k === 'R' ? '右' : '左'}：${o ? `回旋${o.rot > 0 ? '右' : '左'}${Math.abs(o.rot)}°・上下${o.up > 0 ? '上' : '下'}${Math.abs(o.up)}°${o.w.length ? '→' + o.w.join('・') : ''}` : '—'}`; }).join('／')}`);
+  const sd2 = RUN.side; if (sd2) L.push(`2. 首を横に倒す：右${sd2.R}°・左${sd2.L}°（差${Math.abs(sd2.gap)}°${sd2.less ? '・' + sd2.less + 'へ倒れにくい' : ''}${sd2.phone ? '' : '・スマホの傾きなし'}）／混ざり ${['R', 'L'].map(k => { const o = sd2.mix && sd2.mix[k]; return `${k === 'R' ? '右' : '左'}：${o ? `回旋${o.rot > 0 ? '右' : '左'}${Math.abs(o.rot)}°・上下${o.up > 0 ? '上' : '下'}${Math.abs(o.up)}°${o.w.length ? '→' + o.w.join('・') : ''}${o.cerv ? '＝' + o.cerv : ''}` : '—'}`; }).join('／')}`);
+  const sa = RUN.sideAfter; if (sd2 && sa) L.push(`2'. 首を横に倒す（ドリルのあと${sa.at ? '・' + new Date(sa.at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : ''}）：${sideDiff(sd2, sa).map(x => x.replace(/<\/?b>/g, '')).join('／')}`);
   if (e) L.push(`3. 首の8の字：点について線の上 最初${e.fwd.follow}%・反対${e.rev.follow}%／なぞれた範囲 右の輪 ${e.fwd.covR}%・${e.rev.covR}%／左の輪 ${e.fwd.covL}%・${e.rev.covL}%／ずれた割合 ${['UR', 'UL', 'DR', 'DL'].map(k => `${LEGJ[k].slice(4)}${e.legs?.[k]?.off ?? '—'}%`).join('・')}／気持ち悪さ ${e.nausea || '—'}`);
   if (nk) L.push(`4. 首の左右・上下：線の上 左右${nk.H?.follow ?? '—'}%・上下${nk.V?.follow ?? '—'}%／ずれた割合 ${['toR', 'toL', 'up', 'down'].map(k => `${LEGJ[k]}${nk.legs?.[k]?.off ?? '—'}%（速さ${nk.legs?.[k]?.speed ?? '—'}%）`).join('・')}／気持ち悪さ ${nk.nausea || '—'}`);
   if (f) L.push(`5. 表情：顔全体の動きの量 右${f2(f.mv0)}・左${f2(f.mv1)}（笑う ${f.mv && f.mv.smile ? f.mv.smile.join('・') : '—'}／眉 ${f.mv && f.mv.brow ? f.mv.brow.join('・') : '—'}／目 ${f.mv && f.mv.eye ? f.mv.eye.join('・') : '—'}）／口角 右${f2(f.m0)}・左${f2(f.m1)}（笑いの値 右${f2(f.ms0)}・左${f2(f.ms1)}／笑ったときの高さの差 ${f2(f.mh)}・＋＝右が低い）／眉 右${f2(f.b0)}・左${f2(f.b1)}／目の閉じ 右${Math.round(f.e0 * 100)}%・左${Math.round(f.e1 * 100)}%／真顔の下がり 口角${f2(f.mouthDrop)}・眉${f2(f.browDrop)}（＋＝右が下）／目のまわりのしわ（目じり＋目がしら） 右${f2(f.wk0)}・左${f2(f.wk1)}（目じり 右${f2(f.wo0)}・左${f2(f.wo1)}／目がしら 右${f2(f.wi0)}・左${f2(f.wi1)}）（真顔→閉じた 右${f2(f.wb0)}→${f2(f.we0)}・左${f2(f.wb1)}→${f2(f.we1)}）`);
@@ -2411,7 +2433,7 @@ function summaryLines() {
   return L;
 }
 function saveRun() {   // 前の版で撮ったのどの奥の写真は重いので消す
-  try { const a = JSON.parse(localStorage.getItem('fntcc_runs') || '[]'); a.push(RUN); a.forEach(r => { if (r.palate) delete r.palate.photos; }); while (a.length > 30) a.shift(); localStorage.setItem('fntcc_runs', JSON.stringify(a)); return a.length; } catch (e) { return 0; }
+  try { const a = JSON.parse(localStorage.getItem('fntcc_runs') || '[]'), i = a.findIndex(r => r.started === RUN.started); if (i >= 0) a[i] = RUN; else a.push(RUN); a.forEach(r => { if (r.palate) delete r.palate.photos; }); while (a.length > 30) a.shift(); localStorage.setItem('fntcc_runs', JSON.stringify(a)); return a.length; } catch (e) { return 0; }
 }
 function finish() {
   tok++; judge(); mitate(); RUN.ended = new Date().toISOString(); RUN.delegate = delegate;
@@ -2425,8 +2447,9 @@ function finish() {
 }
 async function copyText(t, b) { let ok = false; try { await navigator.clipboard.writeText(t); ok = true; } catch (e) { const a = $('endText'); a.value = t; a.select(); try { ok = document.execCommand('copy'); } catch (_) {} } b.textContent = ok ? 'コピーしました' : '上の枠を長押しでコピー'; }
 $('bCopy').onclick = () => copyText($('endText').value, $('bCopy'));
+$('bSideAgain').onclick = sideAgain;
 $('bCopyAll').onclick = () => copyText(localStorage.getItem('fntcc_runs') || '[]', $('bCopyAll'));
-$('bAgain').onclick = () => { newRun(); CAL = null; $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepAlign(); };
+$('bAgain').onclick = () => { SIDE_AFTER = false; newRun(); CAL = null; $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepAlign(); };
 
 $('bStart').onclick = async () => {
   try { VA.muted = false; VA.src = 'voice/unlock.mp3'; VA.play().catch(() => {}); } catch (e) {}   // スマホは、押したときに一度鳴らしておかないと後で音が出ない。消音のまま鳴らすと許可にならない端末があるので、無音のファイルを音ありで鳴らす
@@ -2438,8 +2461,8 @@ $('bStart').onclick = async () => {
   stepAlign();
 };
 // 確かめ用（自動の試験から各段を直接呼ぶ）
-window.__steps = { analyzeSide, sideOne, sideMix, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
-  analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, judgeHTML, mitate, mitateHTML, saccJudge, analyzeTilt, analyzeFace, analyzePupil, pupilOne, wrinkleCount, stepTilt, stepPupil, stepAsk, get RUN() { return RUN; }, setCAL: c => { CAL = c; }, PT, DV };
+window.__steps = { analyzeSide, sideOne, sideMix, sideDiff, sideAgain, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
+  analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, judgeHTML, mitate, mitateHTML, saccJudge, analyzeTilt, analyzeFace, analyzePupil, pupilOne, wrinkleCount, stepTilt, stepPupil, stepAsk, get RUN() { return RUN; }, summaryLines, P, setSideAfter: v => { SIDE_AFTER = v; }, setCAL: c => { CAL = c; }, PT, DV };
 </script>
 </body>
 </html>
