@@ -2434,7 +2434,7 @@ async function noseMark(g, cap, to) {
 function placeNose() {
   const vw = video.videoWidth || 640, vh = video.videoHeight || 480, p = last;
   const h = Math.min(vw, vh) * NOSE_SQ;   // 真ん中の点は映像のまん中より少し下（カメラが画面の上にあるので、下に置くと合わせやすい：2026-10-18 宮崎さん）。下の点が映像からはみ出さないところまで
-  G = { cx: vw / 2, cy: Math.min(vh * 0.58, vh - h - vh * 0.08), h, d: p ? dist(p[P.eyeOut[0]], p[P.eyeOut[1]]) : Math.min(vw, vh) * 0.2, draw: drawNose, tgt: null, hideC: false, mark: null, markTo: null };
+  G = { cm: phoneCm(p), cx: vw / 2, cy: Math.min(vh * 0.58, vh - h - vh * 0.08), h, d: p ? dist(p[P.eyeOut[0]], p[P.eyeOut[1]]) : Math.min(vw, vh) * 0.2, draw: drawNose, tgt: null, hideC: false, mark: null, markTo: null };
   return G;
 }
 const noseSnap = () => { const b = lastBs || {}; return { t: performance.now(), x: last[1].x, y: last[1].y, rot: window.__hp ? window.__hp.rot : NaN, up: window.__hp ? window.__hp.up : NaN, shut: ((b.eyeBlinkLeft || 0) + (b.eyeBlinkRight || 0)) / 2 }; };
@@ -2479,9 +2479,45 @@ function noseSum(T, back) {
   const worst = ok.slice().sort((a, b) => (b.err.deg || b.err.px) - (a.err.deg || a.err.px))[0];
   return { n: ok.length, meanDeg: d.length ? r1(mean(d)) : null, meanPx: p.length ? r3(mean(p)) : null, worst: worst ? worst.k : null, open: ok.filter(t => t.shut != null && t.shut < 0.5).map(t => t.k), back };
 }
+// ════ 判定：首の位置感覚（目を閉じて頭を元の位置へ戻すテスト＝JPSE）（2026-10-18 宮崎さん「レーザーの基準をスマホの距離に合わせて再計算し、何cmずれたら問題かで判定する」）
+// 出典：Carrick Institute CNS10「Tests of Vestibular Function Pt.2」[0:16:31–0:21:47][0:32:28–0:33:54]・CNS10 note packet p.49–50（76cm＝30インチ先の的・頭のレーザー・右3回左3回の平均・4.5°を超えたら陽性・戻しはゆっくり）。
+// 4.5° の元は Revel 1991（PMID 2009044・Arch Phys Med Rehabil・的は90cm）。Dugailly 2015（PMID 26438174・Eur Spine J）が 4.5° を確かめた（健常 3.6°まで・首の痛み 7.1°まで）。note packet の「PMID 26538174」は打ち間違い（カニの論文）。
+// 痛む向きほどずれが大きい・練習でずれと痛みが一緒に減れば頭頂葉由来：Carrick CNS20-34 [0:01:25–0:03:09]
+// 🔴 基準は角度なので、距離が変わっても 4.5° のまま。cm＝距離×tan(角度)：76cm の的で 6.0cm、スマホが顔から 30cm なら画面の上で 2.4cm。
+// 角度はカメラが回旋を8割・上下を半分ほどに小さく読む（2026-10-16 首を横に倒すで実測）ので、÷0.8・÷0.5 で戻してから比べる。
+// 向きは3回ずつの平均（右＝右・右上・右下から戻す。左・上・下も同じ。ななめは2つの向きに数える）。どれか1つの向きの平均が 4.5° を超えたら「首の位置感覚の乱れ」。
+// スマホと顔の距離は黒目の大きさ（約1.17cm）と、カメラの画角（長い辺で約63°と仮定）から出す目安。
+const JPE_DEG = 4.5, JPE_LASER = 76, CAM_ROT = 0.8, CAM_UP = 0.5, IRIS_CM = 1.17, CAM_HFOV = 63, JPE_CM0 = 30;
+const JPE_G = { R: ['R', 'UR', 'DR'], L: ['L', 'UL', 'DL'], U: ['U', 'UR', 'UL'], D: ['D', 'DR', 'DL'] }, JPE_J = { R: '右', L: '左', U: '上', D: '下' };
+const f1 = v => Number.isFinite(v) ? (Math.round(v * 10) / 10).toFixed(1) : '—';
+const tanCm = (deg, cm) => cm * Math.tan(deg * Math.PI / 180);
+function phoneCm(p) {
+  if (!p || !p[476]) return null;
+  const ir = (dist(p[469], p[471]) + dist(p[474], p[476])) / 2, W = Math.max(video.videoWidth || 640, video.videoHeight || 480);
+  if (!(ir > 2)) return null;
+  const cm = W / 2 / Math.tan(CAM_HFOV / 2 * Math.PI / 180) * IRIS_CM / ir;
+  return cm >= 15 && cm <= 90 ? Math.round(cm) : null;
+}
+const jpeDeg = e => e && Number.isFinite(e.dR) && Number.isFinite(e.dU) ? Math.hypot(e.dR / CAM_ROT, e.dU / CAM_UP) : NaN;
+function jpe(o) {
+  const g = {}; for (const s in JPE_G) { const v = JPE_G[s].map(k => o.trials.find(t => t.k === k)).map(t => t ? jpeDeg(t.err) : NaN).filter(Number.isFinite); g[s] = v.length ? r1(mean(v)) : null; }
+  const all = o.trials.map(t => jpeDeg(t.err)).filter(Number.isFinite);
+  return { g, bad: Object.keys(g).filter(s => g[s] != null && g[s] > JPE_DEG), mean: all.length ? r1(mean(all)) : null, cm: o.cm || null };
+}
+function jpeHTML(o, back) {
+  const J = jpe(o); if (J.mean == null) return '';
+  const cm = J.cm || JPE_CM0, cmW = J.cm ? `顔から約${J.cm}cm` : `顔から${JPE_CM0}cmとして`;
+  const rows = Object.keys(JPE_G).map(s => { const d = J.g[s], over = d != null && d > JPE_DEG; return `<span style="color:${over ? '#ff8a65' : 'inherit'}">${JPE_J[s]}から戻す：${d != null ? `<b>${d}°</b>（画面の上 ${f1(tanCm(d, cm))}cm）` : '—'}${over ? '・基準超え' : ''}</span>`; }).join('<br>');
+  const head = back
+    ? `<b>判定（首の位置感覚）：${J.bad.length ? `<span style="color:#ff8a65">首の位置感覚の乱れ（${J.bad.map(s => JPE_J[s]).join('・')}から戻すとき）</span>` : '<span style="color:#5ad18b">基準内</span>'}</b>`
+    : `<b>参考（首の位置感覚の基準を当てた目安）</b><br><span class="small">②は「目を閉じて真ん中へ戻す」元の検査とは違う動きなので、判定はしない</span>`;
+  return `<div style="margin:8px 0;padding:8px 10px;border:1px solid #3a4150;border-radius:10px">${head}<br>${rows}<br><span class="small">基準：どれか1つの向きの平均が <b>4.5°</b> を超えたら乱れ。いまのスマホ（${cmW}）の画面の上なら <b>${f1(tanCm(JPE_DEG, cm))}cm</b>、レーザーで76cm先の的なら 6.0cm。カメラが小さく読む分は戻して比べている（回旋÷0.8・上下÷0.5）${back ? '<br>首を回すと痛む向きがあれば、その向きのずれが大きいか見比べる（痛む向きほどずれが大きい。練習でずれと痛みが一緒に減れば、痛みの一部は脳の位置の把握から：Carrick CNS20-34）' : ''}<br>出典：Carrick Institute CNS10（Tests of Vestibular Function Pt.2・note packet p.49–50）／Revel 1991（PMID 2009044）／Dugailly 2015（PMID 26438174）</span></div>`;
+}
+const jpeText = (o, back) => { const J = jpe(o); if (J.mean == null) return ''; const cm = J.cm || JPE_CM0;
+  return `　${back ? '判定' : '参考'}（首の位置感覚・4.5°＝画面の上 ${f1(tanCm(JPE_DEG, cm))}cm${J.cm ? `・顔から約${J.cm}cm` : ''}）：${back ? (J.bad.length ? `乱れ（${J.bad.map(s => JPE_J[s]).join('・')}から戻すとき）` : '基準内') + '／' : ''}${Object.keys(JPE_G).map(s => `${JPE_J[s]} ${J.g[s] ?? '—'}°`).join('・')}`; };
 function noseHTML(o, back, lab) {
   const S = o.sum, rows = DIRS.map(k => { const t = o.trials.find(x => x.k === k); return `${DJ[k]}${back ? 'から' : 'へ'}：${t ? noseWord(t.err, back) : '—'}${t && !t.reached ? '<span style="color:#ff8a65">・点に合わないまま進んだ</span>' : ''}${t && t.shut != null && t.shut < 0.5 ? '<span style="color:#ff8a65">・目が開いていた</span>' : ''}`; });
-  return `${lab}：ズレの平均 <b>${S.meanDeg != null ? S.meanDeg + '°' : '—'}</b>（画面の上 ${f2(S.meanPx)}）・いちばん大きい向き <b>${S.worst ? DJ[S.worst] : '—'}</b>${noseSVG(o.trials)}${rows.join('<br>')}<br><span class="small">度は頭の向き（＋＝本人の右・上）。カメラは回旋を8割・上下を半分ほどに小さく読むので目安。画面の上の数字は鼻先の位置（目じりの間＝1）。どこからを問題とするかは、まだ決めていない${S.open.length ? `<br><span style="color:#ff8a65">※目が開いていた回：${S.open.map(k => DJ[k]).join('・')}（確定までの3秒の半分以上で目が開いていた）</span>` : ''}</span>`;
+  return `${lab}：ズレの平均 <b>${S.meanDeg != null ? S.meanDeg + '°' : '—'}</b>（画面の上 ${f2(S.meanPx)}）・いちばん大きい向き <b>${S.worst ? DJ[S.worst] : '—'}</b>${noseSVG(o.trials)}${rows.join('<br>')}<br><span class="small">度は頭の向き（＋＝本人の右・上）。カメラは回旋を8割・上下を半分ほどに小さく読むので目安。画面の上の数字は鼻先の位置（目じりの間＝1）。判定は下の枠${S.open.length ? `<br><span style="color:#ff8a65">※目が開いていた回：${S.open.map(k => DJ[k]).join('・')}（確定までの3秒の半分以上で目が開いていた）</span>` : ''}</span>${jpeHTML(o, back)}`;
 }
 const NOSE_A_T = '14. 鼻先を合わせる①（目を閉じて真ん中へ）', NOSE_B_T = '15. 鼻先を合わせる②（目を閉じて8つの点へ）';
 function noseStart() { try { const A = window.AudioContext || window.webkitAudioContext; endBeep.a = endBeep.a || new A(); endBeep.a.resume(); } catch (e) {} }   // 音はボタンを押したときに用意しないと鳴らない端末がある
@@ -2517,7 +2553,7 @@ async function runNoseA(practice) {
     if (my !== tok) return;
     G = null; cue('');
     if (practice) return stepNoseA(true);
-    const o = { trials: T, d: r3(g.d) }; o.sum = noseSum(T, true); RUN.noseA = o;
+    const o = { trials: T, d: r3(g.d), cm: g.cm }; o.sum = noseSum(T, true); RUN.noseA = o;
     if (!o.sum.n) return fail(stepNoseA, '顔が見えている時間が短すぎました');
     staff(noseHTML(o, true, '目を閉じて真ん中へ戻したときの、最初の真ん中からのズレ'));
     recorded(stepNoseA, stepNoseB, '次へ（鼻先を合わせる②）');
@@ -2548,7 +2584,7 @@ async function runNoseB(practice) {
     if (my !== tok) return;
     G = null; cue('');
     if (practice) return stepNoseB(true);
-    const o = { trials: T, d: r3(g.d) }; o.sum = noseSum(T, false); RUN.noseB = o;
+    const o = { trials: T, d: r3(g.d), cm: g.cm }; o.sum = noseSum(T, false); RUN.noseB = o;
     if (!o.sum.n) return fail(stepNoseB, '顔が見えている時間が短すぎました');
     staff(noseHTML(o, false, '目を閉じて合わせた位置の、目を開けて合わせた位置からのズレ'));
     recorded(stepNoseB, stepAsk, '次へ（最後の質問）');
@@ -2712,6 +2748,7 @@ function summaryLines() {
   const sv = RUN.svv; if (sv && sv.V) { const one = (o, nm) => o && o.ok ? `${nm} 平均${o.mean > 0 ? '右' : '左'}へ${Math.abs(o.mean).toFixed(1)}°（${o.each.map(e => (e > 0 ? '+' : '') + e.toFixed(1)).join('・')}）` : `${nm} —`;
     L.push(`13. 線をまっすぐにする：${one(sv.V, '縦（SVV）')}／${one(sv.H, '横（SVH）')}（＋＝時計回り＝本人の右）`); }
   for (const [o, t] of [[RUN.noseA, '14. 鼻先を合わせる①（目を閉じて真ん中へ）'], [RUN.noseB, '15. 鼻先を合わせる②（目を閉じて8つの点へ）']]) if (o) L.push(`${t}：ズレの平均 ${o.sum.meanDeg ?? '—'}°（画面の上 ${f2(o.sum.meanPx)}）／${DIRS.map(k => { const x = o.trials.find(q => q.k === k); return `${DJ[k]} ${x && x.err ? (x.err.deg ?? '—') + '°' : '—'}`; }).join('・')}${o.sum.open.length ? '／目が開いていた回 ' + o.sum.open.map(k => DJ[k]).join('・') : ''}`);
+  for (const [o, b] of [[RUN.noseA, true], [RUN.noseB, false]]) if (o) { const x = jpeText(o, b); if (x) L.push(x); }
   if (RUN.ask) L.push(`16. 質問：痛みが出やすい側 ${RUN.ask.painSide || '—'}／いまの痛み ${RUN.ask.painNow || '—'}／聞こえにくい耳 ${RUN.ask.hearing || '—'}`);
   return L;
 }
