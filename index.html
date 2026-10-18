@@ -151,7 +151,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // ファネル用の入り口（2026-10-18 宮崎さん「からだの神経チェックのテストは、このアプリから仕組みを持ってくる」）：
 // go.functional-neuro-training.com/cc/start?t=side,noseA,svv&back=/check で開くと、お客さん向け（数字・判定を出さない）に選んだ検査だけを流し、
 // 終わったら記録（localStorage の fntcc_runs。同じドメインなので /check から読める）を残して back へ戻る。back は同じサイトの中（/ から始まる）だけ
-const BACK = (() => { const b = decodeURIComponent((location.search.match(/[?&]back=([^&]+)/) || [])[1] || ''); return /^\/(?!\/)/.test(b) ? b : null; })();
+const BACK = (() => { try { const b = new URLSearchParams(location.search).get('back'); if (!b || !b.startsWith('/')) return null; const u = new URL(b, location.origin); return u.origin === location.origin ? u.pathname + u.search : null; } catch (e) { return null; } })();
 const STAFF = !BACK;
 if (STAFF) document.body.insertAdjacentHTML('beforeend', '<div class="badge">トレーナー用</div>'); else document.body.classList.add('funnel');
 let PLAN = null;   // いま測る検査の並び（トップで選んだもの。全部を通すときは全部）
