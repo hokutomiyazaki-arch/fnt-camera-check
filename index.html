@@ -2539,7 +2539,7 @@ function noseIntro(step, title, head, kind, run, practiced) {
   show(step, title); placeNose();
   const t = (practiced === true ? '練習おわり。次は本番です<br>' : '') + head + (kind === 'noseA' ? NOSE_SUB_A : NOSE_SUB);
   cue(DEMO + t, 'top fit', practiced === true ? '練習おわり。次は本番です' : t); demo(kind);
-  btn(practiced === true ? 'もう一度練習する' : (kind === 'noseA' ? 'まず練習する（右・左1回ずつ・記録しない）' : 'まず練習する（2か所・記録しない）'), () => run(true), 'sub');
+  btn(practiced === true ? 'もう一度練習する' : (kind === 'noseA' ? 'まず練習する（右・左1回ずつ）' : 'まず練習する（2か所・記録しない）'), () => run(true), 'sub');
   btn(practiced === true ? '本番を始める' : '練習せずに始める', () => run(false));
 }
 const stepNoseA = practiced => noseIntro(14, NOSE_A_T, '目をつぶって<br><b>顔を中心に戻せるか</b>のテストです', 'noseA', runNoseA, practiced);
