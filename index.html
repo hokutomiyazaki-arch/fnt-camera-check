@@ -1670,6 +1670,10 @@ function beep(f = 880, ms = 90) {   // 線が光った合図（目を点から�
 const VWORD = { C: ['真ん中'], R: ['右', '→'], L: ['←', '左'], U: ['上', '↑'], D: ['下', '↓'], UR: ['右上', '↗'], UL: ['↖', '左上'], DR: ['右下', '↘'], DL: ['↙', '左下'] };
 function drawVor(t, pts) {
   const g = G, u = OVU;
+  // 2026-10-18 宮崎さん「頭を動かす方向に、真ん中の点から放射線状に透明黄色の線」（前は線があると目がついていくので出していなかった：2026-10-15）。
+  // 映像の座標で描く（本人の右＝x が小さい側・上＝y が小さい側）
+  if (g.on && g.on !== 'C') { const [a, b] = unitV(g.on), L = Math.min(video.videoWidth || 640, video.videoHeight || 480) * 0.45;
+    oc.strokeStyle = 'rgba(255,204,0,.35)'; oc.lineWidth = 22 * u; oc.lineCap = 'round'; oc.beginPath(); oc.moveTo(g.cx, g.cy); oc.lineTo(g.cx - a * L, g.cy - b * L); oc.stroke(); oc.lineCap = 'butt'; }
   if (pts) { const n = pts[VOR_AIM]; oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, 6 * u, 0, 7); oc.fill(); }
   if (g.on) {   // キャンバスは鏡写しなので、字だけ反転を戻して描く（反転の中では右＝＋x）
     const [w1, w2] = VWORD[g.on], gap = 26 * u;
@@ -1694,7 +1698,7 @@ function placeVor() {   // 点は画面のまん中（映像は object-fit:conta
 async function stepVor() {
   show(9, '9. 頭を動かして点を見つめる');
   placeVor();
-  cue('目は<b>ずっと点</b>を見たまま<br>出た向きへ鼻先を<br><b>一瞬</b>動かして戻す', 'top');
+  cue('目は<b>真ん中の点</b>を見たまま<br>線の向きへ頭を<br><b>できるだけ素早く</b>動かして戻す', 'top');
   btn('始める', async () => {
     const my = tok; clearBtns(); note('');
     try { const A = window.AudioContext || window.webkitAudioContext; endBeep.a = endBeep.a || new A(); endBeep.a.resume(); } catch (e) {}   // 音はボタンを押したときに用意しないと鳴らない端末がある
