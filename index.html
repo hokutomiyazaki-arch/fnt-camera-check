@@ -50,7 +50,7 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 #cue.top{top:calc(82px + env(safe-area-inset-top));transform:translateX(-50%);padding:8px 12px 12px}
 #cue.top canvas{width:170px;height:131px}
 /* 鼻先を合わせる：3行の説明は1行ずつに収める（2026-10-18 宮崎さん「もう少し文字を小さくすれば1行以内に収まる」）。見本の動画は少し大きく */
-#cue.fit{font-size:clamp(15px,4.8vw,24px);white-space:nowrap}
+#cue.fit{font-size:clamp(14px,4.5vw,24px);white-space:nowrap}
 #cue.fit small{white-space:normal}
 #cue.fit canvas{width:250px;height:193px}
 #bottom{display:flex;flex-direction:column}#msg.note{order:-1;font-size:15.5px;color:#eef;line-height:1.55;margin:4px 2px 2px;text-align:left}
@@ -739,7 +739,7 @@ function demo(kind) {
 // 線画の顔の鼻先（赤）が、本番と同じ並び（正方形の角と辺のまん中）の黄色い点へ動く。目を閉じる・3秒数える・「ピッ」まで見せる。ズレの数字は出さない
 function demoNose(kind) {
   const c = $('demoC'); if (!c) return; const x = c.getContext('2d'), t0 = performance.now(), my = tok;
-  const W = 440, H = 340, cx = 220, cy = 182, S = 112;
+  const W = 440, H = 340, cx = 220, cy = 182, S = 78;
   const P = k => ({ x: cx + DV[k][0] * S, y: cy - DV[k][1] * S });
   const ez = q => { q = clamp(q, 0, 1); return q * q * (3 - 2 * q); };
   const mv = (a, b, q) => ({ x: a.x + (b.x - a.x) * ez(q), y: a.y + (b.y - a.y) * ez(q) });
@@ -2389,7 +2389,7 @@ function analyzeSvv(T) {
 // どこからを「ズレが大きい」とするかは、まだ決めていない（数字を出すだけ）
 // 点は、映像の中にとれるいちばん大きい正方形の、4つの角と4辺のまん中に置く。真ん中の点は映像のまん中（2026-10-18 宮崎さん「真ん中の点からもう少し離れたところに。画面の中に最大の四角を作って、その中に8個の点」）。
 // 途中ではズレを出さず、8か所が終わってから結果を出す（同「途中で何度ズレっていうのは出さなくていい」）
-const NOSE_SQ = 0.44, NOSE_TOL = 0.12, NOSE_HOLD = 400, NOSE_WAIT = 6000, NOSE_LOCK = 3000;   // 真ん中から点までの距離（映像の短い辺を1。0.5 だと点が端で切れる）・合ったとみなす距離・合ったまま待つ・合わなくても進むまで・確定までのミリ秒
+const NOSE_SQ = 0.22, NOSE_TOL = 0.12, NOSE_HOLD = 400, NOSE_WAIT = 6000, NOSE_LOCK = 3000;   // 真ん中から点までの距離（映像の短い辺を1。0.44 では鼻が届かなかったので半分に：2026-10-18 宮崎さん）・合ったとみなす距離・合ったまま待つ・合わなくても進むまで・確定までのミリ秒
 const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 function noseTgt(g, k) { const [u, v] = DV[k]; return { x: g.cx - u * g.h, y: g.cy - v * g.h }; }   // 本人の右＝映像の x が小さい側
 function drawNose(t, pts) {
@@ -2450,16 +2450,24 @@ function noseHTML(o, back, lab) {
 }
 const NOSE_A_T = '14. 鼻先を合わせる①（目を閉じて真ん中へ）', NOSE_B_T = '15. 鼻先を合わせる②（目を閉じて8つの点へ）';
 function noseStart() { try { const A = window.AudioContext || window.webkitAudioContext; endBeep.a = endBeep.a || new A(); endBeep.a.resume(); } catch (e) {} }   // 音はボタンを押したときに用意しないと鳴らない端末がある
-async function stepNoseA() {
-  show(14, NOSE_A_T); placeNose();
-  const t = '鼻先（赤い点）を<b>出てきた点</b>へ<br>そこから<b>目を閉じて真ん中へ</b>戻す<br>3秒後に鼻先の位置を確定します<small>「ピッ」と鳴ったら目を開ける。8か所</small>';
-  cue(DEMO + t, 'top fit', t); demo('noseA');
-  btn('始める', async () => {
+// 説明はひとことに（2026-10-18 宮崎さん「目をつぶって顔を中心に戻せるかのテストです、ぐらいシンプルに」）。練習は2か所だけ・記録しない（同「ちょっと難しいので簡単な練習を」）
+const NOSE_SUB = '<small>3秒後に鼻先の位置を確定します。「ピッ」と鳴ったら目を開ける</small>';
+function noseIntro(step, title, head, kind, run, practiced) {
+  show(step, title); placeNose();
+  const t = (practiced === true ? '練習おわり。次は本番です<br>' : '') + head + NOSE_SUB;
+  cue(DEMO + t, 'top fit', practiced === true ? '練習おわり。次は本番です' : t); demo(kind);
+  btn(practiced === true ? 'もう一度練習する' : 'まず練習する（2か所・記録しない）', () => run(true), 'sub');
+  btn(practiced === true ? '本番を始める' : '練習せずに始める', () => run(false));
+}
+const stepNoseA = practiced => noseIntro(14, NOSE_A_T, '目をつぶって<br><b>顔を中心に戻せるか</b>のテストです', 'noseA', runNoseA, practiced);
+const stepNoseB = practiced => noseIntro(15, NOSE_B_T, '目をつぶって<br><b>覚えた点に顔を向けられるか</b>のテストです', 'noseB', runNoseB, practiced);
+async function runNoseA(practice) {
+  {
     const my = tok; clearBtns(); noseStart(); await voiceQuiet(); if (my !== tok) return;
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepNoseA, '顔が見つかりませんでした');
     const g = placeNose(), T = [];
-    for (const k of shuffle(DIRS)) {
+    for (const k of shuffle(DIRS).slice(0, practice ? 2 : 8)) {
       if (my !== tok) return;
       g.tgt = null; g.hideC = false; cue('鼻先を真ん中の点に', 'top');
       const ref = await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
@@ -2473,32 +2481,30 @@ async function stepNoseA() {
     }
     if (my !== tok) return;
     G = null; cue('');
+    if (practice) return stepNoseA(true);
     const o = { trials: T, d: r3(g.d) }; o.sum = noseSum(T, true); RUN.noseA = o;
     if (!o.sum.n) return fail(stepNoseA, '顔が見えている時間が短すぎました');
     staff(noseHTML(o, true, '目を閉じて真ん中へ戻したときの、最初の真ん中からのズレ'));
     recorded(stepNoseA, stepNoseB, '次へ（鼻先を合わせる②）');
-  });
+  }
 }
-async function stepNoseB() {
-  show(15, NOSE_B_T); placeNose();
-  const t = '目を開けて<b>8つの点</b>に鼻先を合わせ<br>次に<b>目を閉じて</b>同じ点へ<br>3秒後に鼻先の位置を確定します<small>「ピッ」と鳴ったら目を開ける</small>';
-  cue(DEMO + t, 'top fit', t); demo('noseB');
-  btn('始める', async () => {
+async function runNoseB(practice) {
+  {
     const my = tok; clearBtns(); noseStart(); await voiceQuiet(); if (my !== tok) return;
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepNoseB, '顔が見つかりませんでした');
-    const g = placeNose(), O = {}, T = [];
+    const g = placeNose(), O = {}, T = [], K = shuffle(DIRS).slice(0, practice ? 2 : 8);
     // 目を開けて8か所を覚える（1か所ごとに真ん中へ戻る）
-    for (const k of shuffle(DIRS)) {
+    for (const k of shuffle(K)) {
       if (my !== tok) return;
       g.tgt = null; cue('鼻先を真ん中の点に', 'top');
       await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
       g.tgt = noseTgt(g, k); cue('', 'thin top', ''); beep(); said = ''; say(DJ[k]);
       O[k] = await noseOn(g.tgt); if (my !== tok) return;
     }
-    g.tgt = null; cue('次は目を閉じて同じ8つの点へ。3秒後に鼻先の位置を確定します', 'top'); await voiceQuiet(); await sleep(600);
+    g.tgt = null; cue(practice ? '次は目を閉じて同じ点へ。3秒後に鼻先の位置を確定します' : '次は目を閉じて同じ8つの点へ。3秒後に鼻先の位置を確定します', 'top'); await voiceQuiet(); await sleep(600);
     // 目を閉じて同じ点へ
-    for (const k of shuffle(DIRS)) {
+    for (const k of shuffle(K)) {
       if (my !== tok) return;
       g.hideC = false; cue('鼻先を真ん中の点に', 'top');
       await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
@@ -2511,11 +2517,12 @@ async function stepNoseB() {
     }
     if (my !== tok) return;
     G = null; cue('');
+    if (practice) return stepNoseB(true);
     const o = { trials: T, d: r3(g.d) }; o.sum = noseSum(T, false); RUN.noseB = o;
     if (!o.sum.n) return fail(stepNoseB, '顔が見えている時間が短すぎました');
     staff(noseHTML(o, false, '目を閉じて合わせた位置の、目を開けて合わせた位置からのズレ'));
     recorded(stepNoseB, stepAsk, '次へ（最後の質問）');
-  });
+  }
 }
 
 // ════ 13. 最後の質問：痛みの出やすい側・いまの痛み・聞こえ（2026-10-14 宮崎さん）
