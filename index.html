@@ -2399,7 +2399,7 @@ function drawNose(t, pts) {
   const g = G, u = OVU;
   // 赤い点を残している間は、黄色い点を輪（まん中に小さな黒い点）にして、赤い点と重なっても両方見えるようにする（2026-10-18 宮崎さん「赤と黄色が完全に被ると差が見えない。赤い点はもう少し小さく」）
   const ring = (x, y, r) => { oc.strokeStyle = '#ffcc00'; oc.lineWidth = 3 * u; oc.beginPath(); oc.arc(x, y, r, 0, 7); oc.stroke(); oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(x, y, 2.5 * u, 0, 7); oc.fill(); };
-  if (!g.hideC) { if (g.mark) ring(g.cx, g.cy, 13 * u); else { oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(g.cx, g.cy, 13 * u, 0, 7); oc.fill(); oc.fillStyle = '#000'; oc.beginPath(); oc.arc(g.cx, g.cy, 4 * u, 0, 7); oc.fill(); } }
+  if (!g.hideC) { if (g.mark) ring(g.cx, g.cy, 13 * u); else { const on = pts && !g.tgt && dist(pts[1], { x: g.cx, y: g.cy }) < NOSE_TOL * g.d; oc.fillStyle = on ? '#5ad18b' : '#ffcc00'; oc.beginPath(); oc.arc(g.cx, g.cy, (on ? 16 : 13) * u, 0, 7); oc.fill(); oc.fillStyle = '#000'; oc.beginPath(); oc.arc(g.cx, g.cy, 4 * u, 0, 7); oc.fill(); } }
   if (g.tgt) { const p = g.tgt; if (g.mark) ring(p.x, p.y, 18 * u); else { oc.shadowColor = '#ffcc00'; oc.shadowBlur = 18 * u; oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(p.x, p.y, 18 * u, 0, 7); oc.fill(); oc.shadowBlur = 0; } }
   if (g.mark) { const m = g.mark, q = g.markTo; if (q) { oc.strokeStyle = '#ff5a5a'; oc.lineWidth = 2.5 * u; oc.setLineDash([6 * u, 5 * u]); oc.beginPath(); oc.moveTo(q.x, q.y); oc.lineTo(m.x, m.y); oc.stroke(); oc.setLineDash([]); }
     oc.fillStyle = '#ff2b2b'; oc.strokeStyle = '#fff'; oc.lineWidth = 1.5 * u; oc.beginPath(); oc.arc(m.x, m.y, 5 * u, 0, 7); oc.fill(); oc.stroke(); }
@@ -2421,6 +2421,7 @@ function placeNose() {
 }
 const noseSnap = () => { const b = lastBs || {}; return { t: performance.now(), x: last[1].x, y: last[1].y, rot: window.__hp ? window.__hp.rot : NaN, up: window.__hp ? window.__hp.up : NaN, shut: ((b.eyeBlinkLeft || 0) + (b.eyeBlinkRight || 0)) / 2 }; };
 function noseAgg(a) { if (a.length < 3) return null; const k = f => { const v = a.map(f).filter(Number.isFinite); return v.length ? med(v) : NaN; }; return { x: k(s => s.x), y: k(s => s.y), rot: k(s => s.rot), up: k(s => s.up) }; }
+// 真ん中の点は、鼻先が重なるまで待つ（max＝Infinity。2026-10-18 宮崎さん「スマホを動かして真ん中の点に鼻の点が重なったらスタート」。前は6秒で見切って進んでいた）
 // 鼻先が p に NOSE_HOLD ミリ秒そろったら、そろっている間の位置を返す。max ミリ秒たっても合わなければ、最後の 0.4 秒の位置（reached: false）
 async function noseOn(p, max = NOSE_WAIT) {
   const my = tok, t0 = performance.now(), a = []; let since = null;
@@ -2486,7 +2487,7 @@ async function runNoseA(practice) {
     for (const k of shuffle(DIRS).slice(0, practice ? 2 : 8)) {
       if (my !== tok) return;
       g.tgt = null; g.hideC = false; cue('スマホを動かして、鼻先を真ん中の点に', 'top');
-      const ref = await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
+      const ref = await noseOn({ x: g.cx, y: g.cy }, Infinity); if (my !== tok) return;
       g.tgt = noseTgt(g, k); cue('', 'thin top', ''); beep(); said = ''; say(DJ[k]);
       const at = await noseOn(g.tgt); if (my !== tok) return;
       g.tgt = null; cue('目を閉じて、真ん中へ', 'top');
@@ -2514,11 +2515,11 @@ async function runNoseB(practice) {
     for (const k of shuffle(DIRS).slice(0, practice ? 2 : 8)) {
       if (my !== tok) return;
       g.tgt = null; g.hideC = false; cue('スマホを動かして、鼻先を真ん中の点に', 'top');
-      await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
+      await noseOn({ x: g.cx, y: g.cy }, Infinity); if (my !== tok) return;
       g.tgt = noseTgt(g, k); cue('', 'thin top', ''); beep(); said = ''; say(DJ[k]);
       O[k] = await noseOn(g.tgt); if (my !== tok) return;
       g.tgt = null; cue('この感覚を覚えて、真ん中へ戻る', 'top');
-      await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
+      await noseOn({ x: g.cx, y: g.cy }, Infinity); if (my !== tok) return;
       cue('目をつぶったまま、いきます', 'top'); await voiceQuiet(2500); await sleep(300); if (my !== tok) return;
       g.hideC = true; cue('', 'thin top', '');
       const cap = await noseLock(); if (my !== tok) return;
@@ -2764,7 +2765,7 @@ async function begin(plan) {
   stepAlign();
 }
 // 確かめ用（自動の試験から各段を直接呼ぶ）
-window.__steps = { analyzeSide, sideOne, sideMix, sideDiff, sideAgain, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepNoseA, stepNoseB, noseErr, noseSum, noseHTML, noseTgt, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
+window.__steps = { noseG: () => G, noseLast: () => last, analyzeSide, sideOne, sideMix, sideDiff, sideAgain, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepNoseA, stepNoseB, noseErr, noseSum, noseHTML, noseTgt, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
   analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, judgeHTML, mitate, mitateHTML, saccJudge, analyzeTilt, analyzeFace, analyzePupil, pupilOne, wrinkleCount, stepTilt, stepPupil, stepAsk, get RUN() { return RUN; }, summaryLines, P, setSideAfter: v => { SIDE_AFTER = v; }, setCAL: c => { CAL = c; }, PT, DV, planNext, begin, TESTS, get PLAN() { return PLAN; } };
 </script>
 </body>
