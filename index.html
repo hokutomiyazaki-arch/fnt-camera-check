@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>カメラでチェック（試し版）</title>
+<title>カメラでチェック（トレーナー用）</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#0f1115">
@@ -67,21 +67,34 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 #okn{position:absolute;inset:0;display:none;z-index:4;background:repeating-linear-gradient(90deg,#f4f4f4 0 50%,#111 50% 100%)}
 #photo{width:100%;height:100%;object-fit:contain}
 #camFix{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:30;width:auto;background:#e8590c}
+/* トップの検査えらび（2026-10-18 宮崎さん「トップページからテストする項目だけを選べる」） */
+.pick{display:flex;flex-direction:column;gap:6px;margin:6px 0 4px}
+.pick label{display:flex;align-items:center;gap:10px;background:#1b1f27;border:1px solid #2b2f38;border-radius:12px;padding:11px 12px;font-size:15.5px;cursor:pointer}
+.pick label:has(input:checked){border-color:#2a6df4;background:#16233f}
+.pick input{width:20px;height:20px;accent-color:#2a6df4;flex:none}
+.pick .g{font-size:12.5px;color:#8f97a8;margin:8px 2px 0}
+.row2{display:flex;gap:8px}.row2 button{font-size:14px;padding:9px}
+h2{font-size:16px;margin:16px 0 2px}
 .badge{position:fixed;right:8px;top:calc(6px + env(safe-area-inset-top));font-size:11px;background:#7a3cff;color:#fff;border-radius:6px;padding:1px 6px;z-index:20}
 </style>
 </head>
 <body>
 <main>
 <div id="sIntro">
-  <h1>カメラでチェック（試し版）</h1>
-  <p>カメラで顔・目・口の動きを読み取ります。画面の真ん中に出る指示のとおりに、顔や目を動かしてください。</p>
+  <h1>カメラでチェック（トレーナー用）</h1>
+  <p>カメラで顔・目・口の動きを読み取ります。全部を通して測るか、使いたい検査だけを選んで測れます。</p>
   <div class="res small">
     ・映像も写真も、この端末の外へは送りません（端末の中で数字にするだけです）。<br>
     ・医療の検査ではありません。痛み・めまい・気分の悪さが出たら、すぐにやめてください。<br>
     ・明るい所でやってください。目のチェックでは、スマホを顔に近づけて持ちます。
   </div>
   <p id="loadState" class="small">読み込み中…</p>
-  <button id="bStart" disabled>カメラを起動する</button>
+  <button id="bStart" disabled>全部を通して検査する</button>
+  <h2>検査を選んで測る</h2>
+  <p class="small">選んだ検査だけを、上から順に測ります。1つだけでも選べます。</p>
+  <div class="pick" id="pick"></div>
+  <div class="row2"><button class="sub" id="bPickAll">全部選ぶ</button><button class="sub" id="bPickNone">全部外す</button></div>
+  <button id="bPick" disabled>選んだ検査を始める</button>
 </div>
 
 <div id="sEnd" class="hide">
@@ -89,13 +102,14 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
   <p id="endLead">すべてのチェックが終わりました。</p>
   <div id="endList"></div>
   <div id="staffEnd" class="hide">
-    <p class="small">ここから下はスタッフ用です（お客さんの画面には出ません）。下の［コピー］で記録をそのままチャットに貼れます。</p>
+    <p class="small">下の［コピー］で記録をそのままチャットに貼れます。</p>
     <textarea id="endText" readonly></textarea>
     <button id="bCopy">コピー</button>
     <button id="bSideAgain">ドリルのあと：首を横に倒すをもう一度</button>
     <button class="sub" id="bCopyAll">この端末に残っている記録を全部コピー</button>
   </div>
-  <button class="sub" id="bAgain">最初からもう一度</button>
+  <button class="sub" id="bAgain">同じ検査をもう一度</button>
+  <button class="sub" id="bHome">トップに戻る（検査を選び直す）</button>
 </div>
 </main>
 
@@ -125,9 +139,11 @@ const $ = id => document.getElementById(id);
 const video = $('video'), ov = $('overlay'), oc = ov.getContext('2d'), gd = $('guide'), gc = gd.getContext('2d');
 let lm = null, last = null, lastBs = null, lastT = -1, rec = null, grab = null;   // last = 直近の顔の点（画素）
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-// スタッフ表示（?staff=1）：判定と数字を出す。お客さんの画面（ふつうの URL）には判定も数字も出さず、記録だけ残す（2026-10-14 宮崎さん）
-const STAFF = /[?&]staff\b/.test(location.search);
-if (STAFF) document.body.insertAdjacentHTML('beforeend', '<div class="badge">スタッフ表示</div>');
+// 判定と数字はいつも出す。トレーナー用だけにした（2026-10-18 宮崎さん「クライアント用は不要。ちゃんと結果が出せるトレーナー用だけを作って」）。
+// 前のお客さん用の画面（判定を隠して記録だけ残す・2026-10-14）は、STAFF の分かれ道として残してある
+const STAFF = true;
+document.body.insertAdjacentHTML('beforeend', '<div class="badge">トレーナー用</div>');
+let PLAN = null;   // いま測る検査の並び（トップで選んだもの。全部を通すときは全部）
 let RUN = {};                                       // この回の記録（内部用）。最後に端末へ保存する
 const newRun = () => { RUN = { v: 2, started: new Date().toISOString(), ua: navigator.userAgent }; };
 newRun();
@@ -147,7 +163,7 @@ async function load() {
   toCPU = async () => { if (delegate === 'CPU' || switching) return; switching = true; try { lm = await FaceLandmarker.createFromOptions(fs, opt('CPU')); delegate = 'CPU'; } finally { switching = false; } };
   window.__lm = lm;
   $('loadState').textContent = '準備ができました。';
-  $('bStart').disabled = false;
+  $('bStart').disabled = false; pickSync();
 }
 load().catch(e => { $('loadState').textContent = '読み込みに失敗しました：' + e.message; window.__loadError = e.message; });
 
@@ -305,7 +321,7 @@ function loop() {
       }
       if (G) drawGuide(t, pts);
     } else { last = null; lastBs = null; if (G) drawGuide(t, null); }
-    if (STAFF && window.__frames % 30 === 0) document.querySelector('.badge').textContent = `スタッフ表示 ${video.videoWidth}×${video.videoHeight} ${delegate}`;   // ずれたときの手がかり
+    if (STAFF && window.__frames % 30 === 0) document.querySelector('.badge').textContent = `トレーナー用 ${video.videoWidth}×${video.videoHeight} ${delegate}`;   // ずれたときの手がかり
     window.__frames = (window.__frames || 0) + 1;
     window.__faceSeen = (window.__faceSeen || 0) + (last ? 1 : 0);
   }
@@ -334,6 +350,10 @@ let tok = 0, CUR = null;
 const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首を横に倒す': stepSide, '3. 首の8の字': stepEight, '4. 首の左右・上下': stepNeck, '5. 表情の左右差': stepFace, '6. 目の準備（測る前の合わせ）': stepEyePrep, '7. 点を目で追う': stepPursuit, '8. 流れる縞を見る': stepOkn, '9. 頭を動かして点を見つめる': stepVor, '10. 寄り目': stepConv, '11. 舌の出方': stepTongue, '12. 口の開け方': stepJaw, '13. 線をまっすぐにする': stepSvv });                       // 段を移ったら増える（前の段の待ちを止めるため）
 function show(step, title) {
   tok++;
+  // 選んだ検査だけのときは、上の棒も選んだ数だけにする（最初の位置合わせ＋選んだ検査）
+  if (PLAN) { const f = REDO()[title] || (title === ASK_T ? stepAsk : null), i = step === 0 ? 0 : PLAN.indexOf(f) + 1;
+    if ($('steps').children.length !== PLAN.length + 1) $('steps').innerHTML = '<span></span>'.repeat(PLAN.length + 1);
+    if (i >= 0) step = i; }
   [...$('steps').children].forEach((e, i) => e.classList.toggle('on', i <= step));
   $('title').textContent = title;
   $('result').innerHTML = ''; $('btns').innerHTML = ''; $('msg').textContent = ''; $('msg').className = ''; cue('');
@@ -422,7 +442,7 @@ function fail(again, why) {
   btn('もう一度', again);
 }
 // お客さんの画面：判定も数字も出さず「記録しました」だけ
-function recorded(again, next, nextLabel) { if (!STAFF) cue('記録しました'); btn('もう一度', again, 'sub'); btn(nextLabel, next); }
+function recorded(again, next, nextLabel) { if (!SIDE_AFTER) { const n = planNext(again); if (n) [next, nextLabel] = n; } if (!STAFF) cue('記録しました'); btn('もう一度', again, 'sub'); btn(nextLabel, next); }
 
 // ── 目の的（点）。画面の座標：x は −1（左）〜 +1（右）、y は −1（下）〜 +1（上）。右・左は画面を見ている本人の右・左
 const dot = $('dot');
@@ -444,8 +464,9 @@ const dirOf = (x, y) => DIRS[((Math.round(Math.atan2(y, x) * 180 / Math.PI / 45)
 // ════ 0. 位置合わせ
 async function stepAlign() {
   const my = show(0, '最初に：顔の位置を合わせる');
-  const b = btn('次へ（ふだんの首の傾き）', stepTilt); b.disabled = true;
-  const skip = btn('このまま進む', stepTilt, 'sub'); skip.style.display = 'none';
+  const [first, firstLabel] = planNext(stepAlign) || [stepTilt, '次へ（ふだんの首の傾き）'];
+  const b = btn(firstLabel, first); b.disabled = true;
+  const skip = btn('このまま進む', first, 'sub'); skip.style.display = 'none';
   const t0 = performance.now();
   let okCount = 0, unlocked = false;
   while (my === tok) {
@@ -844,7 +865,7 @@ function analyzeEight(seg, g) {
 function headJudgeHTML(H) {
   const L = []; if (H.overall) L.push(`<b>小脳虫部・前庭機能</b>の働き低下の可能性 — ${H.overall}`);
   for (const c of H.canals) L.push(`<b>${c.k}</b>（→ ${c.cb}）の問題の可能性 — ${c.why}`);
-  return `<div class="res judge">内部の読み（仮・お客さんには出ない）：<br>${L.length ? L.join('<br>') : '目立ったずれなし'}<br><span class="small">読み方：真ん中→左下＝右の前半規管・→右上＝右の後半規管・→右下＝左の前半規管・→左上＝左の後半規管／左→右＝右の水平・右→左＝左の水平・上＝両方の後半・下＝両方の前半規管。「右」の半規管→右の小脳、「左」→左の小脳。</span></div>`;
+  return `<div class="res judge">内部の読み（仮）：<br>${L.length ? L.join('<br>') : '目立ったずれなし'}<br><span class="small">読み方：真ん中→左下＝右の前半規管・→右上＝右の後半規管・→右下＝左の前半規管・→左上＝左の後半規管／左→右＝右の水平・右→左＝左の水平・上＝両方の後半・下＝両方の前半規管。「右」の半規管→右の小脳、「左」→左の小脳。</span></div>`;
 }
 
 // ════ 2. 首の左右・上下（線の上を動く点を、鼻先で追う）。1往復 6秒で左右3往復 → 上下3往復
@@ -1387,7 +1408,7 @@ function judge() {
 function judgeHTML(only) {
   const J = (RUN.judge || []).filter(j => !only || j.from === only);
   const G = RUN.pursuitGroups, ud = G && G.vertical != null ? `<br><span class="small">追従の上下 ${G.vertical}・左右 ${G.horizontal}（上下が左右より ${JTH} 以上低い → 中脳）</span>` : '';
-  return `<div class="res judge">${only ? 'この検査だけの読み（仮・お客さんには出ない）' : 'すべての検査を合わせた判定（仮・お客さんには出ない）'}：${J.length ? J.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : '<br>目立った差なし'}${RUN.judgeNote ? '<br>※' + RUN.judgeNote : ''}${ud}</div>`;
+  return `<div class="res judge">${only ? 'この検査だけの読み（仮）' : 'すべての検査を合わせた判定（仮）'}：${J.length ? J.map(j => `<br><b>${j.k}</b>の働き低下の可能性 — ${j.why}`).join('') : '<br>目立った差なし'}${RUN.judgeNote ? '<br>※' + RUN.judgeNote : ''}${ud}</div>`;
 }
 
 // ════ 5. サッカード（跳ぶ点を見る）：8方向へ跳んで、真ん中へ戻る。間はばらばら（1.0〜1.6秒）にして先読みを防ぐ
@@ -2247,7 +2268,7 @@ async function stepSvv() {
     await motionStart();
     const w0 = performance.now(); while (my === tok && phoneRoll() == null && performance.now() - w0 < 2500) await sleep(100);
     if (my !== tok) return;
-    if (phoneRoll() == null) { RUN.svv = { ok: false, why: 'この端末ではスマホの傾きを測れない' }; cue('この端末では<br>測れませんでした'); btn('次へ（最後の質問）', stepAsk); return; }
+    if (phoneRoll() == null) { RUN.svv = { ok: false, why: 'この端末ではスマホの傾きを測れない' }; cue('この端末では<br>測れませんでした'); const [nx, nl] = planNext(stepSvv) || [stepAsk, '次へ（最後の質問）']; btn(nl, nx); return; }
     const plan = [];   // 縦4・横4。始めの傾きは右・左を交互に（最初の向きはばらばら）、大きさは 12〜20° でばらばら
     for (const kind of ['V', 'H']) { const s0 = Math.random() < 0.5 ? 1 : -1; for (let i = 0; i < SVV_N; i++) plan.push({ kind, start: (i % 2 ? -s0 : s0) * (12 + Math.random() * 8) }); }
     cue(''); svvShow(true); const T = [];
@@ -2294,7 +2315,7 @@ const QS = [
   { k: 'hearing', q: '左右の耳で<br>聞こえにくい側はありますか？', a: ['右が聞こえにくい', '左が聞こえにくい', 'どちらも同じ'] },
 ];
 async function stepAsk() {
-  const my = show(14, '14. 最後にいくつか質問');
+  const my = show(14, ASK_T);
   RUN.ask = {};
   for (const Q of QS) {
     const a = await new Promise(res => { $('btns').innerHTML = ''; cue(Q.q); for (const t of Q.a) btn(t, () => res(t)); });
@@ -2359,7 +2380,7 @@ function mitate() {
     : pmS.length ? `いまの痛み（${now}）は PMRF（${pmS.join('・')}）と違う側` : `いまの痛み（${now}）。PMRF の側は出ていない`;
   const L = M.lines;
   if (cx.length) L.push(`<b>皮質</b>：${cx.map(s => s + 'の皮質').join('・')}の働き低下（眼球運動：${J.filter(j => cx.some(s => j.k.startsWith(s + 'の皮質'))).map(j => j.why.replace(/［.*?］/, '')).join('／')}）${cxOther.length ? `<br>　※${cxOther.join('・')}の皮質にも所見（${J.filter(j => cxOther.some(s => j.k.startsWith(s + 'の皮質'))).map(j => (j.src || '追従') + '：' + j.why.replace(/（.*$/, '')).join('／')}）。より目立つ${cx[0]}を読む` : ''}`);
-  else L.push('<b>皮質</b>：眼球運動で目立った左右差なし');
+  else if (RUN.pursuit || RUN.okn || RUN.vor) L.push('<b>皮質</b>：眼球運動で目立った左右差なし');   // 目の検査を選ばなかった回には出さない（測っていないのに「差なし」と読めてしまう）
   for (const c of cn) L.push(`<b>${c.side}の${c.n}</b> — ${c.why} → ${c.read}`);
   const mb = J.find(j => j.k === '中脳');
   if (mb && cw) L.push(`<b>中脳</b>の働き低下 — 寄り目も上下の目の動きも弱い（${cw.why}／${mb.why}）`);
@@ -2418,7 +2439,7 @@ function mitate() {
 }
 function mitateHTML() {
   const L = mitate();
-  return `<div class="res judge">見立て（仮・お客さんには出ない）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。首の傾き＝傾いた側の卵形嚢で、同じ側の PMRF・小脳の所見は加算材料。線をまっすぐにする（SVV 2.5°・SVH 1.5°以上）＝傾いた側の耳石（Z-Health Next Evolution）で、首の傾きと同じ側なら重ねる。頭を動かして点を見つめる（VOR）で、動いた瞬間に目が反対へ動く反射が遅れる・点へ跳んで戻る向き＝その向きの半規管→同じ側の小脳。何回かやってくり返し出た向きを、8の字・首の検査の同じ半規管と合わせて見る。動眼神経＝中脳、寄り目と上下の追従が両方弱い＝中脳。三叉神経（口の開け方）＝橋（BDC）。8の字で気持ち悪い＝前庭。小脳・前庭の所見は首の検査・VOR から並べる。重なりが多い所ほど問題がありそうと読む</span></div>`;
+  return `<div class="res judge">見立て（仮）：${L.map(x => '<br>・' + x).join('')}<br><span class="small">脳神経と皮質の側が同じ＝その側の皮質、逆＝脳神経の問題。痛みが出やすい側＝その側の PMRF。首の傾き＝傾いた側の卵形嚢で、同じ側の PMRF・小脳の所見は加算材料。線をまっすぐにする（SVV 2.5°・SVH 1.5°以上）＝傾いた側の耳石（Z-Health Next Evolution）で、首の傾きと同じ側なら重ねる。頭を動かして点を見つめる（VOR）で、動いた瞬間に目が反対へ動く反射が遅れる・点へ跳んで戻る向き＝その向きの半規管→同じ側の小脳。何回かやってくり返し出た向きを、8の字・首の検査の同じ半規管と合わせて見る。動眼神経＝中脳、寄り目と上下の追従が両方弱い＝中脳。三叉神経（口の開け方）＝橋（BDC）。8の字で気持ち悪い＝前庭。小脳・前庭の所見は首の検査・VOR から並べる。重なりが多い所ほど問題がありそうと読む</span></div>`;
 }
 
 // ════ まとめ：記録はこの端末に残す（内部用）。お客さんには判定を見せない
@@ -2453,30 +2474,69 @@ function finish() {
   tok++; judge(); mitate(); RUN.ended = new Date().toISOString(); RUN.delegate = delegate;
   const n = saveRun();
   $('sMain').classList.add('hide'); $('sEnd').classList.remove('hide');
+  $('endLead').textContent = PLAN && PLAN.length < TESTS.length ? `選んだ検査（${PLAN.map(f => TESTS.find(t => t[2] === f)[1].replace(/^\d+\.\s*/, '')).join('・')}）が終わりました。` : 'すべてのチェックが終わりました。';
+  $('bSideAgain').style.display = RUN.side ? '' : 'none';
   if (STAFF) {
     $('staffEnd').classList.remove('hide');
     $('endList').innerHTML = summaryLines().map(s => `<div class="res">${s}</div>`).join('') + judgeHTML() + mitateHTML() + `<p class="small">この端末に残っている記録：${n}件</p>`;
-    $('endText').value = 'カメラでチェック（試し版）の記録\n' + summaryLines().join('\n') + '\n内部の判定（仮）：' + ((RUN.judge || []).map(j => j.k + '（' + j.why + '）').join('／') || '目立った差なし') + (RUN.judgeNote ? '／※' + RUN.judgeNote : '') + '\n見立て（仮）：\n' + RUN.mitate.lines.map(x => '・' + x).join('\n') + '\n\n' + JSON.stringify(RUN);
+    $('endText').value = 'カメラでチェック（トレーナー用）の記録\n' + summaryLines().join('\n') + '\n内部の判定（仮）：' + ((RUN.judge || []).map(j => j.k + '（' + j.why + '）').join('／') || '目立った差なし') + (RUN.judgeNote ? '／※' + RUN.judgeNote : '') + '\n見立て（仮）：\n' + RUN.mitate.lines.map(x => '・' + x).join('\n') + '\n\n' + JSON.stringify(RUN);
   } else { $('staffEnd').classList.add('hide'); $('endList').innerHTML = '<div class="res">記録しました。結果は担当者からお伝えします。</div>'; }
 }
 async function copyText(t, b) { let ok = false; try { await navigator.clipboard.writeText(t); ok = true; } catch (e) { const a = $('endText'); a.value = t; a.select(); try { ok = document.execCommand('copy'); } catch (_) {} } b.textContent = ok ? 'コピーしました' : '上の枠を長押しでコピー'; }
 $('bCopy').onclick = () => copyText($('endText').value, $('bCopy'));
 $('bSideAgain').onclick = sideAgain;
 $('bCopyAll').onclick = () => copyText(localStorage.getItem('fntcc_runs') || '[]', $('bCopyAll'));
-$('bAgain').onclick = () => { SIDE_AFTER = false; newRun(); CAL = null; $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepAlign(); };
+$('bAgain').onclick = () => { SIDE_AFTER = false; newRun(); RUN.plan = PLAN && PLAN.map(f => TESTS.find(t => t[2] === f)[0]); CAL = null; $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepAlign(); };
+$('bHome').onclick = () => { SIDE_AFTER = false; tok++; $('sEnd').classList.add('hide'); $('sMain').classList.add('hide'); $('sIntro').classList.remove('hide'); scrollTo(0, 0); };
 
-$('bStart').onclick = async () => {
+// ════ 検査を選んで測る（2026-10-18 宮崎さん「全部別でテストできるように。トップページで『このテスト』って選べるように」）
+// 並びは全部を通すときと同じ。選んだものだけを上から順に測り、最後の検査のあと記録の画面へ行く。
+// 目の検査（追従・縞・VOR）は、目の準備をしていなければ始める前に自動で目の合わせをする（eyeStepStart）ので、単独でも測れる
+// 直接のリンク：?t=vor,conv のように key を並べると、その検査に印が付いた状態で開く
+const ASK_T = '14. 最後にいくつか質問';
+const TESTS = [
+  ['tilt', '1. ふだんの首の傾き', stepTilt, '首'], ['side', '2. 首を横に倒す', stepSide, '首'], ['eight', '3. 首の8の字', stepEight, '首'], ['neck', '4. 首の左右・上下', stepNeck, '首'],
+  ['face', '5. 表情の左右差', stepFace, '顔'],
+  ['prep', '6. 目の準備（測る前の合わせ）', stepEyePrep, '目'], ['pursuit', '7. 点を目で追う', stepPursuit, '目'], ['okn', '8. 流れる縞を見る', stepOkn, '目'], ['vor', '9. 頭を動かして点を見つめる', stepVor, '目'], ['conv', '10. 寄り目', stepConv, '目'],
+  ['tongue', '11. 舌の出方', stepTongue, '口'], ['jaw', '12. 口の開け方', stepJaw, '口'],
+  ['svv', '13. 線をまっすぐにする', stepSvv, 'そのほか'], ['ask', ASK_T, stepAsk, 'そのほか'],
+];
+// cur の次に測る検査と、ボタンの文字。並びの外（ドリルのあとの測り直しなど）は null＝元の流れのまま
+function planNext(cur) {
+  if (!PLAN) return null;
+  const i = cur === stepAlign ? -1 : PLAN.indexOf(cur); if (i < 0 && cur !== stepAlign) return null;
+  const f = PLAN[i + 1]; if (!f) return [finish, '終わる（記録を見る）'];
+  return [f, `次へ（${TESTS.find(t => t[2] === f)[1].replace(/^\d+\.\s*/, '').replace(/（.*）$/, '')}）`];
+}
+const PICK_KEY = 'fntcc_pick';
+(() => {
+  const want = (location.search.match(/[?&]t=([^&]+)/) || [])[1], saved = want ? decodeURIComponent(want).split(',') : JSON.parse(localStorage.getItem(PICK_KEY) || '[]');
+  let g = '', h = '';
+  for (const [k, nm, , grp] of TESTS) { if (grp !== g) { h += `<div class="g">${grp}</div>`; g = grp; } h += `<label><input type="checkbox" value="${k}"${saved.includes(k) ? ' checked' : ''}><span>${nm}${k === 'prep' ? '<br><span class="small">目の検査だけなら省いてよい（始める前に自動で合わせる）</span>' : ''}</span></label>`; }
+  $('pick').innerHTML = h;
+  $('pick').onchange = pickSync;
+})();
+const picked = () => [...$('pick').querySelectorAll('input:checked')].map(i => i.value);
+function pickSync() { const n = picked().length; $('bPick').disabled = !lm || !n; $('bPick').textContent = n ? `選んだ検査を始める（${n}つ）` : '選んだ検査を始める'; localStorage.setItem(PICK_KEY, JSON.stringify(picked())); }
+$('bPickAll').onclick = () => { $('pick').querySelectorAll('input').forEach(i => { i.checked = true; }); pickSync(); };
+$('bPickNone').onclick = () => { $('pick').querySelectorAll('input').forEach(i => { i.checked = false; }); pickSync(); };
+$('bPick').onclick = () => { const ks = picked(); begin(TESTS.filter(t => ks.includes(t[0])).map(t => t[2])); };
+$('bStart').onclick = () => begin(TESTS.map(t => t[2]));
+
+async function begin(plan) {
+  PLAN = plan; SIDE_AFTER = false; newRun(); RUN.plan = plan.map(f => TESTS.find(t => t[2] === f)[0]);
   try { VA.muted = false; VA.src = 'voice/unlock.mp3'; VA.play().catch(() => {}); } catch (e) {}   // スマホは、押したときに一度鳴らしておかないと後で音が出ない。消音のまま鳴らすと許可にならない端末があるので、無音のファイルを音ありで鳴らす
-  $('bStart').disabled = true;
+  $('bStart').disabled = $('bPick').disabled = true;
+  const camLive = video.srcObject && video.srcObject.getVideoTracks().some(t => t.readyState === 'live');   // トップに戻って選び直したときは、カメラはつけたまま
   const startTry = async () => { for (let i = 0; ; i++) { try { return await startCam(); } catch (e) { if (i >= 4 || !/NotReadable|Abort|TrackStart/.test(e.name)) throw e; await sleep(1000); } } };   // 前のページがカメラを手放すまで少し待って、やり直す
-  try { await Promise.race([startTry(), sleep(10000).then(() => { throw { name: '時間切れ。ほかのアプリやタブでカメラを使っていないか確かめて、ページを読み込み直してください' }; })]); }
-  catch (e) { $('loadState').textContent = 'カメラを起動できませんでした（' + e.name + '）。' + (/NotAllowed|Security/.test(e.name) ? 'ブラウザの設定でカメラを許可してください。' : 'Chrome のほかのタブ（このページの古いタブも）や、カメラを使うアプリを閉じてから、もう一度押してください。'); $('bStart').disabled = false; return; }
-  $('sIntro').classList.add('hide'); $('sMain').classList.remove('hide');
+  if (!camLive) try { await Promise.race([startTry(), sleep(10000).then(() => { throw { name: '時間切れ。ほかのアプリやタブでカメラを使っていないか確かめて、ページを読み込み直してください' }; })]); }
+  catch (e) { $('loadState').textContent = 'カメラを起動できませんでした（' + e.name + '）。' + (/NotAllowed|Security/.test(e.name) ? 'ブラウザの設定でカメラを許可してください。' : 'Chrome のほかのタブ（このページの古いタブも）や、カメラを使うアプリを閉じてから、もう一度押してください。'); $('bStart').disabled = false; pickSync(); return; }
+  $('sIntro').classList.add('hide'); $('sMain').classList.remove('hide'); $('bStart').disabled = false; pickSync();
   stepAlign();
-};
+}
 // 確かめ用（自動の試験から各段を直接呼ぶ）
 window.__steps = { analyzeSide, sideOne, sideMix, sideDiff, sideAgain, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
-  analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, judgeHTML, mitate, mitateHTML, saccJudge, analyzeTilt, analyzeFace, analyzePupil, pupilOne, wrinkleCount, stepTilt, stepPupil, stepAsk, get RUN() { return RUN; }, summaryLines, P, setSideAfter: v => { SIDE_AFTER = v; }, setCAL: c => { CAL = c; }, PT, DV };
+  analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, judgeHTML, mitate, mitateHTML, saccJudge, analyzeTilt, analyzeFace, analyzePupil, pupilOne, wrinkleCount, stepTilt, stepPupil, stepAsk, get RUN() { return RUN; }, summaryLines, P, setSideAfter: v => { SIDE_AFTER = v; }, setCAL: c => { CAL = c; }, PT, DV, planNext, begin, TESTS, get PLAN() { return PLAN; } };
 </script>
 </body>
 </html>
