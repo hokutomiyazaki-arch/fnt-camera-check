@@ -2314,6 +2314,10 @@ function convWorse(c) {   // 寄りが悪い側：先に外へ逃げた目。逃
   // 寄らない目（2026-10-15 夜 宮崎さん「全く寄せなくても判定結果が出る。全く寄らない場合も動眼神経の問題として数えて」）：
   // 前は、両目とも寄らないと左右の差が出ず「なし」になっていた。寄った量が CONV_MIN 未満の目は、それだけで動眼神経として数える
   const nz = [0, 1].filter(s => !(c.eyes[s].gain >= CONV_MIN));
+  // 2026-10-18 宮崎さん「目は寄っているのに両方の動眼神経と出る。寄りが悪い左目があるのに左と出ない」：カメラは黒目の寄りを小さく読むので、
+  // 両目とも CONV_MIN 未満でも、片方がはっきり少なければ（15%以上）その側を読む。両側と読むのは、両目とも同じくらい寄らないときだけ
+  if (nz.length === 2 && Math.max(c.eyes[0].gain, c.eyes[1].gain) >= 0.01 && pct(c.eyes[0].gain, c.eyes[1].gain) >= 15) { const [a, b] = [c.eyes[0].gain, c.eyes[1].gain], s = a < b ? '右' : '左';
+    return { side: s, s: pct(a, b) / 15, why: `寄り目で${s}目の寄りが少ない（右${f2(a)}・左${f2(b)}。両目とも寄りが小さく写ったが、${s}目がはっきり少ない）` }; }
   if (nz.length === 2) return { side: '両側', why: `寄り目で両目とも寄らない（右${f2(c.eyes[0].gain)}・左${f2(c.eyes[1].gain)}、${CONV_MIN} 未満）` };
   if (nz.length === 1) { const s = nz[0] ? '左' : '右'; return { side: s, s: 1 + (CONV_MIN - Math.max(0, c.eyes[nz[0]].gain || 0)) / CONV_MIN, why: `寄り目で${s}目が寄らない（右${f2(c.eyes[0].gain)}・左${f2(c.eyes[1].gain)}、${CONV_MIN} 未満）` }; }
   if (c.first) { const s = c.first[0]; return { side: s, s: 1.5, why: `寄り目で${c.first}が先に外へ逃げた` }; }
