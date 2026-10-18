@@ -747,7 +747,7 @@ function demoNose(kind) {
   // 1コマの中身：n＝鼻先、tg＝光る点、ghost＝目を閉じている間の行き先（点線の輪）、shut＝目を閉じている、cnt＝確定までの数、cap＝見出し、say＝声の吹き出し
   function A(e) {
     const D = ['UR', 'L', 'D', 'DR', 'UL', 'R'], per = 7600, i = Math.floor(e / per), k = D[i % D.length], f = e % per, T = P(k), o = off[i % 4], E = { x: cx + o[0], y: cy + o[1] };
-    if (f < 900) return { n: C, cap: '① 鼻先を真ん中の点に' };
+    if (f < 900) return { n: C, cap: '① スマホを動かして鼻先を真ん中に' };
     if (f < 2400) return { n: mv(C, T, (f - 900) / 900), tg: T, cap: '② 出てきた点へ鼻先を', say: f < 1500 ? DJ[k] : '' };
     if (f < 5400) return { n: mv(T, E, (f - 2400) / 1000), shut: true, cnt: 3 - Math.floor((f - 2400) / 1000), cap: '③ 目を閉じて真ん中へ' };
     return { n: E, pi: f < 6000, mark: E, markTo: C, cap: '④「ピッ」で目を開ける' };
@@ -778,12 +778,14 @@ function demoNose(kind) {
       x.stroke(); }
     x.beginPath(); x.moveTo(fx - 12, fy + 28); x.quadraticCurveTo(fx, fy + 33, fx + 12, fy + 28); x.stroke();
     // 点
-    if (!z.hideC) { x.fillStyle = '#ffcc00'; x.beginPath(); x.arc(cx, cy, 10, 0, 7); x.fill(); x.fillStyle = '#000'; x.beginPath(); x.arc(cx, cy, 3, 0, 7); x.fill(); }
-    if (z.tg) { x.shadowColor = '#ffcc00'; x.shadowBlur = 14; x.fillStyle = '#ffcc00'; x.beginPath(); x.arc(z.tg.x, z.tg.y, 13, 0, 7); x.fill(); x.shadowBlur = 0; }
+    if (!z.hideC) { if (z.mark) { x.strokeStyle = '#ffcc00'; x.lineWidth = 2.5; x.beginPath(); x.arc(cx, cy, 10, 0, 7); x.stroke(); x.fillStyle = '#ffcc00'; x.beginPath(); x.arc(cx, cy, 2.5, 0, 7); x.fill(); }
+      else { x.fillStyle = '#ffcc00'; x.beginPath(); x.arc(cx, cy, 10, 0, 7); x.fill(); x.fillStyle = '#000'; x.beginPath(); x.arc(cx, cy, 3, 0, 7); x.fill(); } }
+    if (z.tg) { if (z.mark) { x.strokeStyle = '#ffcc00'; x.lineWidth = 2.5; x.beginPath(); x.arc(z.tg.x, z.tg.y, 13, 0, 7); x.stroke(); x.fillStyle = '#ffcc00'; x.beginPath(); x.arc(z.tg.x, z.tg.y, 2.5, 0, 7); x.fill(); }
+      else { x.shadowColor = '#ffcc00'; x.shadowBlur = 14; x.fillStyle = '#ffcc00'; x.beginPath(); x.arc(z.tg.x, z.tg.y, 13, 0, 7); x.fill(); x.shadowBlur = 0; } }
     if (z.ghost) { x.setLineDash([5, 5]); x.strokeStyle = 'rgba(255,204,0,.7)'; x.lineWidth = 2.5; x.beginPath(); x.arc(z.ghost.x, z.ghost.y, 13, 0, 7); x.stroke(); x.setLineDash([]); }
     if (z.mark) { x.strokeStyle = 'rgba(255,90,90,.8)'; x.lineWidth = 2.5; x.setLineDash([6, 5]); x.beginPath(); x.moveTo(z.markTo.x, z.markTo.y); x.lineTo(z.mark.x, z.mark.y); x.stroke(); x.setLineDash([]);
-      x.fillStyle = '#ff3b3b'; x.strokeStyle = '#fff'; x.lineWidth = 2.5; x.beginPath(); x.arc(z.mark.x, z.mark.y, 11, 0, 7); x.fill(); x.stroke();
-      x.fillStyle = '#ff8a8a'; x.font = 'bold 16px sans-serif'; x.textAlign = 'left'; x.fillText('ここにいた', z.mark.x + 15, z.mark.y + 5); }
+      x.fillStyle = '#ff2b2b'; x.strokeStyle = '#fff'; x.lineWidth = 1.5; x.beginPath(); x.arc(z.mark.x, z.mark.y, 5, 0, 7); x.fill(); x.stroke();
+      x.fillStyle = '#ff8a8a'; x.font = 'bold 16px sans-serif'; x.textAlign = 'left'; x.fillText('ここにいた', z.mark.x + 10, z.mark.y + 5); }
     else { x.fillStyle = '#ff5a5a'; x.beginPath(); x.arc(n.x, n.y, 8, 0, 7); x.fill(); }
     // 文字
     x.textAlign = 'center'; x.fillStyle = '#ffcc00'; x.font = 'bold 26px sans-serif'; x.fillText(z.cap, cx, 32);
@@ -2395,10 +2397,12 @@ const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { cons
 function noseTgt(g, k) { const [u, v] = DV[k]; return { x: g.cx - u * g.h, y: g.cy - v * g.h }; }   // 本人の右＝映像の x が小さい側
 function drawNose(t, pts) {
   const g = G, u = OVU;
-  if (!g.hideC) { oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(g.cx, g.cy, 13 * u, 0, 7); oc.fill(); oc.fillStyle = '#000'; oc.beginPath(); oc.arc(g.cx, g.cy, 4 * u, 0, 7); oc.fill(); }
-  if (g.tgt) { const p = g.tgt; oc.shadowColor = '#ffcc00'; oc.shadowBlur = 18 * u; oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(p.x, p.y, 18 * u, 0, 7); oc.fill(); oc.shadowBlur = 0; }
-  if (g.mark) { const m = g.mark, q = g.markTo; if (q) { oc.strokeStyle = 'rgba(255,90,90,.8)'; oc.lineWidth = 3 * u; oc.setLineDash([8 * u, 6 * u]); oc.beginPath(); oc.moveTo(q.x, q.y); oc.lineTo(m.x, m.y); oc.stroke(); oc.setLineDash([]); }
-    oc.fillStyle = '#ff3b3b'; oc.strokeStyle = '#fff'; oc.lineWidth = 3 * u; oc.beginPath(); oc.arc(m.x, m.y, 14 * u, 0, 7); oc.fill(); oc.stroke(); }
+  // 赤い点を残している間は、黄色い点を輪（まん中に小さな黒い点）にして、赤い点と重なっても両方見えるようにする（2026-10-18 宮崎さん「赤と黄色が完全に被ると差が見えない。赤い点はもう少し小さく」）
+  const ring = (x, y, r) => { oc.strokeStyle = '#ffcc00'; oc.lineWidth = 3 * u; oc.beginPath(); oc.arc(x, y, r, 0, 7); oc.stroke(); oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(x, y, 2.5 * u, 0, 7); oc.fill(); };
+  if (!g.hideC) { if (g.mark) ring(g.cx, g.cy, 13 * u); else { oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(g.cx, g.cy, 13 * u, 0, 7); oc.fill(); oc.fillStyle = '#000'; oc.beginPath(); oc.arc(g.cx, g.cy, 4 * u, 0, 7); oc.fill(); } }
+  if (g.tgt) { const p = g.tgt; if (g.mark) ring(p.x, p.y, 18 * u); else { oc.shadowColor = '#ffcc00'; oc.shadowBlur = 18 * u; oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(p.x, p.y, 18 * u, 0, 7); oc.fill(); oc.shadowBlur = 0; } }
+  if (g.mark) { const m = g.mark, q = g.markTo; if (q) { oc.strokeStyle = '#ff5a5a'; oc.lineWidth = 2.5 * u; oc.setLineDash([6 * u, 5 * u]); oc.beginPath(); oc.moveTo(q.x, q.y); oc.lineTo(m.x, m.y); oc.stroke(); oc.setLineDash([]); }
+    oc.fillStyle = '#ff2b2b'; oc.strokeStyle = '#fff'; oc.lineWidth = 1.5 * u; oc.beginPath(); oc.arc(m.x, m.y, 5 * u, 0, 7); oc.fill(); oc.stroke(); }
   if (pts && !g.mark) { const n = pts[1]; oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, 7 * u, 0, 7); oc.fill(); }
 }
 // 「ピッ」のあと、確定した鼻先の位置を赤い点で残す（合わせたかった点から赤い点線でつなぐ）。その間は動く鼻先の点を消す
@@ -2411,7 +2415,8 @@ async function noseMark(g, cap, to) {
 }
 function placeNose() {
   const vw = video.videoWidth || 640, vh = video.videoHeight || 480, p = last;
-  G = { cx: vw / 2, cy: vh / 2, h: Math.min(vw, vh) * NOSE_SQ, d: p ? dist(p[P.eyeOut[0]], p[P.eyeOut[1]]) : Math.min(vw, vh) * 0.2, draw: drawNose, tgt: null, hideC: false, mark: null, markTo: null };
+  const h = Math.min(vw, vh) * NOSE_SQ;   // 真ん中の点は映像のまん中より少し下（カメラが画面の上にあるので、下に置くと合わせやすい：2026-10-18 宮崎さん）。下の点が映像からはみ出さないところまで
+  G = { cx: vw / 2, cy: Math.min(vh * 0.58, vh - h - vh * 0.08), h, d: p ? dist(p[P.eyeOut[0]], p[P.eyeOut[1]]) : Math.min(vw, vh) * 0.2, draw: drawNose, tgt: null, hideC: false, mark: null, markTo: null };
   return G;
 }
 const noseSnap = () => { const b = lastBs || {}; return { t: performance.now(), x: last[1].x, y: last[1].y, rot: window.__hp ? window.__hp.rot : NaN, up: window.__hp ? window.__hp.up : NaN, shut: ((b.eyeBlinkLeft || 0) + (b.eyeBlinkRight || 0)) / 2 }; };
@@ -2480,7 +2485,7 @@ async function runNoseA(practice) {
     const g = placeNose(), T = [];
     for (const k of shuffle(DIRS).slice(0, practice ? 2 : 8)) {
       if (my !== tok) return;
-      g.tgt = null; g.hideC = false; cue('鼻先を真ん中の点に', 'top');
+      g.tgt = null; g.hideC = false; cue('スマホを動かして、鼻先を真ん中の点に', 'top');
       const ref = await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
       g.tgt = noseTgt(g, k); cue('', 'thin top', ''); beep(); said = ''; say(DJ[k]);
       const at = await noseOn(g.tgt); if (my !== tok) return;
@@ -2508,7 +2513,7 @@ async function runNoseB(practice) {
     // 1か所ずつ：目を開けたまま点へ（感覚を覚える）→ 真ん中へ戻る → 目をつぶったまま同じ点へ → 3秒後に「ピッ」（2026-10-18 宮崎さん「最初に1回、目を開けたまま点まで動かして感覚を覚え、真ん中に戻る。次は『目をつぶったままいきます』」）
     for (const k of shuffle(DIRS).slice(0, practice ? 2 : 8)) {
       if (my !== tok) return;
-      g.tgt = null; g.hideC = false; cue('鼻先を真ん中の点に', 'top');
+      g.tgt = null; g.hideC = false; cue('スマホを動かして、鼻先を真ん中の点に', 'top');
       await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
       g.tgt = noseTgt(g, k); cue('', 'thin top', ''); beep(); said = ''; say(DJ[k]);
       O[k] = await noseOn(g.tgt); if (my !== tok) return;
