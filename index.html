@@ -94,6 +94,7 @@ html.funnel,html.funnel body{background:#f6f4ef;color:#1d2a33;font-family:"M PLU
 .funnel main button{background:#e07b39;font-size:20px;font-weight:800;border-radius:16px;padding:18px 12px;box-shadow:0 4px 0 #b65d26;margin:14px 0}
 .funnel main button.sub{background:#fff;color:#1d2a33;border:2px solid #e3ded3;box-shadow:none;font-size:17px}
 .funnel #loadState{text-align:center}
+.funnel #sMain{color:#f2f2f2}.funnel #sMain .small{color:#aab}   /* 検査中の全画面は黒地なので字は白に戻す（LP の濃い字を受け継いで、黒地に黒字で読めなかった：2026-10-18 宮崎さん） */
 .funnelOnly{display:none}.funnel .funnelOnly{display:block}.funnel .staffOnly,.funnel #bStart,.funnel #sIntro h2,.funnel #sIntro h2+p,.funnel #pick,.funnel .row2{display:none}
 </style>
 </head>
@@ -395,9 +396,11 @@ function cue(html, cls = '', voice) { const c = $('cue'); if (G && !/low|top/.te
 let VOICE = localStorage.getItem('fntVoice') !== 'off', said = '', jaV = null;
 // 声は ElevenLabs で前もって作った音声（voice/）を流す。無い文だけ端末の声で読む（2026-10-14 宮崎さん「音声は連携してあるAIの声で」）
 // 文を足したら tools/voice_build.py を走らせて voice/ を作り直す
+// お客さん用の入口（LP /check から開く）は、やさしい女性の声（voice_f/・ElevenLabs の Ado）。tools/voice_build.py --funnel で作る（2026-10-18 宮崎さん「男性の声じゃなくて、優しい女性の声に」）
+const VDIR = STAFF ? 'voice/' : 'voice_f/';
 const VA = new Audio(); let VMAP = null;
 const vkey = t => t.replace(/[\s。]/g, '');
-fetch('voice/index.json', { cache: 'no-cache' }).then(r => r.json()).then(m => { VMAP = m; }).catch(() => {});
+fetch(VDIR + 'index.json', { cache: 'no-cache' }).then(r => r.json()).then(m => { VMAP = m; }).catch(() => {});
 const toSpeech = html => { const d = document.createElement('div'); d.innerHTML = String(html).replace(/<br\s*\/?>/g, '。').replace(/<small>/g, '。'); d.querySelectorAll('button').forEach(b => b.remove());
   return d.textContent.replace(/「∞」/g, '8の字').replace(/∞/g, '8の字').replace(/(\d+)(周目|往復目)／\d+/g, '$1$2').replace(/／/g, '、').replace(/\s+/g, ' ').replace(/。+/g, '。').replace(/^。|。$/g, '').trim(); };
 function say(html) {
@@ -409,13 +412,16 @@ function say(html) {
   said = t;
   if (!VOICE) return;
   const f = VMAP && VMAP[vkey(u)];
-  if (f) { try { speechSynthesis.cancel(); } catch (e) {} vplay('voice/' + f); return; }
+  if (f) { try { speechSynthesis.cancel(); } catch (e) {} vplay(VDIR + f); return; }
   if (STAFF && VMAP) { (window.__voiceMiss = window.__voiceMiss || []).push(u); console.log('[voice] 音声ファイルなし：' + u); }
   if (!window.speechSynthesis) return;
   VA.pause();
   try { speechSynthesis.cancel(); const x = new SpeechSynthesisUtterance(u); x.lang = 'ja-JP'; x.rate = 1.1;
-    jaV = jaV || speechSynthesis.getVoices().find(v => /^ja/i.test(v.lang)); if (jaV) x.voice = jaV; speechSynthesis.speak(x); } catch (e) {}
+    jaV = jaV || pickJa(); if (jaV) x.voice = jaV; speechSynthesis.speak(x); } catch (e) {}
 }
+// 端末の声：お客さん用は女性の声を選ぶ（Kyoko・O-ren・Google 日本語 など。男性の Otoya・Hattori・Ichiro・Keita は外す）
+function pickJa() { const v = speechSynthesis.getVoices().filter(x => /^ja/i.test(x.lang)); if (STAFF) return v[0];
+  return v.find(x => /Kyoko|O-ren|Haruka|Nanami|Ayumi|Sayaka|Mizuki|Google/i.test(x.name)) || v.find(x => !/Otoya|Hattori|Ichiro|Keita|Daichi|Naoki/i.test(x.name)) || v[0]; }
 // 読み上げが終わるまで待つ（2026-10-16 夜 宮崎さん「VOR で音声の説明が読み終わる前に次に進んでしまう」）。鳴っていなければすぐ返る。max ミリ秒で打ち切る
 async function voiceQuiet(max = 9000) { const my = tok, t0 = performance.now(); await sleep(150);
   while (my === tok && VOICE && performance.now() - t0 < max && ((!VA.paused && !VA.ended) || (window.speechSynthesis && speechSynthesis.speaking))) await sleep(100); }
@@ -767,12 +773,13 @@ function demoNose(kind) {
   const C = { x: cx, y: cy }, off = [[14, -10], [-12, 12], [10, 14], [-14, -8]];
   // 1コマの中身：n＝鼻先、tg＝光る点、ghost＝目を閉じている間の行き先（点線の輪）、shut＝目を閉じている、cnt＝確定までの数、cap＝見出し、say＝声の吹き出し
   function A(e) {   // 元の検査の流れ：鼻先を真ん中に → 目を閉じて右（左）へ回し切る → 2秒止める → ゆっくり真ん中へ → 止まったら「ピッ」
-    const D = ['R', 'L'], per = 8200, i = Math.floor(e / per), k = D[i % D.length], f = e % per, F = { x: cx + DV[k][0] * 150, y: cy + 6 }, o = off[i % 4], E = { x: cx + o[0], y: cy + o[1] };
+    const D = ['R', 'L'], per = 11200, i = Math.floor(e / per), k = D[i % D.length], f = e % per, F = { x: cx + DV[k][0] * 150, y: cy + 6 }, o = off[i % 4], E = { x: cx + o[0], y: cy + o[1] };
     if (f < 900) return { n: C, cap: '① 鼻先を真ん中の点に' };
     if (f < 2300) return { n: mv(C, F, (f - 900) / 1000), shut: true, cap: `② 目を閉じて${DJ[k]}へ回し切る`, say: f < 1700 ? `${DJ[k]}へ` : '' };
     if (f < 4300) return { n: F, shut: true, cnt: 2 - Math.floor((f - 2300) / 1000), cntLab: '止める', cap: '③ 2秒止める' };
     if (f < 6400) return { n: mv(F, E, (f - 4300) / 2000), shut: true, cap: '④ ゆっくり真ん中へ' };
-    return { n: E, pi: f < 7000, mark: E, markTo: C, cap: '⑤「ピッ」で目を開ける' };
+    if (f < 9400) return { n: E, shut: true, cap: '④ 止めて「ピッ」を待つ' };
+    return { n: E, pi: f < 10000, mark: E, markTo: C, cap: '⑤「ピッ」で目を開ける' };
   }
   function B(e) {   // 1か所ずつ：目を開けて点へ → 真ん中へ戻る → 目をつぶったまま同じ点へ → ピッ → 赤い点が残る
     const D = ['R', 'UL', 'D', 'DR'], per = 7800, i = Math.floor(e / per), k = D[i % D.length], f = e % per, T = P(k), o = off[i % 4], E = { x: T.x + o[0], y: T.y + o[1] };
@@ -2534,7 +2541,7 @@ const NOSE_A_T = '14. 鼻先を合わせる①（目を閉じて真ん中へ）'
 function noseStart() { try { const A = window.AudioContext || window.webkitAudioContext; endBeep.a = endBeep.a || new A(); endBeep.a.resume(); } catch (e) {} }   // 音はボタンを押したときに用意しないと鳴らない端末がある
 // 説明はひとことに（2026-10-18 宮崎さん「目をつぶって顔を中心に戻せるかのテストです、ぐらいシンプルに」）。練習は2か所だけ・記録しない（同「ちょっと難しいので簡単な練習を」）
 const NOSE_SUB = '<small>3秒後に鼻先の位置を確定します。「ピッ」と鳴ったら目を開ける</small>';
-const NOSE_SUB_A = '<small>右・左へ回し切って2秒止め、ゆっくり戻す。止まると「ピッ」。鳴ったら目を開ける</small>';   // ①は元の検査の流れ（右3回・左3回）
+const NOSE_SUB_A = '<small>右・左へ回し切って2秒止め、ゆっくり戻す。戻したら「ピッ」まで止めて待つ。鳴ったら目を開ける</small>';   // ①は元の検査の流れ（右3回・左3回）
 function noseIntro(step, title, head, kind, run, practiced) {
   show(step, title); placeNose();
   const t = (practiced === true ? '練習おわり。次は本番です<br>' : '') + head + (kind === 'noseA' ? NOSE_SUB_A : NOSE_SUB);
@@ -2548,7 +2555,7 @@ const stepNoseB = practiced => noseIntro(15, NOSE_B_T, '目をつぶって<br><b
 // 鼻先を真ん中の点に合わせる → 目を閉じて右（左）へ回せるところまで回す → 2秒止める → ゆっくり真ん中へ戻す → 止まったら「ピッ」。右3回 → 左3回
 // 前は8つの点のどれかへ鼻先を動かしてから戻していた。4.5°の基準は頭を回し切ってから戻す検査のものなので、流れを元の検査に合わせた。上下は基準に無いので測らない
 // 回すときは横顔になって顔が読めなくなることがある（そのときも「回した」とみなす）。戻ってきて頭の向きが止まった所で確定する
-const NOSE_A_SEQ = ['R', 'R', 'R', 'L', 'L', 'L'], NOSE_TURN = 15, NOSE_TURN_MAX = 7000, NOSE_STAY = 2000, NOSE_BACK_MIN = 800, NOSE_BACK_MAX = 10000, NOSE_STILL = 700, NOSE_STILL_DEG = 1.5, NOSE_NEAR = 30;
+const NOSE_A_SEQ = ['R', 'R', 'R', 'L', 'L', 'L'], NOSE_TURN = 15, NOSE_TURN_MAX = 7000, NOSE_STAY = 2000, NOSE_BACK_MIN = 5000, NOSE_BACK_MAX = 12000, NOSE_STILL = 700, NOSE_STILL_DEG = 1.5, NOSE_NEAR = 30;
 // 回し切ったか：頭の向き（カメラの読み）が真ん中から NOSE_TURN° 以上動いた、または顔が0.4秒続けて見えなくなった
 async function noseTurned(ref, max) {
   const my = tok, t0 = performance.now(); let lost = null;
@@ -2560,6 +2567,7 @@ async function noseTurned(ref, max) {
   }
   return false;
 }
+// 「ゆっくり真ん中へ戻す」から NOSE_BACK_MIN（5秒）たつまでは鳴らさない（3秒では短かった：2026-10-18 宮崎さん「5秒にしてほしい」）
 // 戻って止まったか：顔が見えて、真ん中から NOSE_NEAR° 以内に戻り、NOSE_STILL ミリ秒のあいだ頭の向きの揺れが NOSE_STILL_DEG° 未満。止まったら「ピッ」で確定（最後の 0.3 秒の位置）
 async function noseBack(ref) {
   const my = tok, t0 = performance.now(), a = []; let ok = false;
@@ -2592,7 +2600,7 @@ async function runNoseA(practice) {
       const turned = await noseTurned(ref, NOSE_TURN_MAX); if (my !== tok) return;
       await voiceQuiet(3000); if (my !== tok) return;
       cue('そのまま、2秒止める', 'top'); await sleep(NOSE_STAY); if (my !== tok) return;
-      cue('ゆっくり真ん中へ戻す', 'top');
+      cue('ゆっくり真ん中へ戻す<small>「ピッ」まで止めて待つ</small>', 'top');
       const cap = await noseBack(ref); if (my !== tok) return;
       const err = ref && cap ? noseErr(ref, cap, k, g) : null;
       T.push({ k, ref, cap, err, turned, reached: !!(ref && ref.reached && cap && cap.reached), shut: cap ? cap.shut : null });

@@ -3,6 +3,7 @@
 
   python3 tools/voice_build.py          # 足りない分だけ作る（作る前に字数とクレジットを出す）
   python3 tools/voice_build.py --dry    # 一覧と字数だけ
+  python3 tools/voice_build.py --funnel # お客さん用の入口（/check から開く）の分だけを、女性の声で voice_f/ に作る（--dry も併用可）
 
 - 読み上げる文は index.html から拾う（cue・near・fail の文字列、質問、表情の合図）＋ 数字が入る文は下の EXTRA で全部並べる
 - 文 → 鍵（空白と「。」を抜いたもの）→ ファイル名 は voice/index.json。index.html の vkey() と同じ規則
@@ -17,6 +18,11 @@ OUT = ROOT / 'voice'
 API = 'https://api.elevenlabs.io'
 MODEL = 'eleven_v3'
 VOICE = '1cOJcfrlMmUCGpeJbXg9'   # リョウ
+# お客さん用の入口は、やさしい女性の声（2026-10-18 宮崎さん「男性の声じゃなくて、優しい女性の声に」）。Ado - Mature & Soothing（日本語・女性）
+FUNNEL = '--funnel' in sys.argv
+if FUNNEL: VOICE, OUT = 'jWxWvPtq4PJFwe66Y9xi', ROOT / 'voice_f'
+# お客さん用で流れる段（/check：首を横に倒す・線をまっすぐ・鼻先を合わせる①）と、その前後の共通の段。足したらここにも足す
+FUNNEL_FN = ['stepAlign', 'gate', 'motionStart', 'recorded', 'fail', 'stepSide', 'stepSvv', 'svvTrial', 'noseIntro', 'stepNoseA', 'runNoseA', 'noseMark', 'countdown']
 
 def to_speech(h):   # index.html の toSpeech() と同じ変換
     t = re.sub(r'<br\s*/?>', '。', h).replace('<small>', '。')
@@ -51,7 +57,7 @@ def texts():
     nsub = '3秒後に鼻先の位置を確定します。「ピッ」と鳴ったら目を開ける'   # 鼻先を合わせる①②の説明（2026-10-18）
     for h in ['目をつぶって。顔を中心に戻せるかのテストです', '目をつぶって。覚えた点に顔を向けられるかのテストです']:
         E.add(h + '。' + nsub)
-    E.add('目をつぶって。顔を中心に戻せるかのテストです。右・左へ回し切って2秒止め、ゆっくり戻す。止まると「ピッ」。鳴ったら目を開ける')   # ①を元の検査の流れにした説明（2026-10-18・NOSE_SUB_A）
+    E.add('目をつぶって。顔を中心に戻せるかのテストです。右・左へ回し切って2秒止め、ゆっくり戻す。戻したら「ピッ」まで止めて待つ。鳴ったら目を開ける')   # ①を元の検査の流れにした説明（2026-10-18・NOSE_SUB_A）
     E |= {'次は。' + k for k in ['よこ', 'たて', 'ななめ（右上↔左下）', 'ななめ（左上↔右下）']}
     E |= {'見つめたまま。あと10秒', '見つめたまま。あと4秒'}
     E |= {f'{d}へ。倒せるところまで' for d in ('右', '左')}   # 首を横に倒す（2026-10-16）
@@ -89,6 +95,19 @@ def texts():
     E |= {'目を開けて'}   # 鼻先を合わせる（2026-10-18）：ズレの数字は字だけ、声は「目を開けて」
     for w in ['両肩が見えている時間が短すぎました', '肩が見えている時間が短すぎました', '口の開き方を読み取れませんでした']:
         E.add(f'{w}。顔を画面に入れて、もう一度どうぞ')
+    if FUNNEL:   # お客さん用：流れる段の関数の中にある文と、その段で数字・組み合わせが入る文だけ
+        F = set()
+        for fn in FUNNEL_FN:
+            m = re.search(r'(?:async )?function ' + fn + r'\(|const ' + fn + r' =', s)
+            if not m: sys.exit('関数が見つからない：' + fn)
+            body = s[m.start():s.find('\n}', m.start())] if s[m.start():].startswith(('function', 'async')) else s[m.start():s.find('\n', m.start())]
+            for q in re.finditer(r"\b(?:cue|near|fail|svvMsg)\((?:[a-zA-Z]+,\s*)?(['`])((?:(?!\1).)*)\1", body, re.S):
+                if '${' not in q.group(2): F.add(to_speech(q.group(2)))
+        keep = lambda t: (t in F or re.fullmatch(r'\d+', t) or '倒せるところまで' in t or t.startswith('顔の位置を合わせます') or '顔を中心に戻せるか' in t
+                          or t in ('OK。下の「次へ」を押してください', 'スマホをまっすぐ縦に', 'スマホを顔に近づけて。画面で見える範囲がほぼ埋まるくらい', 'その近さのまま', '目を開けて', '真ん中に戻す', '真ん中', '練習おわり。次は本番です',
+                                   '線をまっすぐ縦に。スマホを傾けて合わせ、止める。1回10秒', '次はまっすぐ横に。スマホを傾けて合わせ、止める。1回10秒')
+                          or re.match(r'(顔が見つかりませんでした|顔が見えている時間が短すぎました)。顔を画面に入れて', t))
+        return sorted(t for t in (S | E) if t and keep(t))
     return sorted(t for t in (S | E) if t)
 
 YOMI = {'右': 'みぎ', '左': 'ひだり', '上': 'うえ', '下': 'した', '右上': 'みぎうえ', '左上': 'ひだりうえ', '右下': 'みぎした', '左下': 'ひだりした', '真ん中': 'まんなか', '眉間（赤い点）を。黄色い点に合わせて': 'みけん（赤い点）を。黄色い点に合わせて'}   # VOR の向き（1語だけだと読み違えるので、かなで読ませる）
