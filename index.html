@@ -2512,7 +2512,7 @@ function jpe(o, back) {
 function jpeHTML(o, back) {
   const J = jpe(o, back); if (J.mean == null) return '';
   const cm = J.cm || JPE_CM0, cmW = J.cm ? `顔から約${J.cm}cm` : `顔から${JPE_CM0}cmとして`;
-  const rows = Object.keys(J.g).map(s => { const d = J.g[s], over = d != null && d > JPE_DEG; return `<span style="color:${over ? '#ff8a65' : 'inherit'}">${JPE_J[s]}${back && noseTurnFmt(o) ? 'へ回して戻す（3回の平均）' : 'から戻す'}：${d != null ? `<b>${d}°</b>（画面の上 ${f1(tanCm(d, cm))}cm）` : '—'}${over ? '・基準超え' : ''}</span>`; }).join('<br>');
+  const rows = Object.keys(J.g).map(s => { const d = J.g[s], over = d != null && d > JPE_DEG; return `<span style="color:${over ? '#ff8a65' : 'inherit'}">${JPE_J[s]}${back && noseTurnFmt(o) ? 'へ回して戻す（3回の平均）' : back ? 'から戻す' : 'への点'}：${d != null ? `<b>${d}°</b>（画面の上 ${f1(tanCm(d, cm))}cm）` : '—'}${over ? '・基準超え' : ''}</span>`; }).join('<br>');
   const head = back
     ? `<b>判定（首の位置感覚）：${J.bad.length ? `<span style="color:#ff8a65">首の位置感覚の乱れ（${J.bad.map(s => JPE_J[s]).join('・')}から戻すとき）</span>` : '<span style="color:#5ad18b">基準内</span>'}</b>`
     : `<b>参考（首の位置感覚の基準を当てた目安）</b><br><span class="small">②は「目を閉じて真ん中へ戻す」元の検査とは違う動きなので、判定はしない</span>`;
