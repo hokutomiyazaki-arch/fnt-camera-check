@@ -6,6 +6,7 @@
 - 公開先：https://hokutomiyazaki-arch.github.io/fnt-camera-check/（カメラは https でないと起動しないので GitHub Pages）
 - **トレーナー用だけ**（2026-10-18 宮崎さん「クライアント用は不要。ちゃんと結果が出せるトレーナー用だけ」）。どの URL でも各段の数字・内部の判定・見立て・記録のコピーが出る（前の `?staff=1` は付けても付けなくても同じ）。記録はこの端末（localStorage の `fntcc_runs`・最新30件）に残る
 - **検査を選んで測れる**（2026-10-18 宮崎さん「毎回最初から検査するのは大変。トップページで『このテスト』って選べるように」）：トップに「全部を通して検査する」と、検査ごとのチェック欄。選んだものだけを並び順に測り、最後の検査のあと記録の画面へ。目の検査は目の準備を省いても、始める前に自動で目の合わせをする。前に選んだものは端末に覚える。直接のリンク：`?t=side,vor` のように key（tilt・side・eight・neck・face・prep・pursuit・okn・vor・conv・tongue・jaw・svv・ask）を並べる。記録の `plan` に測った検査が入る
+- **ファネル用の入り口**（2026-10-18）：`?t=side,noseA,svv&back=/check` のように `back`（同じサイトの中の道のり）を付けて開くと、お客さん向け（数字・判定を出さない・トレーナー用の札なし・トップは「チェックを始める」だけ）で選んだ検査を流し、終わったら記録を `fntcc_runs` に残して `back#cc=<started>` へ戻る。からだの神経チェック（`~/dev/fnt-optin/check.html`）が `go.functional-neuro-training.com/cc/start`（Vercel が GitHub Pages のこのアプリをそのまま中継）から呼ぶ。**ここを直せば /check の検査も同じに変わる**
 - この「トップで選んで、選んだ段だけ流す」作り（index.html の `TESTS`・`planNext`）は、ほかの診断LPにも移せる
 - 道具：MediaPipe FaceLandmarker（tasks-vision 1.1.0・CDN・視線の値 blendshapes も使う）。映像は端末の外へ送らない
 - 指示はいつも画面の真ん中に太く大きく出す（2026-10-14 宮崎さん）

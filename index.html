@@ -80,13 +80,16 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 .row2{display:flex;gap:8px}.row2 button{font-size:14px;padding:9px}
 h2{font-size:16px;margin:16px 0 2px}
 .badge{position:fixed;right:8px;top:calc(6px + env(safe-area-inset-top));font-size:11px;background:#7a3cff;color:#fff;border-radius:6px;padding:1px 6px;z-index:20}
+.funnelOnly{display:none}.funnel .funnelOnly{display:block}.funnel .staffOnly,.funnel #bStart,.funnel #sIntro h2,.funnel #sIntro h2+p,.funnel #pick,.funnel .row2{display:none}
 </style>
 </head>
 <body>
 <main>
 <div id="sIntro">
-  <h1>カメラでチェック（トレーナー用）</h1>
-  <p>カメラで顔・目・口の動きを読み取ります。全部を通して測るか、使いたい検査だけを選んで測れます。</p>
+  <h1 class="staffOnly">カメラでチェック（トレーナー用）</h1>
+  <h1 class="funnelOnly">からだの神経チェック</h1>
+  <p class="funnelOnly">カメラを使って、首と目の感覚をチェックします。音が出るようにしてください。</p>
+  <p class="staffOnly">カメラで顔・目・口の動きを読み取ります。全部を通して測るか、使いたい検査だけを選んで測れます。</p>
   <div class="res small">
     ・映像も写真も、この端末の外へは送りません（端末の中で数字にするだけです）。<br>
     ・医療の検査ではありません。痛み・めまい・気分の悪さが出たら、すぐにやめてください。<br>
@@ -145,8 +148,12 @@ let lm = null, last = null, lastBs = null, lastT = -1, rec = null, grab = null; 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // 判定と数字はいつも出す。トレーナー用だけにした（2026-10-18 宮崎さん「クライアント用は不要。ちゃんと結果が出せるトレーナー用だけを作って」）。
 // 前のお客さん用の画面（判定を隠して記録だけ残す・2026-10-14）は、STAFF の分かれ道として残してある
-const STAFF = true;
-document.body.insertAdjacentHTML('beforeend', '<div class="badge">トレーナー用</div>');
+// ファネル用の入り口（2026-10-18 宮崎さん「からだの神経チェックのテストは、このアプリから仕組みを持ってくる」）：
+// go.functional-neuro-training.com/cc/start?t=side,noseA,svv&back=/check で開くと、お客さん向け（数字・判定を出さない）に選んだ検査だけを流し、
+// 終わったら記録（localStorage の fntcc_runs。同じドメインなので /check から読める）を残して back へ戻る。back は同じサイトの中（/ から始まる）だけ
+const BACK = (() => { const b = decodeURIComponent((location.search.match(/[?&]back=([^&]+)/) || [])[1] || ''); return /^\/(?!\/)/.test(b) ? b : null; })();
+const STAFF = !BACK;
+if (STAFF) document.body.insertAdjacentHTML('beforeend', '<div class="badge">トレーナー用</div>'); else document.body.classList.add('funnel');
 let PLAN = null;   // いま測る検査の並び（トップで選んだもの。全部を通すときは全部）
 let RUN = {};                                       // この回の記録（内部用）。最後に端末へ保存する
 const newRun = () => { RUN = { v: 2, started: new Date().toISOString(), ua: navigator.userAgent }; };
@@ -359,7 +366,7 @@ function show(step, title) {
     if ($('steps').children.length !== PLAN.length + 1) $('steps').innerHTML = '<span></span>'.repeat(PLAN.length + 1);
     if (i >= 0) step = i; }
   [...$('steps').children].forEach((e, i) => e.classList.toggle('on', i <= step));
-  $('title').textContent = title;
+  $('title').textContent = BACK ? title.replace(/^\d+\.\s*/, '') : title;
   $('result').innerHTML = ''; $('btns').innerHTML = ''; $('msg').textContent = ''; $('msg').className = ''; cue('');
   CUR = title; $('bRedo').style.display = REDO()[title] ? '' : 'none';
   $('photoWrap').style.display = 'none'; dark(false); hideDot(); near(null);
@@ -2703,6 +2710,7 @@ function saveRun() {   // 前の版で撮ったのどの奥の写真は重いの
 function finish() {
   tok++; judge(); mitate(); RUN.ended = new Date().toISOString(); RUN.delegate = delegate;
   const n = saveRun();
+  if (BACK) { $('sMain').classList.add('hide'); try { video.srcObject && video.srcObject.getTracks().forEach(t => t.stop()); } catch (e) {} location.href = BACK + '#cc=' + encodeURIComponent(RUN.started); return; }
   $('sMain').classList.add('hide'); $('sEnd').classList.remove('hide');
   $('endLead').textContent = PLAN && PLAN.length < TESTS.length ? `選んだ検査（${PLAN.map(f => TESTS.find(t => t[2] === f)[1].replace(/^\d+\.\s*/, '')).join('・')}）が終わりました。` : 'すべてのチェックが終わりました。';
   $('bSideAgain').style.display = RUN.side ? '' : 'none';
@@ -2747,7 +2755,7 @@ const PICK_KEY = 'fntcc_pick';
   $('pick').onchange = pickSync;
 })();
 const picked = () => [...$('pick').querySelectorAll('input:checked')].map(i => i.value);
-function pickSync() { const n = picked().length; $('bPick').disabled = !lm || !n; $('bPick').textContent = n ? `選んだ検査を始める（${n}つ）` : '選んだ検査を始める'; localStorage.setItem(PICK_KEY, JSON.stringify(picked())); }
+function pickSync() { const n = picked().length; $('bPick').disabled = !lm || !n; $('bPick').textContent = BACK ? 'チェックを始める' : n ? `選んだ検査を始める（${n}つ）` : '選んだ検査を始める'; localStorage.setItem(PICK_KEY, JSON.stringify(picked())); }
 $('bPickAll').onclick = () => { $('pick').querySelectorAll('input').forEach(i => { i.checked = true; }); pickSync(); };
 $('bPickNone').onclick = () => { $('pick').querySelectorAll('input').forEach(i => { i.checked = false; }); pickSync(); };
 $('bPick').onclick = () => { const ks = picked(); begin(TESTS.filter(t => ks.includes(t[0])).map(t => t[2])); };
