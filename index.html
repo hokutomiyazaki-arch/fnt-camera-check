@@ -343,11 +343,11 @@ function brightness() {
 }
 
 // ── 画面の部品
-const NSTEP = 15;   // 2026-10-16 サッカード・注視を外して 16→14、首を横に倒すを足して 15
+const NSTEP = 17;   // 2026-10-16 サッカード・注視を外して 16→14、首を横に倒すを足して 15
 $('steps').innerHTML = '<span></span>'.repeat(NSTEP);
 let tok = 0, CUR = null;
 // テストの最中でも、いまのテストを最初からやり直せる（2026-10-14 宮崎さん）
-const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首を横に倒す': stepSide, '3. 首の8の字': stepEight, '4. 首の左右・上下': stepNeck, '5. 表情の左右差': stepFace, '6. 目の準備（測る前の合わせ）': stepEyePrep, '7. 点を目で追う': stepPursuit, '8. 流れる縞を見る': stepOkn, '9. 頭を動かして点を見つめる': stepVor, '10. 寄り目': stepConv, '11. 舌の出方': stepTongue, '12. 口の開け方': stepJaw, '13. 線をまっすぐにする': stepSvv });                       // 段を移ったら増える（前の段の待ちを止めるため）
+const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首を横に倒す': stepSide, '3. 首の8の字': stepEight, '4. 首の左右・上下': stepNeck, '5. 表情の左右差': stepFace, '6. 目の準備（測る前の合わせ）': stepEyePrep, '7. 点を目で追う': stepPursuit, '8. 流れる縞を見る': stepOkn, '9. 頭を動かして点を見つめる': stepVor, '10. 寄り目': stepConv, '11. 舌の出方': stepTongue, '12. 口の開け方': stepJaw, '13. 線をまっすぐにする': stepSvv, [NOSE_A_T]: stepNoseA, [NOSE_B_T]: stepNoseB });                       // 段を移ったら増える（前の段の待ちを止めるため）
 function show(step, title) {
   tok++;
   // 選んだ検査だけのときは、上の棒も選んだ数だけにする（最初の位置合わせ＋選んだ検査）
@@ -2315,7 +2315,146 @@ function analyzeSvv(T) {
   const jv = rd(V, '縦（SVV）', '球形嚢', '線の上の端'), jh = rd(H, '横（SVH）', '卵形嚢', '下がった端');
   staff(`${row(V, '縦（SVV）', '（＋＝上の端が右）')}<br>${row(H, '横（SVH）', '（＋＝右の端が下）')}
   <div class="res judge">内部の読み（仮）：${jv || jh ? jv + jh : '<br>縦・横とも正常の範囲'}<br><span class="small">Z-Health 9S Next Evolution（マニュアル p.27–28・スライド p.97）：SVV は 2.5°以上・SVH は 1.5°以上で異常。SVV は線の上の端が、SVH は下がった端が、働きの落ちた耳石の側を向く。SVV＝球形嚢寄り・SVH＝卵形嚢寄り（同 動画 Module 3）。延髄・橋なら同じ側、小脳・中脳より上なら反対側へ傾くことが多い（Vestibular Rehabilitation 印刷頁190・Carrick CNS10 Handbook p.72）。本来は暗室かバケツで周りを隠して測る。スマホだけでは周りの縦横が見えるので、数字は仮</span></div>`);
-  recorded(stepSvv, stepAsk, '次へ（最後の質問）');
+  recorded(stepSvv, stepNoseA, '次へ（鼻先を合わせる①）');
+}
+
+// ════ 14・15. 鼻先を合わせる（2026-10-18 宮崎さん。健康寿命のサービスで企画中の「鼻先を合わせる」アプリを、まずこの検査アプリに入れる）
+// ①：真ん中の点に鼻先を合わせる → 8か所のどれかに出た点へ鼻先を動かす → 目を閉じて真ん中へ戻す → 3秒後に「ピッ」で鼻先の位置を確定 → 真ん中からのズレ
+// ②：目を開けて8か所の点に鼻先を合わせて覚える（1か所ごとに真ん中へ戻る）→ 目を閉じて同じ8か所へ → 3秒後に「ピッ」で確定 → 目を開けて合わせた位置からのズレ
+// ズレは2つで残す：頭の向き（顔の向きの行列。度）と、画面の上の鼻先の位置（目じりの間＝1）。カメラは回旋を8割・上下を半分ほどに小さく読む（2026-10-16 首を横に倒すで実測）ので、度は目安。
+// どこからを「ズレが大きい」とするかは、まだ決めていない（数字を出すだけ）
+const NOSE_AH = 0.7, NOSE_AV = 0.4, NOSE_DIAG = 0.75, NOSE_TOL = 0.12, NOSE_HOLD = 400, NOSE_WAIT = 6000, NOSE_LOCK = 3000;   // 点の位置（首の左右・上下の線と同じ幅）・合ったとみなす距離・合ったまま待つ・合わなくても進むまで・確定までのミリ秒
+const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+function noseTgt(g, k) { const [u, v] = DV[k], s = u && v ? NOSE_DIAG : 1; return { x: g.cx - u * NOSE_AH * s * g.d, y: g.cy - v * NOSE_AV * s * g.d }; }   // 本人の右＝映像の x が小さい側
+function drawNose(t, pts) {
+  const g = G, u = OVU;
+  if (g.mark) { const { a, b } = g.mark; oc.strokeStyle = '#fff'; oc.lineWidth = 3 * u; oc.setLineDash([8 * u, 6 * u]); oc.beginPath(); oc.moveTo(a.x, a.y); oc.lineTo(b.x, b.y); oc.stroke(); oc.setLineDash([]);
+    oc.strokeStyle = '#ffcc00'; oc.lineWidth = 3 * u; oc.beginPath(); oc.arc(a.x, a.y, 16 * u, 0, 7); oc.stroke();
+    oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(b.x, b.y, 9 * u, 0, 7); oc.fill(); }
+  if (!g.hideC) { oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(g.cx, g.cy, 13 * u, 0, 7); oc.fill(); oc.fillStyle = '#000'; oc.beginPath(); oc.arc(g.cx, g.cy, 4 * u, 0, 7); oc.fill(); }
+  if (g.tgt) { const p = g.tgt; oc.shadowColor = '#ffcc00'; oc.shadowBlur = 18 * u; oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(p.x, p.y, 18 * u, 0, 7); oc.fill(); oc.shadowBlur = 0; }
+  if (pts && !g.mark) { const n = pts[1]; oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, 7 * u, 0, 7); oc.fill(); }
+}
+function placeNose() {
+  const vw = video.videoWidth || 640, vh = video.videoHeight || 480, p = last;
+  G = { cx: vw / 2, cy: p ? clamp(p[1].y, vh * 0.3, vh * 0.7) : vh / 2, d: p ? dist(p[P.eyeOut[0]], p[P.eyeOut[1]]) : Math.min(vw, vh) * 0.2, draw: drawNose, tgt: null, mark: null, hideC: false };
+  return G;
+}
+const noseSnap = () => { const b = lastBs || {}; return { t: performance.now(), x: last[1].x, y: last[1].y, rot: window.__hp ? window.__hp.rot : NaN, up: window.__hp ? window.__hp.up : NaN, shut: ((b.eyeBlinkLeft || 0) + (b.eyeBlinkRight || 0)) / 2 }; };
+function noseAgg(a) { if (a.length < 3) return null; const k = f => { const v = a.map(f).filter(Number.isFinite); return v.length ? med(v) : NaN; }; return { x: k(s => s.x), y: k(s => s.y), rot: k(s => s.rot), up: k(s => s.up) }; }
+// 鼻先が p に NOSE_HOLD ミリ秒そろったら、そろっている間の位置を返す。max ミリ秒たっても合わなければ、最後の 0.4 秒の位置（reached: false）
+async function noseOn(p, max = NOSE_WAIT) {
+  const my = tok, t0 = performance.now(), a = []; let since = null;
+  while (my === tok && performance.now() - t0 < max) {
+    if (last) { const s = noseSnap(); a.push(s); const on = dist(s, p) < NOSE_TOL * G.d; since = on ? since ?? s.t : null;
+      if (since != null && s.t - since >= NOSE_HOLD) return { ...noseAgg(a.filter(x => x.t >= since)), reached: true }; }
+    await sleep(16);
+  }
+  const r = noseAgg(a.filter(x => x.t >= performance.now() - 400)); return r && { ...r, reached: false };
+}
+// 合図から NOSE_LOCK ミリ秒集めて「ピッ」。確定するのは最後の 0.3 秒の位置。目を閉じていた割合も返す
+async function noseLock() {
+  const my = tok, t0 = performance.now(), a = [];
+  while (my === tok && performance.now() - t0 < NOSE_LOCK) { if (last) a.push(noseSnap()); await sleep(16); }
+  if (my !== tok) return null;
+  beep(1320, 160);
+  const end = a.filter(s => s.t >= t0 + NOSE_LOCK - 300), r = noseAgg(end.length >= 3 ? end : a.slice(-5));
+  return r && { ...r, shut: r3(a.filter(s => s.shut >= 0.5).length / Math.max(1, a.length)) };
+}
+// ズレ：本人の右・上が＋。px は目じりの間＝1、deg は頭の向き。along は点の向きに沿った成分（①＝＋で戻り足りない、②＝＋で行きすぎ）
+function noseErr(from, to, k, g) {
+  const R = -(to.x - from.x) / g.d, U = -(to.y - from.y) / g.d, dR = to.rot - from.rot, dU = to.up - from.up, [a, b] = unitV(k);
+  return { R: r3(R), U: r3(U), px: r3(Math.hypot(R, U)), along: r3(R * a + U * b), dR: r1(dR), dU: r1(dU), deg: r1(Math.hypot(dR, dU)), dAlong: r1(dR * a + dU * b) };
+}
+const noseWord = (e, back) => { if (!e) return '読めず'; const h = Number.isFinite(e.deg);
+  const lr = h ? `${e.dR >= 0 ? '右' : '左'}${Math.abs(e.dR)}°` : `${e.R >= 0 ? '右' : '左'}${f2(Math.abs(e.R))}`, ud = h ? `${e.dU >= 0 ? '上' : '下'}${Math.abs(e.dU)}°` : `${e.U >= 0 ? '上' : '下'}${f2(Math.abs(e.U))}`;
+  const al = h ? e.dAlong : e.along, w = Math.abs(al) < (h ? 1 : 0.05) ? '' : back ? (al > 0 ? '・戻り足りない' : '・戻りすぎ') : (al > 0 ? '・行きすぎ' : '・届かない');
+  return `<b>${h ? e.deg + '°' : f2(e.px)}</b>（${lr}・${ud}${w}）`; };
+// ズレの図：真ん中＝合わせたい位置。赤い点＝目を閉じて確定した位置（本人から見た向き＝鏡と同じ）
+function noseSVG(T) {
+  const ok = T.filter(t => t.err), m = Math.max(0.15, ...ok.map(t => Math.max(Math.abs(t.err.R), Math.abs(t.err.U)))), S = 100 / m / 1.15;
+  const dots = ok.map(t => { const x = 120 + t.err.R * S, y = 120 - t.err.U * S; return `<line x1="120" y1="120" x2="${x}" y2="${y}" stroke="#ff8a8a" stroke-width="1.5"/><circle cx="${x}" cy="${y}" r="5" fill="#ff5a5a"/><text x="${x + 7}" y="${y + 4}" fill="#dfe3ea" font-size="11">${DJ[t.k]}</text>`; }).join('');
+  return `<svg viewBox="0 0 240 240" width="240" height="240" style="display:block;margin:6px auto;background:#11151c;border-radius:10px"><circle cx="120" cy="120" r="${0.1 * S}" fill="none" stroke="#2b2f38"/><line x1="120" y1="10" x2="120" y2="230" stroke="#2b2f38"/><line x1="10" y1="120" x2="230" y2="120" stroke="#2b2f38"/><circle cx="120" cy="120" r="7" fill="#ffcc00"/>${dots}<text x="8" y="232" fill="#8f97a8" font-size="10">灰色の輪＝鼻先 0.1（目じりの間＝1）</text></svg>`;
+}
+function noseSum(T, back) {
+  const ok = T.filter(t => t.err), d = ok.map(t => t.err.deg).filter(Number.isFinite), p = ok.map(t => t.err.px);
+  const worst = ok.slice().sort((a, b) => (b.err.deg || b.err.px) - (a.err.deg || a.err.px))[0];
+  return { n: ok.length, meanDeg: d.length ? r1(mean(d)) : null, meanPx: p.length ? r3(mean(p)) : null, worst: worst ? worst.k : null, open: ok.filter(t => t.shut != null && t.shut < 0.5).map(t => t.k), back };
+}
+function noseHTML(o, back, lab) {
+  const S = o.sum, rows = DIRS.map(k => { const t = o.trials.find(x => x.k === k); return `${DJ[k]}${back ? 'から' : 'へ'}：${t ? noseWord(t.err, back) : '—'}${t && !t.reached ? '<span style="color:#ff8a65">・点に合わないまま進んだ</span>' : ''}${t && t.shut != null && t.shut < 0.5 ? '<span style="color:#ff8a65">・目が開いていた</span>' : ''}`; });
+  return `${lab}：ズレの平均 <b>${S.meanDeg != null ? S.meanDeg + '°' : '—'}</b>（画面の上 ${f2(S.meanPx)}）・いちばん大きい向き <b>${S.worst ? DJ[S.worst] : '—'}</b>${noseSVG(o.trials)}${rows.join('<br>')}<br><span class="small">度は頭の向き（＋＝本人の右・上）。カメラは回旋を8割・上下を半分ほどに小さく読むので目安。画面の上の数字は鼻先の位置（目じりの間＝1）。どこからを問題とするかは、まだ決めていない${S.open.length ? `<br><span style="color:#ff8a65">※目が開いていた回：${S.open.map(k => DJ[k]).join('・')}（確定までの3秒の半分以上で目が開いていた）</span>` : ''}</span>`;
+}
+const NOSE_A_T = '14. 鼻先を合わせる①（目を閉じて真ん中へ）', NOSE_B_T = '15. 鼻先を合わせる②（目を閉じて8つの点へ）';
+function noseStart() { try { const A = window.AudioContext || window.webkitAudioContext; endBeep.a = endBeep.a || new A(); endBeep.a.resume(); } catch (e) {} }   // 音はボタンを押したときに用意しないと鳴らない端末がある
+async function stepNoseA() {
+  show(14, NOSE_A_T); placeNose();
+  cue('鼻先（赤い点）を<b>出てきた点</b>へ<br>そこから<b>目を閉じて真ん中へ</b>戻す<br>3秒後に鼻先の位置を確定します<small>「ピッ」と鳴ったら目を開ける。8か所</small>', 'top');
+  btn('始める', async () => {
+    const my = tok; clearBtns(); noseStart(); await voiceQuiet(); if (my !== tok) return;
+    let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
+    if (!last) return fail(stepNoseA, '顔が見つかりませんでした');
+    const g = placeNose(), T = [];
+    for (const k of shuffle(DIRS)) {
+      if (my !== tok) return;
+      g.mark = null; g.tgt = null; g.hideC = false; cue('鼻先を真ん中の点に', 'top');
+      const ref = await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
+      g.tgt = noseTgt(g, k); cue('', 'thin top', ''); beep(); said = ''; say(DJ[k]);
+      const at = await noseOn(g.tgt); if (my !== tok) return;
+      g.tgt = null; cue('目を閉じて、真ん中へ', 'top');
+      const cap = await noseLock(); if (my !== tok) return;
+      const err = ref && cap ? noseErr(ref, cap, k, g) : null;
+      T.push({ k, ref, at, cap, err, reached: !!(ref && ref.reached && at && at.reached), shut: cap ? cap.shut : null });
+      if (cap && ref) g.mark = { a: { x: ref.x, y: ref.y }, b: { x: cap.x, y: cap.y } };
+      cue(`${DJ[k]}から：ズレ ${err ? (Number.isFinite(err.deg) ? err.deg + '°' : f2(err.px)) : '読めず'}`, 'top', '目を開けて');
+      await sleep(1800);
+    }
+    if (my !== tok) return;
+    G = null; cue('');
+    const o = { trials: T, d: r3(g.d) }; o.sum = noseSum(T, true); RUN.noseA = o;
+    if (!o.sum.n) return fail(stepNoseA, '顔が見えている時間が短すぎました');
+    staff(noseHTML(o, true, '目を閉じて真ん中へ戻したときの、最初の真ん中からのズレ'));
+    recorded(stepNoseA, stepNoseB, '次へ（鼻先を合わせる②）');
+  });
+}
+async function stepNoseB() {
+  show(15, NOSE_B_T); placeNose();
+  cue('目を開けて<b>8つの点</b>に鼻先を合わせ<br>次に<b>目を閉じて</b>同じ点へ<br>3秒後に鼻先の位置を確定します<small>「ピッ」と鳴ったら目を開ける</small>', 'top');
+  btn('始める', async () => {
+    const my = tok; clearBtns(); noseStart(); await voiceQuiet(); if (my !== tok) return;
+    let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
+    if (!last) return fail(stepNoseB, '顔が見つかりませんでした');
+    const g = placeNose(), O = {}, T = [];
+    // 目を開けて8か所を覚える（1か所ごとに真ん中へ戻る）
+    for (const k of shuffle(DIRS)) {
+      if (my !== tok) return;
+      g.tgt = null; cue('鼻先を真ん中の点に', 'top');
+      await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
+      g.tgt = noseTgt(g, k); cue('', 'thin top', ''); beep(); said = ''; say(DJ[k]);
+      O[k] = await noseOn(g.tgt); if (my !== tok) return;
+    }
+    g.tgt = null; cue('次は目を閉じて同じ8つの点へ。3秒後に鼻先の位置を確定します', 'top'); await voiceQuiet(); await sleep(600);
+    // 目を閉じて同じ点へ
+    for (const k of shuffle(DIRS)) {
+      if (my !== tok) return;
+      g.mark = null; g.hideC = false; cue('鼻先を真ん中の点に', 'top');
+      await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
+      cue('目を閉じて', 'top'); await voiceQuiet(2500); await sleep(500); if (my !== tok) return;
+      g.hideC = true; cue('', 'thin top', ''); said = ''; say(DJ[k]);
+      const cap = await noseLock(); if (my !== tok) return;
+      const open = O[k], tg = noseTgt(g, k), err = open && cap ? noseErr(open, cap, k, g) : null;
+      T.push({ k, open, cap, err, dot: cap ? { R: r3(-(cap.x - tg.x) / g.d), U: r3(-(cap.y - tg.y) / g.d) } : null, reached: !!(open && open.reached), shut: cap ? cap.shut : null });
+      g.hideC = false; if (cap && open) g.mark = { a: { x: open.x, y: open.y }, b: { x: cap.x, y: cap.y } };
+      cue(`${DJ[k]}：ズレ ${err ? (Number.isFinite(err.deg) ? err.deg + '°' : f2(err.px)) : '読めず'}`, 'top', '目を開けて');
+      await sleep(1800);
+    }
+    if (my !== tok) return;
+    G = null; cue('');
+    const o = { trials: T, d: r3(g.d) }; o.sum = noseSum(T, false); RUN.noseB = o;
+    if (!o.sum.n) return fail(stepNoseB, '顔が見えている時間が短すぎました');
+    staff(noseHTML(o, false, '目を閉じて合わせた位置の、目を開けて合わせた位置からのズレ'));
+    recorded(stepNoseB, stepAsk, '次へ（最後の質問）');
+  });
 }
 
 // ════ 13. 最後の質問：痛みの出やすい側・いまの痛み・聞こえ（2026-10-14 宮崎さん）
@@ -2325,7 +2464,7 @@ const QS = [
   { k: 'hearing', q: '左右の耳で<br>聞こえにくい側はありますか？', a: ['右が聞こえにくい', '左が聞こえにくい', 'どちらも同じ'] },
 ];
 async function stepAsk() {
-  const my = show(14, ASK_T);
+  const my = show(16, ASK_T);
   RUN.ask = {};
   for (const Q of QS) {
     const a = await new Promise(res => { $('btns').innerHTML = ''; cue(Q.q); for (const t of Q.a) btn(t, () => res(t)); });
@@ -2474,7 +2613,8 @@ function summaryLines() {
   if (jw) L.push(`12. 口の開け方：下あごのずれ ${jw.reps.map(r => r.ok ? f2(r.dev) : '—').join('・')}（＋＝右）→ ${jw.side ? jw.side + 'へずれる' : 'ずれなし'}`);
   const sv = RUN.svv; if (sv && sv.V) { const one = (o, nm) => o && o.ok ? `${nm} 平均${o.mean > 0 ? '右' : '左'}へ${Math.abs(o.mean).toFixed(1)}°（${o.each.map(e => (e > 0 ? '+' : '') + e.toFixed(1)).join('・')}）` : `${nm} —`;
     L.push(`13. 線をまっすぐにする：${one(sv.V, '縦（SVV）')}／${one(sv.H, '横（SVH）')}（＋＝時計回り＝本人の右）`); }
-  if (RUN.ask) L.push(`14. 質問：痛みが出やすい側 ${RUN.ask.painSide || '—'}／いまの痛み ${RUN.ask.painNow || '—'}／聞こえにくい耳 ${RUN.ask.hearing || '—'}`);
+  for (const [o, t] of [[RUN.noseA, '14. 鼻先を合わせる①（目を閉じて真ん中へ）'], [RUN.noseB, '15. 鼻先を合わせる②（目を閉じて8つの点へ）']]) if (o) L.push(`${t}：ズレの平均 ${o.sum.meanDeg ?? '—'}°（画面の上 ${f2(o.sum.meanPx)}）／${DIRS.map(k => { const x = o.trials.find(q => q.k === k); return `${DJ[k]} ${x && x.err ? (x.err.deg ?? '—') + '°' : '—'}`; }).join('・')}${o.sum.open.length ? '／目が開いていた回 ' + o.sum.open.map(k => DJ[k]).join('・') : ''}`);
+  if (RUN.ask) L.push(`16. 質問：痛みが出やすい側 ${RUN.ask.painSide || '—'}／いまの痛み ${RUN.ask.painNow || '—'}／聞こえにくい耳 ${RUN.ask.hearing || '—'}`);
   return L;
 }
 function saveRun() {   // 前の版で撮ったのどの奥の写真は重いので消す
@@ -2503,13 +2643,13 @@ $('bHome').onclick = () => { SIDE_AFTER = false; tok++; $('sEnd').classList.add(
 // 並びは全部を通すときと同じ。選んだものだけを上から順に測り、最後の検査のあと記録の画面へ行く。
 // 目の検査（追従・縞・VOR）は、目の準備をしていなければ始める前に自動で目の合わせをする（eyeStepStart）ので、単独でも測れる
 // 直接のリンク：?t=vor,conv のように key を並べると、その検査に印が付いた状態で開く
-const ASK_T = '14. 最後にいくつか質問';
+const ASK_T = '16. 最後にいくつか質問';
 const TESTS = [
   ['tilt', '1. ふだんの首の傾き', stepTilt, '首'], ['side', '2. 首を横に倒す', stepSide, '首'], ['eight', '3. 首の8の字', stepEight, '首'], ['neck', '4. 首の左右・上下', stepNeck, '首'],
   ['face', '5. 表情の左右差', stepFace, '顔'],
   ['prep', '6. 目の準備（測る前の合わせ）', stepEyePrep, '目'], ['pursuit', '7. 点を目で追う', stepPursuit, '目'], ['okn', '8. 流れる縞を見る', stepOkn, '目'], ['vor', '9. 頭を動かして点を見つめる', stepVor, '目'], ['conv', '10. 寄り目', stepConv, '目'],
   ['tongue', '11. 舌の出方', stepTongue, '口'], ['jaw', '12. 口の開け方', stepJaw, '口'],
-  ['svv', '13. 線をまっすぐにする', stepSvv, 'そのほか'], ['ask', ASK_T, stepAsk, 'そのほか'],
+  ['svv', '13. 線をまっすぐにする', stepSvv, 'そのほか'], ['noseA', NOSE_A_T, stepNoseA, 'そのほか'], ['noseB', NOSE_B_T, stepNoseB, 'そのほか'], ['ask', ASK_T, stepAsk, 'そのほか'],
 ];
 // cur の次に測る検査と、ボタンの文字。並びの外（ドリルのあとの測り直しなど）は null＝元の流れのまま
 function planNext(cur) {
@@ -2545,7 +2685,7 @@ async function begin(plan) {
   stepAlign();
 }
 // 確かめ用（自動の試験から各段を直接呼ぶ）
-window.__steps = { analyzeSide, sideOne, sideMix, sideDiff, sideAgain, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
+window.__steps = { analyzeSide, sideOne, sideMix, sideDiff, sideAgain, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepNoseA, stepNoseB, noseErr, noseSum, noseHTML, noseTgt, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
   analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, judgeHTML, mitate, mitateHTML, saccJudge, analyzeTilt, analyzeFace, analyzePupil, pupilOne, wrinkleCount, stepTilt, stepPupil, stepAsk, get RUN() { return RUN; }, summaryLines, P, setSideAfter: v => { SIDE_AFTER = v; }, setCAL: c => { CAL = c; }, PT, DV, planNext, begin, TESTS, get PLAN() { return PLAN; } };
 </script>
 </body>
