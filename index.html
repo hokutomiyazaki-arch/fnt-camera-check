@@ -72,6 +72,8 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 #svv canvas{position:absolute;inset:0;width:100%;height:100%}
 #svvMsg{position:absolute;left:50%;top:18%;transform:translateX(-50%);width:min(92vw,520px);text-align:center;font-weight:800;font-size:clamp(22px,6vw,30px);line-height:1.45;color:#222}
 #svvMsg small{display:block;font-size:15px;font-weight:600;color:#666;margin-top:6px}
+/* 近づける間は、白い幕を外してカメラの映像と目の枠を見せる（2026-10-18 宮崎さん「どこまで近づけたらスタートするのか全然わからない」） */
+#svv.cam{background:transparent}#svv.cam #svvMsg{top:auto;bottom:calc(14px + env(safe-area-inset-bottom));color:#fff;text-shadow:0 2px 6px #000,0 0 2px #000;background:rgba(0,0,0,.45);border-radius:14px;padding:10px 12px}#svv.cam #svvMsg small{color:#eee}
 #okn{position:absolute;inset:0;display:none;z-index:4;background:repeating-linear-gradient(90deg,#f4f4f4 0 50%,#111 50% 100%)}
 #photo{width:100%;height:100%;object-fit:contain}
 #camFix{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:30;width:auto;background:#e8590c}
@@ -2335,7 +2337,7 @@ function drawJaw({ img, pts }) {
 // 前は「止まったら完了」にしていたが、手持ちのスマホは止めても1°以上揺れるので完了と読めず、全部の回が時間切れで捨てられていた（同日「読み取れなかった」）
 const SVV_NEAR = 0.28;   // 近づけたとみなす目の大きさ（目の検査の「ちょうどいい近さ」0.13〜0.20 より近い。仮）
 const SVV_TH = 2.5, SVH_TH = 1.5, SVV_N = 4, SVV_SEC = 10, SVV_TAIL = 1500, SVV_OFF = 10;   // 度・回数・1回の秒数・読む長さ(ms)・合わせられていないとみて平均から外すずれ(度)
-function svvShow(on) { $('svv').style.display = on ? 'block' : 'none'; const bd = document.querySelector('.badge'); if (bd) bd.style.visibility = on ? 'hidden' : '';   // 札の文字も縦横の手がかりになるので隠す
+function svvShow(on) { $('svv').style.display = on ? 'block' : 'none'; if (!on) { $('svv').classList.remove('cam'); if (G && G.draw === drawSvvNear) G = null; } const bd = document.querySelector('.badge'); if (bd) bd.style.visibility = on ? 'hidden' : '';   // 札の文字も縦横の手がかりになるので隠す
   if (!on) svvMsg(''); }
 function svvMsg(html) { $('svvMsg').innerHTML = html; if (html) say(html); }
 function svvLine(kind, deg) {   // deg：画面に対する線の傾き（＋＝時計回り）
@@ -2366,9 +2368,22 @@ async function svvTrial(p, my) {
   const err = th + roll;
   return { kind: p.kind, ok: true, start: r1(p.start), err: r1(err), roll: r1(roll), head: hds.length ? r1(med(hds) + roll) : null, off: Math.abs(err) > SVV_OFF, sway: r1(Math.max(...w.map(o => o.r)) - Math.min(...w.map(o => o.r))) };   // off：合わせられていない回／sway：最後の1.5秒の揺れ幅
 }
+// 近づける間の目の枠：合格の近さ（目の幅＝映像の短い辺の SVV_NEAR）で、両目の形を点線で描く。顔の輪郭は画面からはみ出す大きさ＝はみ出してよいことを絵で見せる。
+// 目の幅に対して、両目の中心の間 ≈ 2.1倍・顔の幅 ≈ 4.7倍・顔の高さ ≈ 6.3倍（おおよその顔の比率）。近さが足りると枠が緑になる
+function drawSvvNear(t, pts) {
+  const vw = video.videoWidth || 640, vh = video.videoHeight || 480, u = OVU, e = SVV_NEAR * Math.min(vw, vh), cx = vw / 2, cy = vh * 0.42;
+  const ok = G && G.near, col = ok ? '#5ad18b' : '#fff';
+  const eye = x => { oc.beginPath(); oc.moveTo(x - e / 2, cy); oc.quadraticCurveTo(x, cy - e * 0.42, x + e / 2, cy); oc.quadraticCurveTo(x, cy + e * 0.42, x - e / 2, cy); oc.stroke(); };
+  oc.setLineDash([10 * u, 8 * u]); oc.lineWidth = 7 * u; oc.strokeStyle = 'rgba(0,0,0,.5)';
+  oc.beginPath(); oc.ellipse(cx, cy + e * 0.9, e * 2.35, e * 3.15, 0, 0, 7); oc.stroke(); eye(cx - e * 1.05); eye(cx + e * 1.05);
+  oc.lineWidth = 4 * u; oc.strokeStyle = col;
+  oc.beginPath(); oc.ellipse(cx, cy + e * 0.9, e * 2.35, e * 3.15, 0, 0, 7); oc.stroke(); eye(cx - e * 1.05); eye(cx + e * 1.05);
+  oc.setLineDash([]);
+  if (pts) { oc.strokeStyle = '#ffcc00'; oc.lineWidth = 4 * u; for (let i = 0; i < 2; i++) { const a = pts[P.eyeOut[i]], b = pts[P.eyeIn[i]]; oc.beginPath(); oc.moveTo(a.x, a.y); oc.lineTo(b.x, b.y); oc.stroke(); } }   // いまの目（黄色い線）
+}
 async function stepSvv() {
   show(13, '13. 線をまっすぐにする');
-  cue('スマホを<b>手に持って</b><br><b>顔に近づける</b><small>画面で見える範囲がほぼ埋まるくらい。部屋を暗くできれば暗く</small>');
+  cue('スマホを<b>手に持って</b><br><b>顔のすぐ前に近づける</b><small>次の画面で、両目が点線の目に重なる近さまで。顔は画面からはみ出してOK。部屋を暗くできれば暗く</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
     await motionStart();
@@ -2381,12 +2396,18 @@ async function stepSvv() {
     // 2026-10-16 宮崎さん「最初にスマホを顔に近づけさせて、視界の多くがスマホの画面で覆われるように、できるだけ近めで計測」：
     // 周りの縦横（壁・窓）が見えると、それに頼って線を合わせてしまう。最初に近づけてもらい、カメラで顔の大きさを見て、遠いうちは「もっと近づけて」と出す。
     // 近すぎて顔が写らなくなったときも「近い」とみなす。12秒たったら、そのまま進む
+    // 2026-10-18 宮崎さん「どこまで近づけたらスタートするのか全然わからない。真っ白のまま」「これぐらいの大きさで画面に映るように、顔の枠を」：
+    // 近づける間だけ白い幕を外してカメラの映像を出し、合格の近さの目の枠（drawSvvNear）を重ねる。顔は画面からはみ出してよい。時間切れで進むのはやめ、合うまで待つ（25秒たったら進む）
     { const w1 = performance.now(); let okN = 0, eyeMax = 0;
-      while (my === tok && performance.now() - w1 < 12000 && okN < 10) {
+      $('svv').classList.add('cam'); G = { draw: drawSvvNear };
+      svvMsg('両目が<b>点線の目</b>に重なるまで<br>スマホを顔に近づけて<small>顔は画面からはみ出してOK。腕を曲げて、顔のすぐ前に持つ</small>');
+      while (my === tok && performance.now() - w1 < 25000 && okN < 10) {
         const v = last ? eyeSize(last) : null; if (v != null) eyeMax = Math.max(eyeMax, v);
-        const near = v == null || v >= SVV_NEAR; okN = near ? okN + 1 : 0;
-        svvMsg(near ? '<b>その近さ</b>のまま' : 'スマホを<b>顔に近づけて</b><small>画面で見える範囲がほぼ埋まるくらい</small>');
+        const near = v == null ? okN > 0 : v >= SVV_NEAR; okN = near ? okN + 1 : 0; if (G && G.draw === drawSvvNear) G.near = near;   // 顔が外れたら、直前まで近かったときだけ「近い」とみなす（始めから写っていないのは近さを測れない）
+        if (near && okN === 1) svvMsg('<b>その近さ</b>のまま');
+        else if (!near && v != null && $('svvMsg').textContent.startsWith('その近さ')) svvMsg('両目が<b>点線の目</b>に重なるまで<br>スマホを顔に近づけて<small>顔は画面からはみ出してOK。腕を曲げて、顔のすぐ前に持つ</small>');
         await sleep(150); }
+      $('svv').classList.remove('cam'); if (G && G.draw === drawSvvNear) G = null;
       if (my !== tok) return svvShow(false);
       RUN.svvNear = { eye: last ? r3(eyeSize(last)) : null, faceLost: !last, th: SVV_NEAR }; }
     for (let i = 0; i < plan.length; i++) {
