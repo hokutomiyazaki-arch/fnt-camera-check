@@ -7,6 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#0f1115">
+<script>if (/[?&]back=/.test(location.search)) document.documentElement.classList.add('funnel');</script>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;background:#0f1115;color:#f2f2f2;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;line-height:1.6;-webkit-text-size-adjust:100%}
@@ -80,6 +81,16 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 .row2{display:flex;gap:8px}.row2 button{font-size:14px;padding:9px}
 h2{font-size:16px;margin:16px 0 2px}
 .badge{position:fixed;right:8px;top:calc(6px + env(safe-area-inset-top));font-size:11px;background:#7a3cff;color:#fff;border-radius:6px;padding:1px 6px;z-index:20}
+/* お客さん用の入口は LP（go.functional-neuro-training.com/check）の明るい色・丸ゴシックに合わせる（2026-10-18）。検査中の全画面（#sMain）は黒のまま */
+html.funnel,html.funnel body{background:#f6f4ef;color:#1d2a33;font-family:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif}
+.funnel main{padding:28px 20px 40px}
+.funnel #sIntro h1{font-size:30px;font-weight:800;color:#2f7d6d;text-align:center;margin:8px 0 10px}
+.funnel #sIntro p{font-size:17px;text-align:center}
+.funnel .res{background:#fff;border:1px solid #e3ded3;color:#1d2a33;border-radius:16px;font-size:15px}
+.funnel .small{color:#5b6b76;font-size:14px}
+.funnel main button{background:#e07b39;font-size:20px;font-weight:800;border-radius:16px;padding:18px 12px;box-shadow:0 4px 0 #b65d26;margin:14px 0}
+.funnel main button.sub{background:#fff;color:#1d2a33;border:2px solid #e3ded3;box-shadow:none;font-size:17px}
+.funnel #loadState{text-align:center}
 .funnelOnly{display:none}.funnel .funnelOnly{display:block}.funnel .staffOnly,.funnel #bStart,.funnel #sIntro h2,.funnel #sIntro h2+p,.funnel #pick,.funnel .row2{display:none}
 </style>
 </head>
@@ -153,7 +164,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // 終わったら記録（localStorage の fntcc_runs。同じドメインなので /check から読める）を残して back へ戻る。back は同じサイトの中（/ から始まる）だけ
 const BACK = (() => { try { const b = new URLSearchParams(location.search).get('back'); if (!b || !b.startsWith('/')) return null; const u = new URL(b, location.origin); return u.origin === location.origin ? u.origin + u.pathname + u.search : null; } catch (e) { return null; } })();
 const STAFF = !BACK;
-if (STAFF) document.body.insertAdjacentHTML('beforeend', '<div class="badge">トレーナー用</div>'); else document.body.classList.add('funnel');
+if (STAFF) document.body.insertAdjacentHTML('beforeend', '<div class="badge">トレーナー用</div>'); else { document.body.classList.add('funnel'); document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap">'); document.querySelector('meta[name=theme-color]').content = '#f6f4ef'; document.title = 'からだの神経チェック｜FNT'; document.getElementById('bPick').textContent = 'チェックを始める'; }
 let PLAN = null;   // いま測る検査の並び（トップで選んだもの。全部を通すときは全部）
 let RUN = {};                                       // この回の記録（内部用）。最後に端末へ保存する
 const newRun = () => { RUN = { v: 2, started: new Date().toISOString(), ua: navigator.userAgent }; };
