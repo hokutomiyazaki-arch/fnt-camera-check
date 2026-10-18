@@ -49,6 +49,10 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 #bRedo{position:absolute;left:10px;top:calc(40px + env(safe-area-inset-top));width:auto;margin:0;padding:6px 12px;font-size:14px;border-radius:20px;background:rgba(0,0,0,.6);border:1px solid #556;z-index:10}
 #cue.top{top:calc(82px + env(safe-area-inset-top));transform:translateX(-50%);padding:8px 12px 12px}
 #cue.top canvas{width:170px;height:131px}
+/* 鼻先を合わせる：3行の説明は1行ずつに収める（2026-10-18 宮崎さん「もう少し文字を小さくすれば1行以内に収まる」）。見本の動画は少し大きく */
+#cue.fit{font-size:clamp(15px,4.8vw,24px);white-space:nowrap}
+#cue.fit small{white-space:normal}
+#cue.fit canvas{width:250px;height:193px}
 #bottom{display:flex;flex-direction:column}#msg.note{order:-1;font-size:15.5px;color:#eef;line-height:1.55;margin:4px 2px 2px;text-align:left}
 #cue .ok{display:inline-block;color:#5ad18b;font-size:1.5em}
 .meter{position:relative;height:16px;border-radius:8px;background:#2b2f38;margin:12px 4px 2px;overflow:hidden}
@@ -696,6 +700,7 @@ function askNausea(key, then) {
 // 画面の上の動きは本番のガイドと同じ（鏡に映った自分と同じ向き）。肩の線は動かさない
 const DEMO = '<canvas id="demoC" width="440" height="340"></canvas>';
 function demo(kind) {
+  if (/^nose/.test(kind)) return demoNose(kind);
   const c = $('demoC'); if (!c) return; const x = c.getContext('2d'), t0 = performance.now(), my = tok;
   const W = 440, cx = 220, cy = 150, A = 62, B = kind === 'eight' ? 36 : 48;
   const at = e => {   // 鼻先の位置（u＝右が＋・v＝上が＋、−1〜1）
@@ -726,6 +731,65 @@ function demo(kind) {
     x.fillStyle = '#ffcc00'; x.beginPath(); x.arc(nx, ny, 11, 0, 7); x.fill();
     x.fillStyle = '#ff5a5a'; x.beginPath(); x.arc(nx, ny, 6, 0, 7); x.fill();
     if (lab) { x.fillStyle = '#ffcc00'; x.font = 'bold 26px sans-serif'; x.textAlign = 'center'; x.fillText(lab, cx, 34); }
+    requestAnimationFrame(frame);
+  })();
+}
+
+// 鼻先を合わせる①②の見本（2026-10-18 宮崎さん「説明がものすごくわかりづらいから、最初に動画での説明を」）。
+// 線画の顔の鼻先（赤）が、本番と同じ並び（正方形の角と辺のまん中）の黄色い点へ動く。目を閉じる・3秒数える・「ピッ」まで見せる。ズレの数字は出さない
+function demoNose(kind) {
+  const c = $('demoC'); if (!c) return; const x = c.getContext('2d'), t0 = performance.now(), my = tok;
+  const W = 440, H = 340, cx = 220, cy = 182, S = 112;
+  const P = k => ({ x: cx + DV[k][0] * S, y: cy - DV[k][1] * S });
+  const ez = q => { q = clamp(q, 0, 1); return q * q * (3 - 2 * q); };
+  const mv = (a, b, q) => ({ x: a.x + (b.x - a.x) * ez(q), y: a.y + (b.y - a.y) * ez(q) });
+  const C = { x: cx, y: cy }, off = [[14, -10], [-12, 12], [10, 14], [-14, -8]];
+  // 1コマの中身：n＝鼻先、tg＝光る点、ghost＝目を閉じている間の行き先（点線の輪）、shut＝目を閉じている、cnt＝確定までの数、cap＝見出し、say＝声の吹き出し
+  function A(e) {
+    const D = ['UR', 'L', 'D', 'DR', 'UL', 'R'], per = 6600, i = Math.floor(e / per), k = D[i % D.length], f = e % per, T = P(k), o = off[i % 4], E = { x: cx + o[0], y: cy + o[1] };
+    if (f < 900) return { n: C, cap: '① 鼻先を真ん中の点に' };
+    if (f < 2400) return { n: mv(C, T, (f - 900) / 900), tg: T, cap: '② 出てきた点へ鼻先を', say: f < 1500 ? DJ[k] : '' };
+    if (f < 5400) return { n: mv(T, E, (f - 2400) / 1000), shut: true, cnt: 3 - Math.floor((f - 2400) / 1000), cap: '③ 目を閉じて真ん中へ' };
+    return { n: E, pi: f < 6000, cap: '④「ピッ」で目を開ける' };
+  }
+  function B(e) {
+    const D1 = ['R', 'UL', 'D'], D2 = ['UL', 'R'], p1 = 1900, p2 = 5400, L1 = p1 * D1.length;
+    const f0 = e % (L1 + p2 * D2.length);
+    if (f0 < L1) { const k = D1[Math.floor(f0 / p1)], f = f0 % p1, T = P(k);
+      const n = f < 300 ? C : f < 1000 ? mv(C, T, (f - 300) / 700) : f < 1400 ? T : mv(T, C, (f - 1400) / 500);
+      return { n, tg: f >= 300 && f < 1400 ? T : null, cap: '① 目を開けて8つの点へ', say: f >= 300 && f < 900 ? DJ[k] : '' }; }
+    const j = Math.floor((f0 - L1) / p2), k = D2[j], f = (f0 - L1) % p2, T = P(k), o = off[j + 1], E = { x: T.x + o[0], y: T.y + o[1] };
+    if (f < 900) return { n: C, cap: '② 目を閉じて同じ点へ' };
+    if (f < 3900) return { n: f < 1100 ? C : mv(C, E, (f - 1100) / 1000), shut: true, hideC: true, ghost: T, cnt: 3 - Math.floor((f - 900) / 1000), cap: '② 目を閉じて同じ点へ', say: f < 1700 ? DJ[k] : '' };
+    return { n: E, ghost: T, hideC: true, pi: f < 4500, cap: '③「ピッ」で目を開ける' };
+  }
+  (function frame() {
+    if (!document.body.contains(c) || my !== tok) return;
+    const z = (kind === 'noseA' ? A : B)(performance.now() - t0), n = z.n;
+    x.clearRect(0, 0, W, H); x.lineCap = x.lineJoin = 'round';
+    // 8つの点の場所（うすい点）と正方形
+    x.strokeStyle = 'rgba(255,255,255,.18)'; x.lineWidth = 2; x.strokeRect(cx - S, cy - S, 2 * S, 2 * S);
+    x.fillStyle = 'rgba(255,204,0,.22)'; for (const k of DIRS) { const q = P(k); x.beginPath(); x.arc(q.x, q.y, 7, 0, 7); x.fill(); }
+    // 顔（頭は鼻先の半分だけ動き、目鼻はもっと動く）
+    const hx = cx + (n.x - cx) * 0.5, hy = cy - 10 + (n.y - cy) * 0.5, fx = hx + (n.x - hx) * 0.35, fy = hy + (n.y - hy) * 0.25;
+    x.strokeStyle = '#cfd6e4'; x.lineWidth = 4; x.fillStyle = '#222';
+    x.beginPath(); x.ellipse(hx, hy, 46, 58, 0, 0, 7); x.fill(); x.stroke();
+    for (const s of [-1, 1]) { x.beginPath();
+      if (z.shut) { x.moveTo(fx + s * 17 - 8, fy - 14); x.quadraticCurveTo(fx + s * 17, fy - 9, fx + s * 17 + 8, fy - 14); }
+      else x.ellipse(fx + s * 17, fy - 14, 7, 4, 0, 0, 7);
+      x.stroke(); }
+    x.beginPath(); x.moveTo(fx - 12, fy + 28); x.quadraticCurveTo(fx, fy + 33, fx + 12, fy + 28); x.stroke();
+    // 点
+    if (!z.hideC) { x.fillStyle = '#ffcc00'; x.beginPath(); x.arc(cx, cy, 10, 0, 7); x.fill(); x.fillStyle = '#000'; x.beginPath(); x.arc(cx, cy, 3, 0, 7); x.fill(); }
+    if (z.tg) { x.shadowColor = '#ffcc00'; x.shadowBlur = 14; x.fillStyle = '#ffcc00'; x.beginPath(); x.arc(z.tg.x, z.tg.y, 13, 0, 7); x.fill(); x.shadowBlur = 0; }
+    if (z.ghost) { x.setLineDash([5, 5]); x.strokeStyle = 'rgba(255,204,0,.7)'; x.lineWidth = 2.5; x.beginPath(); x.arc(z.ghost.x, z.ghost.y, 13, 0, 7); x.stroke(); x.setLineDash([]); }
+    x.fillStyle = '#ff5a5a'; x.beginPath(); x.arc(n.x, n.y, 8, 0, 7); x.fill();
+    // 文字
+    x.textAlign = 'center'; x.fillStyle = '#ffcc00'; x.font = 'bold 26px sans-serif'; x.fillText(z.cap, cx, 32);
+    if (z.say) { x.fillStyle = 'rgba(255,255,255,.92)'; x.font = 'bold 22px sans-serif'; x.fillText(`🔊「${z.say}」`, 370, 330); }
+    if (z.cnt) { x.fillStyle = '#fff'; x.font = 'bold 30px sans-serif'; x.fillText(String(z.cnt), 400, 80); x.font = '15px sans-serif'; x.fillText('確定まで', 400, 52); }
+    if (z.pi) { x.fillStyle = '#5ad18b'; x.font = 'bold 34px sans-serif'; x.fillText('ピッ♪', 392, 80); }
+    if (z.shut) { x.fillStyle = 'rgba(255,255,255,.75)'; x.font = '16px sans-serif'; x.fillText('目を閉じている', 70, 330); }
     requestAnimationFrame(frame);
   })();
 }
@@ -2323,21 +2387,20 @@ function analyzeSvv(T) {
 // ②：目を開けて8か所の点に鼻先を合わせて覚える（1か所ごとに真ん中へ戻る）→ 目を閉じて同じ8か所へ → 3秒後に「ピッ」で確定 → 目を開けて合わせた位置からのズレ
 // ズレは2つで残す：頭の向き（顔の向きの行列。度）と、画面の上の鼻先の位置（目じりの間＝1）。カメラは回旋を8割・上下を半分ほどに小さく読む（2026-10-16 首を横に倒すで実測）ので、度は目安。
 // どこからを「ズレが大きい」とするかは、まだ決めていない（数字を出すだけ）
-const NOSE_AH = 0.7, NOSE_AV = 0.4, NOSE_DIAG = 0.75, NOSE_TOL = 0.12, NOSE_HOLD = 400, NOSE_WAIT = 6000, NOSE_LOCK = 3000;   // 点の位置（首の左右・上下の線と同じ幅）・合ったとみなす距離・合ったまま待つ・合わなくても進むまで・確定までのミリ秒
+// 点は、映像の中にとれるいちばん大きい正方形の、4つの角と4辺のまん中に置く。真ん中の点は映像のまん中（2026-10-18 宮崎さん「真ん中の点からもう少し離れたところに。画面の中に最大の四角を作って、その中に8個の点」）。
+// 途中ではズレを出さず、8か所が終わってから結果を出す（同「途中で何度ズレっていうのは出さなくていい」）
+const NOSE_SQ = 0.44, NOSE_TOL = 0.12, NOSE_HOLD = 400, NOSE_WAIT = 6000, NOSE_LOCK = 3000;   // 真ん中から点までの距離（映像の短い辺を1。0.5 だと点が端で切れる）・合ったとみなす距離・合ったまま待つ・合わなくても進むまで・確定までのミリ秒
 const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-function noseTgt(g, k) { const [u, v] = DV[k], s = u && v ? NOSE_DIAG : 1; return { x: g.cx - u * NOSE_AH * s * g.d, y: g.cy - v * NOSE_AV * s * g.d }; }   // 本人の右＝映像の x が小さい側
+function noseTgt(g, k) { const [u, v] = DV[k]; return { x: g.cx - u * g.h, y: g.cy - v * g.h }; }   // 本人の右＝映像の x が小さい側
 function drawNose(t, pts) {
   const g = G, u = OVU;
-  if (g.mark) { const { a, b } = g.mark; oc.strokeStyle = '#fff'; oc.lineWidth = 3 * u; oc.setLineDash([8 * u, 6 * u]); oc.beginPath(); oc.moveTo(a.x, a.y); oc.lineTo(b.x, b.y); oc.stroke(); oc.setLineDash([]);
-    oc.strokeStyle = '#ffcc00'; oc.lineWidth = 3 * u; oc.beginPath(); oc.arc(a.x, a.y, 16 * u, 0, 7); oc.stroke();
-    oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(b.x, b.y, 9 * u, 0, 7); oc.fill(); }
   if (!g.hideC) { oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(g.cx, g.cy, 13 * u, 0, 7); oc.fill(); oc.fillStyle = '#000'; oc.beginPath(); oc.arc(g.cx, g.cy, 4 * u, 0, 7); oc.fill(); }
   if (g.tgt) { const p = g.tgt; oc.shadowColor = '#ffcc00'; oc.shadowBlur = 18 * u; oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(p.x, p.y, 18 * u, 0, 7); oc.fill(); oc.shadowBlur = 0; }
-  if (pts && !g.mark) { const n = pts[1]; oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, 7 * u, 0, 7); oc.fill(); }
+  if (pts) { const n = pts[1]; oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, 7 * u, 0, 7); oc.fill(); }
 }
 function placeNose() {
   const vw = video.videoWidth || 640, vh = video.videoHeight || 480, p = last;
-  G = { cx: vw / 2, cy: p ? clamp(p[1].y, vh * 0.3, vh * 0.7) : vh / 2, d: p ? dist(p[P.eyeOut[0]], p[P.eyeOut[1]]) : Math.min(vw, vh) * 0.2, draw: drawNose, tgt: null, mark: null, hideC: false };
+  G = { cx: vw / 2, cy: vh / 2, h: Math.min(vw, vh) * NOSE_SQ, d: p ? dist(p[P.eyeOut[0]], p[P.eyeOut[1]]) : Math.min(vw, vh) * 0.2, draw: drawNose, tgt: null, hideC: false };
   return G;
 }
 const noseSnap = () => { const b = lastBs || {}; return { t: performance.now(), x: last[1].x, y: last[1].y, rot: window.__hp ? window.__hp.rot : NaN, up: window.__hp ? window.__hp.up : NaN, shut: ((b.eyeBlinkLeft || 0) + (b.eyeBlinkRight || 0)) / 2 }; };
@@ -2389,7 +2452,8 @@ const NOSE_A_T = '14. 鼻先を合わせる①（目を閉じて真ん中へ）'
 function noseStart() { try { const A = window.AudioContext || window.webkitAudioContext; endBeep.a = endBeep.a || new A(); endBeep.a.resume(); } catch (e) {} }   // 音はボタンを押したときに用意しないと鳴らない端末がある
 async function stepNoseA() {
   show(14, NOSE_A_T); placeNose();
-  cue('鼻先（赤い点）を<b>出てきた点</b>へ<br>そこから<b>目を閉じて真ん中へ</b>戻す<br>3秒後に鼻先の位置を確定します<small>「ピッ」と鳴ったら目を開ける。8か所</small>', 'top');
+  const t = '鼻先（赤い点）を<b>出てきた点</b>へ<br>そこから<b>目を閉じて真ん中へ</b>戻す<br>3秒後に鼻先の位置を確定します<small>「ピッ」と鳴ったら目を開ける。8か所</small>';
+  cue(DEMO + t, 'top fit', t); demo('noseA');
   btn('始める', async () => {
     const my = tok; clearBtns(); noseStart(); await voiceQuiet(); if (my !== tok) return;
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
@@ -2397,7 +2461,7 @@ async function stepNoseA() {
     const g = placeNose(), T = [];
     for (const k of shuffle(DIRS)) {
       if (my !== tok) return;
-      g.mark = null; g.tgt = null; g.hideC = false; cue('鼻先を真ん中の点に', 'top');
+      g.tgt = null; g.hideC = false; cue('鼻先を真ん中の点に', 'top');
       const ref = await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
       g.tgt = noseTgt(g, k); cue('', 'thin top', ''); beep(); said = ''; say(DJ[k]);
       const at = await noseOn(g.tgt); if (my !== tok) return;
@@ -2405,9 +2469,7 @@ async function stepNoseA() {
       const cap = await noseLock(); if (my !== tok) return;
       const err = ref && cap ? noseErr(ref, cap, k, g) : null;
       T.push({ k, ref, at, cap, err, reached: !!(ref && ref.reached && at && at.reached), shut: cap ? cap.shut : null });
-      if (cap && ref) g.mark = { a: { x: ref.x, y: ref.y }, b: { x: cap.x, y: cap.y } };
-      cue(`${DJ[k]}から：ズレ ${err ? (Number.isFinite(err.deg) ? err.deg + '°' : f2(err.px)) : '読めず'}`, 'top', '目を開けて');
-      await sleep(1800);
+      cue('目を開けて', 'top'); await sleep(1200);
     }
     if (my !== tok) return;
     G = null; cue('');
@@ -2419,7 +2481,8 @@ async function stepNoseA() {
 }
 async function stepNoseB() {
   show(15, NOSE_B_T); placeNose();
-  cue('目を開けて<b>8つの点</b>に鼻先を合わせ<br>次に<b>目を閉じて</b>同じ点へ<br>3秒後に鼻先の位置を確定します<small>「ピッ」と鳴ったら目を開ける</small>', 'top');
+  const t = '目を開けて<b>8つの点</b>に鼻先を合わせ<br>次に<b>目を閉じて</b>同じ点へ<br>3秒後に鼻先の位置を確定します<small>「ピッ」と鳴ったら目を開ける</small>';
+  cue(DEMO + t, 'top fit', t); demo('noseB');
   btn('始める', async () => {
     const my = tok; clearBtns(); noseStart(); await voiceQuiet(); if (my !== tok) return;
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
@@ -2437,16 +2500,14 @@ async function stepNoseB() {
     // 目を閉じて同じ点へ
     for (const k of shuffle(DIRS)) {
       if (my !== tok) return;
-      g.mark = null; g.hideC = false; cue('鼻先を真ん中の点に', 'top');
+      g.hideC = false; cue('鼻先を真ん中の点に', 'top');
       await noseOn({ x: g.cx, y: g.cy }); if (my !== tok) return;
       cue('目を閉じて', 'top'); await voiceQuiet(2500); await sleep(500); if (my !== tok) return;
       g.hideC = true; cue('', 'thin top', ''); said = ''; say(DJ[k]);
       const cap = await noseLock(); if (my !== tok) return;
       const open = O[k], tg = noseTgt(g, k), err = open && cap ? noseErr(open, cap, k, g) : null;
       T.push({ k, open, cap, err, dot: cap ? { R: r3(-(cap.x - tg.x) / g.d), U: r3(-(cap.y - tg.y) / g.d) } : null, reached: !!(open && open.reached), shut: cap ? cap.shut : null });
-      g.hideC = false; if (cap && open) g.mark = { a: { x: open.x, y: open.y }, b: { x: cap.x, y: cap.y } };
-      cue(`${DJ[k]}：ズレ ${err ? (Number.isFinite(err.deg) ? err.deg + '°' : f2(err.px)) : '読めず'}`, 'top', '目を開けて');
-      await sleep(1800);
+      g.hideC = false; cue('目を開けて', 'top'); await sleep(1200);
     }
     if (my !== tok) return;
     G = null; cue('');
