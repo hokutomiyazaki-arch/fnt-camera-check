@@ -2001,7 +2001,12 @@ function tongueFrame({ pts, img }) {
   // 赤い所を顔の中心線（顔の向きを差し引いた線）で折り返し、反対側に相手のいない所を数える。くちびるは左右そろっているので消え、横へ出た舌の分だけが片側に残る。＋＝本人の右（面積・目の間の長さ²）
   const cen = y => midX(y) - yaw, has = new Set(comp), cellAt = (x, y) => { const i = Math.round((x - x0) / st), j = Math.round((y - y0) / st); return i >= 0 && j >= 0 && i < nx && j < ny ? j * nx + i : -1; };
   let aR = 0, aL = 0; for (const c of cells) { const mx = 2 * cen(c.y) - c.x; let m = false; for (let d = -1; d <= 1 && !m; d++) for (let e = -1; e <= 1 && !m; e++) m = has.has(cellAt(mx + d * st, c.y + e * st)); if (!m) { if (c.x < cen(c.y)) aR++; else aL++; } }
+  // 2026-10-18 宮崎さん「わざと思いっきり右に出しているのに左と出る。中心線よりも舌の点が多い側に、必ず出ていると判定して」：
+  // 写真に描いている黄色の中心線（顔の点 168→0 の線。顔の向きは差し引かない）の左右で、舌とみなした点（ピンク）を数える。
+  // 前の読み（先のずれ・片寄り）は、顔の向き（鼻先のずれ）を差し引いていたので、舌を大きく出して顔もつられて動くと逆に振れた
+  let nR = 0, nL = 0; for (const c of cells) { if (c.x < midX(c.y)) nR++; else nL++; }
   return {
+    nR, nL, bal: r3((nR - nL) / Math.max(1, nR + nL)),
     asym: r3((aR - aL) * st * st),
     found: true, n: cells.length, ext: ext.length, useExt, gap: r3(lo.y - up.y), prot: r3(far - Math.hypot(lipB.x - mc.x, lipB.y - mc.y)), far: r3(far), yaw: r3(yaw),
     off: r3(-(tipX - midX(tipY)) - yaw), offRaw: r3(-(tipX - midX(tipY))),                  // ＋＝本人の右へ寄っている（顔の向きのずれを差し引いた値・差し引く前）
@@ -2013,6 +2018,7 @@ function tongueFrame({ pts, img }) {
 // いちばん遠い所＝あごの真ん中を舌の先と読んで「まっすぐ」になりうる。0.018 に上げた（実物の舌の写真では未確認。画面に読んだ所を重ねて出す）
 const TONGUE_G = 0.018;
 const TONGUE_SIDE = 0.06, TONGUE_GAP = 0.2;     // 舌の先が中心線から目の間の長さの 6% 以上ずれたら「寄っている」（仮）
+const TONGUE_BAL = 0.1;   // 中心線の左右の舌の点の数の差（全体に対する割合）。これ未満は「まっすぐ」（55:45 より片寄ったら寄っている・仮）
 const TONGUE_ASYM = 0.015;   // 折り返して相手のいない赤の、左右の差（面積）。作り物の写真で、まっすぐ 0.001〜0.010・15°ずらす 0.018〜0.02・横へ大きく 0.04〜0.05（仮）
 // 舌の安定：キープした3秒の間の、舌の先の位置（横＝中心線からのずれ・前後＝出た長さ）のばらつき。小刻みに動く＝舌下神経（延髄）・小脳虫部（BDC「CN12 舌下神経」：舌が小刻みに動く＝舌下神経・小脳虫部の問題。2026-10-15 宮崎さん：小脳虫部・延髄・舌下神経）。側は言わない（BDC に側の記述なし）
 const TONGUE_WOB = 0.04;   // 舌の先の位置のばらつき（標準偏差・目の間の長さ＝1）がこれ以上で「安定しない」（仮）
@@ -2024,10 +2030,10 @@ function analyzeTongue(frs, tDet = null) {
   let T;
   if (out.length < 2) T = { side: '判定できず', why: '舌が見つからない', frames: frs.length, found: out.length };
   else {
-    const off = med(out.map(x => x.o.off)), prot = med(out.map(x => x.o.prot)), asym = med(out.map(x => x.o.asym));
-    // 先のずれと、左右の片寄り（asym）の2つで読む。片方だけ出たらそれを採る。割れたら片寄りを採る（くちびるの角を先と取り違えるのは先のずれの方）
-    const sOff = off > TONGUE_SIDE ? 1 : off < -TONGUE_SIDE ? -1 : 0, sAs = asym >= TONGUE_ASYM ? 1 : asym <= -TONGUE_ASYM ? -1 : 0, sd0 = sAs || sOff;
-    T = { side: sd0 > 0 ? '本人の右' : sd0 < 0 ? '本人の左' : 'まっすぐ', by: sAs && sOff && sAs !== sOff ? '片寄り（先のずれと割れた）' : sAs && sOff ? '両方' : sAs ? '片寄り' : sOff ? '先のずれ' : '', off: r3(off), asym: r3(asym), asymTh: TONGUE_ASYM, cenOff: r3(med(out.map(x => x.o.cenOff).filter(Number.isFinite))), prot: r3(prot), frames: frs.length, found: out.length, threshold: TONGUE_SIDE };
+    const off = med(out.map(x => x.o.off)), prot = med(out.map(x => x.o.prot)), asym = med(out.map(x => x.o.asym)), bal = med(out.map(x => x.o.bal));
+    // 側は、中心線の左右の舌の点の数だけで決める（2026-10-18 宮崎さん）。先のずれ・片寄りは記録に残すだけ
+    const sd0 = bal >= TONGUE_BAL ? 1 : bal <= -TONGUE_BAL ? -1 : 0;
+    T = { side: sd0 > 0 ? '本人の右' : sd0 < 0 ? '本人の左' : 'まっすぐ', by: '中心線の左右の舌の点の数', bal: r3(bal), nR: med(out.map(x => x.o.nR)), nL: med(out.map(x => x.o.nL)), balTh: TONGUE_BAL, off: r3(off), asym: r3(asym), asymTh: TONGUE_ASYM, cenOff: r3(med(out.map(x => x.o.cenOff).filter(Number.isFinite))), prot: r3(prot), frames: frs.length, found: out.length, threshold: TONGUE_SIDE };
   }
   if (Number.isFinite(bsT)) T.bsTongueOut = r3(bsT);
   const sd = a => { const m = mean(a); return Math.sqrt(mean(a.map(x => (x - m) ** 2))); };
@@ -2042,7 +2048,7 @@ function analyzeTongue(frs, tDet = null) {
   if (STAFF) {
     const best = (out.length ? out : res).sort((a, b) => (b.o.prot || 0) - (a.o.prot || 0))[0] || (frs.length ? { fr: frs[frs.length >> 1], o: null } : null);
     if (best) drawTongue(best.fr, best.o);
-    staff(`舌の向き（自動）：<b>${T.side}</b>${T.off != null ? `（舌の先のずれ ${f2(T.off)}・左右の片寄り ${T.asym.toFixed(3)}・舌全体のずれ ${f2(T.cenOff)}・出た長さ ${f2(T.prot)}${T.by ? '・' + T.by + 'で読んだ' : ''}）` : ''}<br><span class="small">ずれは目の間の長さを1とした値。先のずれ ${TONGUE_SIDE} 以上、または片寄り ${TONGUE_ASYM} 以上で寄っているとする（片寄り＝赤い所を顔の中心で折り返して相手のいない所の左右差。割れたら片寄りを採る・仮）。舌が見えたコマ ${T.found}／${T.frames}。</span><br>キープ中の舌の先の揺れ：${T.wobble ? `横 <b>${f2(T.wobble.side)}</b>・前後 <b>${f2(T.wobble.prot)}</b>（コマごとの動き ${f2(T.wobble.step)}・${T.holdN}コマ）→ ${T.unstable ? '<b>安定しない</b>（舌下神経＝延髄・小脳虫部の問題の可能性）' : '安定'}` : T.held ? `舌が見えたコマが少なく読めない（${T.holdN}コマ）` : '舌が出たのを読み取れず、キープを測れなかった'}<span class="small">（揺れ＝位置の標準偏差。${TONGUE_WOB} 以上で安定しないとする・仮。BDC「CN12 舌下神経」：舌が小刻みに動く＝舌下神経・小脳虫部）。写真：ピンク＝舌とみなした所・黄色の点線＝顔の中心・水色の点＝舌の先</span>`);
+    staff(`舌の向き（自動）：<b>${T.side}</b>${T.bal != null ? `（中心線より右の舌の点 ${T.nR}・左 ${T.nL}／差の割合 ${f2(T.bal)}・${TONGUE_BAL} 以上でその側）<br>参考：` : ''}${T.off != null ? `（舌の先のずれ ${f2(T.off)}・左右の片寄り ${T.asym.toFixed(3)}・舌全体のずれ ${f2(T.cenOff)}・出た長さ ${f2(T.prot)}${T.by ? '・' + T.by + 'で読んだ' : ''}）` : ''}<br><span class="small">ずれは目の間の長さを1とした値。先のずれ ${TONGUE_SIDE} 以上、または片寄り ${TONGUE_ASYM} 以上で寄っているとする（片寄り＝赤い所を顔の中心で折り返して相手のいない所の左右差。割れたら片寄りを採る・仮）。舌が見えたコマ ${T.found}／${T.frames}。</span><br>キープ中の舌の先の揺れ：${T.wobble ? `横 <b>${f2(T.wobble.side)}</b>・前後 <b>${f2(T.wobble.prot)}</b>（コマごとの動き ${f2(T.wobble.step)}・${T.holdN}コマ）→ ${T.unstable ? '<b>安定しない</b>（舌下神経＝延髄・小脳虫部の問題の可能性）' : '安定'}` : T.held ? `舌が見えたコマが少なく読めない（${T.holdN}コマ）` : '舌が出たのを読み取れず、キープを測れなかった'}<span class="small">（揺れ＝位置の標準偏差。${TONGUE_WOB} 以上で安定しないとする・仮。BDC「CN12 舌下神経」：舌が小刻みに動く＝舌下神経・小脳虫部）。写真：ピンク＝舌とみなした所・黄色の点線＝顔の中心・水色の点＝舌の先</span>`);
   }
   recorded(stepTongue, stepJaw, '次へ（口の開け方）');
 }
