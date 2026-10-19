@@ -181,9 +181,26 @@ const BSN = ['eyeLookInLeft', 'eyeLookOutLeft', 'eyeLookUpLeft', 'eyeLookDownLef
 // GPU で顔の点が取れない端末がある（Android の Chrome で、顔が映っていても点が出なかった）。取れない・エラーが続いたら CPU に切り替える
 let delegate = '', toCPU = async () => {}, switching = false, gpuMiss = 0;
 
+// 初回は顔を読む部品（約13MB）とモデル（約3.8MB）を取りに行くので、スマホの回線だと「読み込み中…」が長い（2026-10-19 宮崎さん「読み込み時間が長いの、なんとかならないの？」）。
+// 先に2つを並べて取り、何％まで来たかを出す。部品はブラウザの控え（HTTP キャッシュ）に入るので、そのあと MediaPipe が読むときは取り直さない。/check の LP も、読んでいる間に同じものを先取りしている
+async function grabAll(urls, onPct) {
+  const tot = urls.map(() => 0), got = urls.map(() => 0);
+  const show = () => { const T = tot.reduce((a, b) => a + b, 0); if (T) onPct(Math.min(99, Math.round(got.reduce((a, b) => a + b, 0) / T * 100))); };
+  return Promise.all(urls.map(async (u, i) => {
+    const r = await fetch(u); if (!r.ok || !r.body) throw new Error(r.status + ' ' + u.split('/').pop());
+    tot[i] = [12997248, 3758596][i];   // 中身の大きさ（部品は圧縮して届くので content-length は使えない。版を上げたら測り直す）
+    const rd = r.body.getReader(), parts = [];
+    for (;;) { const { done, value } = await rd.read(); if (done) break; parts.push(value); got[i] += value.length; show(); }
+    const out = new Uint8Array(got[i]); let o = 0; for (const c of parts) { out.set(c, o); o += c.length; }
+    return out;
+  }));
+}
 async function load() {
+  let model = null;
+  try { [, model] = await grabAll([WASM + '/vision_wasm_internal.wasm', MODEL], n => { $('loadState').textContent = `読み込み中… ${n}%`; }); }
+  catch (e) { model = null; }   // 取れなければ、これまでどおり MediaPipe に任せる
   const fs = await FilesetResolver.forVisionTasks(WASM);
-  const opt = d => ({ baseOptions: { modelAssetPath: MODEL, delegate: d }, runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true });   // 顔の向きの行列：首を横に倒すときに混ざる回旋・上下を読む（2026-10-16）
+  const opt = d => ({ baseOptions: model ? { modelAssetBuffer: model, delegate: d } : { modelAssetPath: MODEL, delegate: d }, runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true });   // 顔の向きの行列：首を横に倒すときに混ざる回旋・上下を読む（2026-10-16）
   try { lm = await FaceLandmarker.createFromOptions(fs, opt('GPU')); delegate = 'GPU'; }
   catch (e) { lm = await FaceLandmarker.createFromOptions(fs, opt('CPU')); delegate = 'CPU'; }
   toCPU = async () => { if (delegate === 'CPU' || switching) return; switching = true; try { lm = await FaceLandmarker.createFromOptions(fs, opt('CPU')); delegate = 'CPU'; } finally { switching = false; } };
