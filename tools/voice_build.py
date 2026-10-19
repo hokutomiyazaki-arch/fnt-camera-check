@@ -22,7 +22,7 @@ VOICE = '1cOJcfrlMmUCGpeJbXg9'   # リョウ
 FUNNEL = '--funnel' in sys.argv
 if FUNNEL: VOICE, OUT = 'jWxWvPtq4PJFwe66Y9xi', ROOT / 'voice_f'
 # お客さん用で流れる段（/check：首を横に倒す・線をまっすぐ・鼻先を合わせる①）と、その前後の共通の段。足したらここにも足す
-FUNNEL_FN = ['stepAlign', 'gate', 'motionStart', 'recorded', 'fail', 'stepSide', 'stepSvv', 'svvTrial', 'noseIntro', 'stepNoseA', 'runNoseA', 'noseMark', 'countdown']
+FUNNEL_FN = ['stepAlign', 'gate', 'motionStart', 'recorded', 'fail', 'stepSide', 'stepSvv', 'svvTrial', 'noseIntro', 'stepNoseA', 'runNoseA', 'noseMark', 'countdown', 'stepCircle', 'drillDone']
 
 # ①（鼻先を真ん中に戻す）で、回数を画面だけに出すために声の文を別に渡しているもの（runNoseA の cue の第3引数・数え）
 NA = {'目を閉じて、右へ回せるところまで回す', '目を閉じて、左へ回せるところまで回す', '目を閉じて、上へ向けられるところまで向ける', '目を閉じて、下へ向けられるところまで向ける',
@@ -97,6 +97,13 @@ def texts():
     # 2026-10-15 舌のキープ・流れる縞（OKN）
     E |= {'そのままキープ', '縞が右へ流れます。ぼんやり見る', '次は左へ流れます。ぼんやり見る'}
     E |= {'線をまっすぐ縦に。スマホを傾けて合わせ、止める。1回10秒', '次はまっすぐ横に。スマホを傾けて合わせ、止める。1回10秒', '真ん中に戻す', '真ん中'}   # 線をまっすぐにする（svvMsg は cue ではないので拾われない）
+    # ワーク（/check の結果のあと。2026-10-19）：寄り目のワーク（向きが入る文）・鼻先で円をなぞる
+    WORK = {'頭を倒したまま、上の点を見る', '近づけて', '離して', '反対回りに2周', '1周目', '2周目', 'おつかれさまでした',
+            '鼻先で円をなぞるワーク。画面に出る円を、鼻先でなぞります。時計回りに2周、次に反対回りに2周。スマホは動かさず、首だけで'}
+    for d in ('右', '左'):
+        WORK |= {f'頭を{d}へ倒して、寄り目のワーク。上の点を見たまま、スマホを目に近づけて・離してを3回。頭は{d}へ倒したまま', f'頭を{d}へ倒す。倒せるところの半分くらいまで'}
+    WORK |= {f'{d}の円を、鼻先でなぞる。時計回りに2周' for d in ('右', '左', '上', '下')}
+    E |= WORK
     E |= {'目を開けて'}   # 鼻先を合わせる（2026-10-18）：ズレの数字は字だけ、声は「目を開けて」
     for w in ['両肩が見えている時間が短すぎました', '肩が見えている時間が短すぎました', '口の開き方を読み取れませんでした']:
         E.add(f'{w}。顔を画面に入れて、もう一度どうぞ')
@@ -108,7 +115,7 @@ def texts():
             body = s[m.start():s.find('\n}', m.start())] if s[m.start():].startswith(('function', 'async')) else s[m.start():s.find('\n', m.start())]
             for q in re.finditer(r"\b(?:cue|near|fail|svvMsg)\((?:[a-zA-Z]+,\s*)?(['`])((?:(?!\1).)*)\1", body, re.S):
                 if '${' not in q.group(2): F.add(to_speech(q.group(2)))
-        keep = lambda t: (t in F or re.fullmatch(r'\d+', t) or '倒せるところまで' in t or t.startswith('顔の位置を合わせます') or '顔を中心に戻せるか' in t or t in NA
+        keep = lambda t: (t in F or t in WORK or re.fullmatch(r'\d+', t) or '倒せるところまで' in t or t.startswith('顔の位置を合わせます') or '顔を中心に戻せるか' in t or t in NA
                           or t in ('OK。下の「次へ」を押してください', 'スマホをまっすぐ縦に', 'スマホを顔に近づけて。画面で見える範囲がほぼ埋まるくらい', 'その近さのまま', '目を開けて', '真ん中に戻す', '真ん中', '練習おわり。次は本番です',
                                    '線をまっすぐ縦に。スマホを傾けて合わせ、止める。1回10秒', '次はまっすぐ横に。スマホを傾けて合わせ、止める。1回10秒')
                           or re.match(r'(顔が見つかりませんでした|顔が見えている時間が短すぎました)。顔を画面に入れて', t))

@@ -168,7 +168,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // 終わったら記録（localStorage の fntcc_runs。同じドメインなので /check から読める）を残して back へ戻る。back は同じサイトの中（/ から始まる）だけ
 const BACK = (() => { try { const b = new URLSearchParams(location.search).get('back'); if (!b || !b.startsWith('/')) return null; const u = new URL(b, location.origin); return u.origin === location.origin ? u.origin + u.pathname + u.search : null; } catch (e) { return null; } })();
 const STAFF = !BACK;
-if (STAFF) document.body.insertAdjacentHTML('beforeend', '<div class="badge">トレーナー用</div>'); else { document.body.classList.add('funnel'); document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap">'); document.querySelector('meta[name=theme-color]').content = '#f6f4ef'; document.title = 'からだの神経チェック｜FNT'; document.getElementById('bPick').textContent = 'チェックを始める'; }
+const WORKMODE = /[?&]t=dVerg|[?&]t=dCircle/.test(location.search);   // /check の結果のあとのワーク（入口の文とボタンを変える）
+if (STAFF) document.body.insertAdjacentHTML('beforeend', '<div class="badge">トレーナー用</div>'); else { document.body.classList.add('funnel'); document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap">'); document.querySelector('meta[name=theme-color]').content = '#f6f4ef'; document.title = 'からだの神経チェック｜FNT'; document.getElementById('bPick').textContent = WORKMODE ? 'ワークを始める' : 'チェックを始める';
+  if (WORKMODE) { document.querySelector('h1.funnelOnly').textContent = 'その場でできるワーク'; document.querySelector('p.funnelOnly').textContent = 'カメラを使って、あなたのズレに合わせたワークをします。そのあと、もう一度首のチェックをして変化を比べます。音が出るようにしてください。'; } }
 let PLAN = null;   // いま測る検査の並び（トップで選んだもの。全部を通すときは全部）
 let RUN = {};                                       // この回の記録（内部用）。最後に端末へ保存する
 const newRun = () => { RUN = { v: 2, started: new Date().toISOString(), ua: navigator.userAgent }; };
@@ -390,7 +392,7 @@ const NSTEP = 17;   // 2026-10-16 サッカード・注視を外して 16→14�
 $('steps').innerHTML = '<span></span>'.repeat(NSTEP);
 let tok = 0, CUR = null;
 // テストの最中でも、いまのテストを最初からやり直せる（2026-10-14 宮崎さん）
-const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首を横に倒す': stepSide, '3. 首の8の字': stepEight, '4. 首の左右・上下': stepNeck, '5. 表情の左右差': stepFace, '6. 目の準備（測る前の合わせ）': stepEyePrep, '7. 点を目で追う': stepPursuit, '8. 流れる縞を見る': stepOkn, '9. 頭を動かして点を見つめる': stepVor, '10. 寄り目': stepConv, '11. 舌の出方': stepTongue, '12. 口の開け方': stepJaw, '13. 線をまっすぐにする': stepSvv, [NOSE_A_T]: stepNoseA, [NOSE_B_T]: stepNoseB });                       // 段を移ったら増える（前の段の待ちを止めるため）
+const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首を横に倒す': stepSide, '3. 首の8の字': stepEight, '4. 首の左右・上下': stepNeck, '5. 表情の左右差': stepFace, '6. 目の準備（測る前の合わせ）': stepEyePrep, '7. 点を目で追う': stepPursuit, '8. 流れる縞を見る': stepOkn, '9. 頭を動かして点を見つめる': stepVor, '10. 寄り目': stepConv, '11. 舌の出方': stepTongue, '12. 口の開け方': stepJaw, '13. 線をまっすぐにする': stepSvv, [NOSE_A_T]: stepNoseA, [NOSE_B_T]: stepNoseB, [VERG_T]: stepVerg, [CIRC_T]: stepCircle });                       // 段を移ったら増える（前の段の待ちを止めるため）
 function show(step, title) {
   tok++;
   // 選んだ検査だけのときは、上の棒も選んだ数だけにする（最初の位置合わせ＋選んだ検査）
@@ -2861,6 +2863,110 @@ $('bCopyAll').onclick = () => copyText(localStorage.getItem('fntcc_runs') || '[]
 $('bAgain').onclick = () => { SIDE_AFTER = false; newRun(); RUN.plan = PLAN && PLAN.map(f => TESTS.find(t => t[2] === f)[0]); CAL = null; $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepAlign(); };
 $('bHome').onclick = () => { SIDE_AFTER = false; tok++; $('sEnd').classList.add('hide'); $('sMain').classList.add('hide'); $('sIntro').classList.remove('hide'); scrollTo(0, 0); };
 
+// ════ ワーク（からだの神経チェックの結果のあとに、その人のズレに合わせて出す。2026-10-19 宮崎さん）
+// /check から ?t=dVerg,dCircle,side&dv=R&dc=R,U&back=/check で開く。終わったら首を横に倒すで測り直して /check へ戻る
+// ①寄り目のワーク（dVerg）：線をまっすぐにする（SVV・SVH）で線が傾いた側（dv）へ頭を倒し、上の点を見たまま、スマホを目へ近づけて・離して×3回。
+//   近づいた・離れたは目の大きさ（eyeSize）で見る。近すぎて顔が読めなくなったときも「近づいた」とみなす。読めなくても VERG_MAX で次へ進む（止まらない）
+// ②鼻先で円をなぞる（dCircle）：鼻先を真ん中に戻すテストでずれが大きかった2つの向き（dc）に円を出す。鼻先（赤い点）で、画面で見て時計回りに2周 → 反対回りに2周。
+//   円の線の近くを通った分だけ進む（大きく外れた所は数えない）。1つの回り方で CIRC_MAX たったら次へ進む
+const DQ = new URLSearchParams(location.search);
+const DRILL = { v: /^[RL]$/.test(DQ.get('dv') || '') ? DQ.get('dv') : 'R', c: (DQ.get('dc') || 'R,U').split(',').filter(k => /^[RLUD]$/.test(k)).slice(0, 2) };
+const VERG_T = '17. 寄り目のワーク', CIRC_T = '18. 鼻先で円をなぞる';
+const VERG_N = 3, VERG_MAX = 6000, VERG_NEAR = 1.6, VERG_FAR = 1.2, VERG_TILT = 12, VERG_TILT_MAX = 8000;   // 回数・1回の近づける/離すの待ちの上限・近づいた（目の大きさが始めの何倍）・離れた・倒したとみなす角度（度）
+const headTilt = () => last ? -frame(last).ang * 180 / Math.PI + (phoneRoll() ?? 0) : null;   // ＋＝本人の右へ倒れた（首を横に倒すと同じ取り方）
+async function untilOk(ok, max) { const my = tok, t0 = performance.now(); let since = null;
+  while (my === tok && performance.now() - t0 < max) { const now = performance.now(); since = ok() ? since ?? now : null; if (since != null && now - since >= 250) return true; await sleep(30); }
+  return false; }
+async function stepVerg() {
+  show(17, VERG_T);
+  const S = DJ[DRILL.v], sg = DRILL.v === 'R' ? 1 : -1;
+  cue(`頭を<b>${S}へ倒して</b>、寄り目のワーク<small>上の点を見たまま、スマホを目に近づけて・離してを3回。頭は${S}へ倒したまま</small>`);
+  btn('始める', async () => {
+    const my = tok; clearBtns(); await motionStart(); noseStart(); await voiceQuiet(); if (my !== tok) return;
+    cue(`頭を${S}へ倒す<small>倒せるところの半分くらいまで</small>`); await voiceQuiet(4000); if (my !== tok) return;
+    const tilted = await untilOk(() => { const h = headTilt(); return h != null && h * sg >= VERG_TILT; }, VERG_TILT_MAX); if (my !== tok) return;
+    cue(''); dark(true); placeDot(0, 1.25);
+    near('頭を倒したまま<br><b>上の点を見る</b>', null, null, '頭を倒したまま、上の点を見る'); await voiceQuiet(4000); await sleep(800); if (my !== tok) return;
+    const z = []; for (let i = 0; i < 15 && my === tok; i++) { if (last) z.push(eyeSize(last)); await sleep(30); }
+    const base = z.length ? med(z) : null, reps = [], tl = [];
+    for (let i = 1; i <= VERG_N; i++) {
+      if (my !== tok) return;
+      near(`<span style="font-size:1.5em">近づけて</span><br>${i}回目／${VERG_N}`, null, null, '近づけて');
+      const a = await untilOk(() => { if (!last) return true; const h = headTilt(); if (h != null) tl.push(h * sg); return base != null && eyeSize(last) >= base * VERG_NEAR; }, VERG_MAX); if (my !== tok) return;
+      beep(660, 80);
+      near('<span style="font-size:1.5em">離して</span>', null, null, '離して');
+      const b = await untilOk(() => !!last && base != null && eyeSize(last) <= base * VERG_FAR, VERG_MAX); if (my !== tok) return;
+      reps.push({ near: a, far: b });
+    }
+    near(null); hideDot(); dark(false); endBeep();
+    RUN.dVerg = { side: S, tilted, tilt: tl.length ? r1(med(tl)) : null, reps, at: new Date().toISOString() };
+    drillDone(stepVerg);
+  });
+}
+const CIRC_OFF = 1.0, CIRC_R = 0.85, CIRC_BAND = 0.45, CIRC_LAPS = 2, CIRC_MAX = 45000;   // 円の中心（真ん中の点から、点までの距離の何倍）・半径（同じ）・線から外れてよい幅（半径の何倍）・周回・1つの回り方の上限（ms）
+function drawCircle(t, pts) {
+  const g = G, u = OVU, c = g.c;
+  oc.lineWidth = 12 * u; oc.strokeStyle = 'rgba(0,0,0,.45)'; oc.beginPath(); oc.arc(c.x, c.y, c.r, 0, 7); oc.stroke();   // 下に黒いふち（顔の上でも線が見えるように）
+  oc.lineWidth = 6 * u; oc.strokeStyle = 'rgba(255,255,255,.9)'; oc.setLineDash([12 * u, 8 * u]); oc.beginPath(); oc.arc(c.x, c.y, c.r, 0, 7); oc.stroke(); oc.setLineDash([]);
+  if (g.a0 != null && g.prog > 0) {   // なぞった分を緑で（映像の座標は画面と左右が逆なので、画面の時計回り＝映像の反時計回り＝角度が減る向き）
+    const lap = g.prog % (Math.PI * 2), a1 = g.a0 + g.want * lap;
+    oc.lineWidth = 10 * u; oc.strokeStyle = '#5ad18b'; oc.beginPath(); oc.arc(c.x, c.y, c.r, g.a0, a1, g.want < 0); oc.stroke();
+  }
+  // 回る向きの矢印（円の上に3つ）
+  for (let i = 0; i < 3; i++) { const a = -Math.PI / 2 + i * Math.PI * 2 / 3, x = c.x + c.r * Math.cos(a), y = c.y + c.r * Math.sin(a), d = g.want, tx = -Math.sin(a) * d, ty = Math.cos(a) * d, s = 12 * u;
+    oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.moveTo(x + tx * s, y + ty * s); oc.lineTo(x - tx * s * 0.6 + Math.cos(a) * s * 0.7, y - ty * s * 0.6 + Math.sin(a) * s * 0.7); oc.lineTo(x - tx * s * 0.6 - Math.cos(a) * s * 0.7, y - ty * s * 0.6 - Math.sin(a) * s * 0.7); oc.closePath(); oc.fill(); }
+  if (g.showC) { oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(g.cx, g.cy, 13 * u, 0, 7); oc.fill(); oc.fillStyle = '#000'; oc.beginPath(); oc.arc(g.cx, g.cy, 4 * u, 0, 7); oc.fill(); }
+  if (pts) { const n = pts[1]; oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, 8 * u, 0, 7); oc.fill(); }
+}
+// 1つの回り方を CIRC_LAPS 周。進んだ角度（ラジアン）と、線からの外れ（半径に対する割合の中央）を返す
+async function circLaps(g, want, cnt) {
+  const my = tok, t0 = performance.now(), off = []; let prev = null, shown = -1;
+  g.want = want; g.prog = 0; g.a0 = null;
+  while (my === tok && performance.now() - t0 < CIRC_MAX && g.prog < CIRC_LAPS * Math.PI * 2) {
+    if (last) {
+      const n = last[1], dx = n.x - g.c.x, dy = n.y - g.c.y, d = Math.hypot(dx, dy), a = Math.atan2(dy, dx), on = Math.abs(d - g.c.r) < g.c.r * CIRC_BAND;
+      if (on) { off.push(Math.abs(d - g.c.r) / g.c.r); if (g.a0 == null) g.a0 = a;
+        if (prev != null) { let da = a - prev; if (da > Math.PI) da -= Math.PI * 2; if (da < -Math.PI) da += Math.PI * 2; if (Math.abs(da) < 0.8) g.prog = Math.max(0, g.prog + da * want); }
+        prev = a; } else prev = null;
+      const lap = Math.min(CIRC_LAPS, Math.floor(g.prog / (Math.PI * 2)) + 1);
+      if (lap !== shown) { shown = lap; cue(`${cnt}<br><b style="font-size:1.6em">${lap}周目</b>／${CIRC_LAPS}`, 'top', `${lap}周目`); }
+    }
+    await sleep(16);
+  }
+  return { laps: r1(g.prog / (Math.PI * 2)), off: off.length ? r3(med(off)) : null, ms: r0(performance.now() - t0) };
+}
+async function stepCircle() {
+  show(18, CIRC_T);
+  const ws = DRILL.c.map(k => DJ[k]).join('と');
+  cue(`鼻先で<b>円をなぞる</b>ワーク<small>${ws}に出る円を、鼻先（赤い点）でなぞります。時計回りに2周、次に反対回りに2周。スマホは動かさず、首だけで</small>`, '', '鼻先で円をなぞるワーク。画面に出る円を、鼻先でなぞります。時計回りに2周、次に反対回りに2周。スマホは動かさず、首だけで');
+  btn('始める', async () => {
+    const my = tok; clearBtns(); noseStart(); await voiceQuiet(); if (my !== tok) return;
+    let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
+    if (!last) return fail(stepCircle, '顔が見つかりませんでした');
+    const out = [];
+    for (const k of DRILL.c) {
+      if (my !== tok) return;
+      const g0 = placeNose(), [vx, vy] = DV[k];   // 本人の右＝映像の x が小さい側（noseTgt と同じ）
+      G = { ...g0, draw: drawCircle, c: { x: g0.cx - vx * g0.h * CIRC_OFF, y: g0.cy - vy * g0.h * CIRC_OFF, r: g0.h * CIRC_R }, want: -1, prog: 0, a0: null, showC: true };
+      cue('スマホを動かして、鼻先を真ん中の点に', 'top'); await noseOn({ x: g0.cx, y: g0.cy }, 8000); if (my !== tok) return;
+      G.showC = false; const J = DJ[k];
+      cue(`<b>${J}</b>の円を、鼻先でなぞる<small>時計回りに2周。スマホは動かさず、首だけで</small>`, 'top', `${J}の円を、鼻先でなぞる。時計回りに2周`); await voiceQuiet(5000); if (my !== tok) return;
+      const cw = await circLaps(G, -1, `${J}の円・時計回り`); if (my !== tok) return;
+      beep(880, 120);
+      cue('<b>反対回り</b>に2周', 'top', '反対回りに2周'); await voiceQuiet(3000); if (my !== tok) return;
+      const ccw = await circLaps(G, 1, `${J}の円・反対回り`); if (my !== tok) return;
+      beep(880, 120); out.push({ k, cw, ccw });
+    }
+    G = null; cue(''); endBeep();
+    RUN.dCircle = { dirs: out, at: new Date().toISOString() };
+    drillDone(stepCircle);
+  });
+}
+function drillDone(again) {
+  saveRun(); cue('おつかれさまでした');
+  btn('もう一度', again, 'sub'); const n = planNext(again) || [finish, '終わる']; btn(n[1], n[0]);
+}
+
 // ════ 検査を選んで測る（2026-10-18 宮崎さん「全部別でテストできるように。トップページで『このテスト』って選べるように」）
 // 並びは全部を通すときと同じ。選んだものだけを上から順に測り、最後の検査のあと記録の画面へ行く。
 // 目の検査（追従・縞・VOR）は、目の準備をしていなければ始める前に自動で目の合わせをする（eyeStepStart）ので、単独でも測れる
@@ -2872,6 +2978,7 @@ const TESTS = [
   ['prep', '6. 目の準備（測る前の合わせ）', stepEyePrep, '目'], ['pursuit', '7. 点を目で追う', stepPursuit, '目'], ['okn', '8. 流れる縞を見る', stepOkn, '目'], ['vor', '9. 頭を動かして点を見つめる', stepVor, '目'], ['conv', '10. 寄り目', stepConv, '目'],
   ['tongue', '11. 舌の出方', stepTongue, '口'], ['jaw', '12. 口の開け方', stepJaw, '口'],
   ['svv', '13. 線をまっすぐにする', stepSvv, 'そのほか'], ['noseA', NOSE_A_T, stepNoseA, 'そのほか'], ['noseB', NOSE_B_T, stepNoseB, 'そのほか'], ['ask', ASK_T, stepAsk, 'そのほか'],
+  ['dVerg', VERG_T, stepVerg, 'ワーク'], ['dCircle', CIRC_T, stepCircle, 'ワーク'],
 ];
 // cur の次に測る検査と、ボタンの文字。並びの外（ドリルのあとの測り直しなど）は null＝元の流れのまま
 function planNext(cur) {
@@ -2889,10 +2996,12 @@ const PICK_KEY = 'fntcc_pick';
   $('pick').onchange = pickSync;
 })();
 const picked = () => [...$('pick').querySelectorAll('input:checked')].map(i => i.value);
-function pickSync() { const n = picked().length; $('bPick').disabled = !lm || !n; $('bPick').textContent = BACK ? 'チェックを始める' : n ? `選んだ検査を始める（${n}つ）` : '選んだ検査を始める'; localStorage.setItem(PICK_KEY, JSON.stringify(picked())); }
+function pickSync() { const n = picked().length; $('bPick').disabled = !lm || !n; $('bPick').textContent = BACK ? (WORKMODE ? 'ワークを始める' : 'チェックを始める') : n ? `選んだ検査を始める（${n}つ）` : '選んだ検査を始める'; localStorage.setItem(PICK_KEY, JSON.stringify(picked())); }
 $('bPickAll').onclick = () => { $('pick').querySelectorAll('input').forEach(i => { i.checked = true; }); pickSync(); };
 $('bPickNone').onclick = () => { $('pick').querySelectorAll('input').forEach(i => { i.checked = false; }); pickSync(); };
-$('bPick').onclick = () => { const ks = picked(); begin(TESTS.filter(t => ks.includes(t[0])).map(t => t[2])); };
+// お客さん用（/check から）は ?t= に並べた順に流す（ワークのあとに首で測り直すため。トレーナー用は一覧の順）
+$('bPick').onclick = () => { const ks = picked(), want = BACK && (location.search.match(/[?&]t=([^&]+)/) || [])[1];
+  begin(want ? decodeURIComponent(want).split(',').map(k => TESTS.find(t => t[0] === k)).filter(Boolean).map(t => t[2]) : TESTS.filter(t => ks.includes(t[0])).map(t => t[2])); };
 $('bStart').onclick = () => begin(TESTS.map(t => t[2]));
 
 async function begin(plan) {
