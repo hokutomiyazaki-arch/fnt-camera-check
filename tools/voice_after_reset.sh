@@ -13,11 +13,15 @@ if [ -z "$left" ] || [ "$left" -lt 400 ]; then echo "まだ戻っていない。
 if [ "${DRY:-0}" = 1 ]; then /opt/homebrew/bin/python3 tools/voice_build.py --funnel --dry | tail -3; echo "DRY 終わり"; exit 0; fi
 /opt/homebrew/bin/python3 tools/voice_build.py --funnel || { echo "作成に失敗"; exit 1; }
 rest=$(/opt/homebrew/bin/python3 tools/voice_build.py --funnel --dry | grep -c "^  ")
+# 新しく作った声を文字に起こしてログに残す（読み違いがないかを後で見る）
+for f in $(git status --porcelain voice_f | awk '{print $2}' | grep mp3); do
+  echo "$f: $(/Users/miyazakihokuto/dev/marketing-playbook/.venv/bin/mlx_whisper $f --language ja --model mlx-community/whisper-large-v3-turbo --output-dir /tmp/wh1022 --output-format txt >/dev/null 2>&1; cat /tmp/wh1022/$(basename $f .mp3).txt | tr '\n' ' ')"
+done
 git add voice_f
 if git diff --cached --quiet; then echo "足すファイルなし"; else
   git commit -q -m "ワーク（寄り目・鼻先で円）の声を女性の声で足す
 
-10/19 に ElevenLabs の残りが0で作れず、端末の声で読んでいた分。月の文字数が戻った 10/22 に launchd で作った
+10/19 に ElevenLabs の残りが0で作れず、端末の声で読んでいた分。あわせて線の検査の「合わせ、止める」が「読める／やめる」に聞こえた2本を「合わせて、とめる」で作り直した（宮崎さん指摘）。月の文字数が戻った 10/22 に launchd で作った
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" && git push -q && echo "push した"
 fi

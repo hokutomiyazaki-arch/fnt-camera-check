@@ -131,7 +131,7 @@ def say_text(t):   # 音にする文。記号は読ませない
     if t in YOMI: return YOMI[t]
     if FUNNEL and t in KAZU: return KAZU[t]
     t = re.sub(r'[①②③④]\s*', '', t).replace('3・2・1', '3、2、1').replace(' → ', '、').replace('→', '、')
-    return t.replace('✓', '').replace('↔', 'と').replace('〜', 'から').replace('cm', 'センチ').replace('OK', 'オーケー').strip('。 ')
+    return t.replace('✓', '').replace('↔', 'と').replace('〜', 'から').replace('cm', 'センチ').replace('OK', 'オーケー').replace('合わせ、止める', '合わせて、とめる').strip('。 ')   # 「止める」が「読める／やめる」に聞こえた（2026-10-19 宮崎さん。whisper で確認）
 
 def tts(text, path):
     k = os.environ.get('ELEVENLABS_API_KEY') or sys.exit('ELEVENLABS_API_KEY が無い（~/.zshenv）')
