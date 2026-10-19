@@ -9,7 +9,10 @@
 <script>
 if (/[?&]back=/.test(location.search)) document.documentElement.classList.add('funnel');
 // アプリとして入れる案内（「カメラでチェック（試し版）をインストール」）はトレーナー用だけ。お客さん用の入口（LP /check から開く）には出さない（2026-10-18 宮崎さん「LP なのにインストールの表示が出る」）
-else document.head.insertAdjacentHTML('beforeend', '<link rel="manifest" href="manifest.json">');
+else { document.head.insertAdjacentHTML('beforeend', '<link rel="manifest" href="manifest.json"><link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">'
+  // トレーナー用の見た目（黒×金・明朝の見出し）の文字。お客さん用の入口では読まない（2026-10-19）
+  + '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Shippori+Mincho:wght@500;700&family=Cormorant+Garamond:wght@500;600&display=swap">');
+  document.querySelector('meta[name=theme-color]').content = '#070707'; }
 </script>
 <style>
 *{box-sizing:border-box}
@@ -97,14 +100,60 @@ html.funnel,html.funnel body{background:#f6f4ef;color:#1d2a33;font-family:"M PLU
 .funnel #sMain{color:#f2f2f2}.funnel #sMain .small{color:#aab}   /* 検査中の全画面は黒地なので字は白に戻す（LP の濃い字を受け継いで、黒地に黒字で読めなかった：2026-10-18 宮崎さん） */
 .funnelOnly{display:none}.funnel .funnelOnly{display:block}.funnel .staffOnly,.funnel #bStart,.funnel #sIntro h2,.funnel #sIntro h2+p,.funnel #pick,.funnel .row2{display:none}
 </style>
+<style>
+/* ===== トレーナー用の見た目（2026-10-19 宮崎さん「デザインもちょっとおしゃれに」）=====
+   手本：vorc-trainer・hanasaki-awase・fnt-advance-apps（黒×金・明朝の見出し・金の丸ボタン）。
+   🔴 どの行も html:not(.funnel) で始める＝お客さん用の入口（?back= で開く・LP と同じ明るい色）には1行も効かない。検査のロジックには触らない */
+html:not(.funnel){--bg0:#050505;--bg1:#0e0e0f;--bg2:#1a1916;--gold:#d8bd84;--gold2:#a8874f;--goldInk:#141008;--ink:#f4f1ea;--muted:#9d978b;--line:rgba(216,189,132,.2);--card:rgba(255,255,255,.035);
+  --serif:"Shippori Mincho","Hiragino Mincho ProN",serif;--latin:"Cormorant Garamond","Times New Roman",serif;background:#050505;color-scheme:dark}
+html:not(.funnel) body{color:var(--ink);font-family:"Noto Sans JP",-apple-system,"Hiragino Sans",sans-serif;letter-spacing:.02em;
+  background:radial-gradient(110% 70% at 50% -10%,var(--bg2) 0%,var(--bg1) 45%,var(--bg0) 100%);background-attachment:fixed;min-height:100vh}
+html:not(.funnel) main{max-width:480px;padding:18px 18px 48px}
+html:not(.funnel) .brand{display:flex;align-items:center;gap:10px;margin:26px 0 14px}
+html:not(.funnel) .brand img{width:34px;height:34px;border-radius:9px;box-shadow:0 0 0 1px var(--line)}
+html:not(.funnel) .brand b{font-family:var(--latin);font-weight:600;font-size:12.5px;letter-spacing:.26em;color:var(--gold)}
+html:not(.funnel) #sIntro h1,html:not(.funnel) #sEnd h1{font-family:var(--serif);font-weight:700;font-size:24px;letter-spacing:.08em;line-height:1.5;margin:4px 0 8px}
+html:not(.funnel) #sIntro h1 small{display:block;font-family:var(--serif);font-size:13px;letter-spacing:.2em;color:var(--gold);font-weight:500;margin-top:2px}
+html:not(.funnel) #sIntro p.staffOnly,html:not(.funnel) #endLead{font-size:14.5px;color:var(--muted);line-height:1.85}
+html:not(.funnel) .rule{width:56px;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);margin:14px 0 4px}
+html:not(.funnel) h2{font-family:var(--serif);font-size:18px;font-weight:700;letter-spacing:.12em;color:var(--gold);margin:26px 0 2px}
+html:not(.funnel) .small{color:var(--muted)}
+html:not(.funnel) main button{min-height:54px;border-radius:999px;font-size:15.5px;letter-spacing:.08em;line-height:1.45;color:var(--goldInk);background:linear-gradient(135deg,#ead3a0 0%,#cfb077 45%,#a8874f 100%);box-shadow:0 8px 24px rgba(168,135,79,.18);margin:7px 0}
+html:not(.funnel) main button.sub{color:var(--gold);background:transparent;border:1px solid var(--line);box-shadow:none}
+html:not(.funnel) main button:active{transform:translateY(1px)}
+html:not(.funnel) .row2 button{min-height:42px;font-size:13px;padding:8px;letter-spacing:.1em}
+html:not(.funnel) .res{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));border:1px solid var(--line);border-radius:14px;padding:11px 14px;line-height:1.75}
+html:not(.funnel) .res b{color:var(--gold)}
+html:not(.funnel) #sIntro>.res{color:var(--muted);font-size:12.5px;line-height:1.85;margin:14px 0 10px}
+html:not(.funnel) .res.judge{background:rgba(229,72,58,.07);border-color:rgba(255,138,101,.45)}
+html:not(.funnel) .res.judge b{color:#ffb4a8}
+html:not(.funnel) #loadState{font-size:12.5px;letter-spacing:.06em}
+html:not(.funnel) .pick{gap:7px}
+html:not(.funnel) .pick .g{font-family:var(--latin),var(--serif);font-size:12px;letter-spacing:.3em;color:var(--gold2);margin:14px 4px 0;display:flex;align-items:center;gap:10px}
+html:not(.funnel) .pick .g::after{content:'';flex:1;height:1px;background:var(--line)}
+html:not(.funnel) .pick label{background:var(--card);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px 14px;font-size:15px;line-height:1.55;transition:border-color .15s,background .15s}
+html:not(.funnel) .pick label:has(input:checked){border-color:var(--gold);background:rgba(216,189,132,.09)}
+html:not(.funnel) .pick input{accent-color:var(--gold)}
+html:not(.funnel) textarea{background:rgba(0,0,0,.35);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:10px}
+html:not(.funnel) .badge{background:rgba(5,5,5,.7);color:var(--gold);border:1px solid rgba(216,189,132,.45);border-radius:999px;padding:1px 9px;letter-spacing:.08em}
+/* 検査中の全画面：映像・ガイド・指示の文字はそのまま。ボタンと進み具合の帯だけ金にそろえる */
+html:not(.funnel) .steps span.on{background:var(--gold)}
+html:not(.funnel) #title{color:#e9e2d2;letter-spacing:.04em}
+html:not(.funnel) #sMain button{border-radius:999px;letter-spacing:.06em;color:var(--goldInk);background:linear-gradient(135deg,#ead3a0 0%,#cfb077 45%,#a8874f 100%)}
+html:not(.funnel) #sMain button.sub{color:var(--gold);background:rgba(0,0,0,.55);border:1px solid rgba(216,189,132,.45)}
+html:not(.funnel) #sMain button:disabled{opacity:.35}
+html:not(.funnel) #sMain #bVoice,html:not(.funnel) #sMain #bRedo{color:var(--gold);background:rgba(0,0,0,.6);border:1px solid rgba(216,189,132,.45)}
+</style>
 </head>
 <body>
 <main>
 <div id="sIntro">
-  <h1 class="staffOnly">カメラでチェック（トレーナー用）</h1>
+  <div class="brand staffOnly"><img src="icons/icon-192.png" alt=""><b>FUNCTIONAL NEURO TRAINING</b></div>
+  <h1 class="staffOnly">カメラでチェック<small>トレーナー用</small></h1>
   <h1 class="funnelOnly">からだの神経チェック</h1>
   <p class="funnelOnly">カメラを使って、首と目の感覚をチェックします。音が出るようにしてください。</p>
   <p class="staffOnly">カメラで顔・目・口の動きを読み取ります。全部を通して測るか、使いたい検査だけを選んで測れます。</p>
+  <div class="rule staffOnly"></div>
   <div class="res small">
     ・映像も写真も、この端末の外へは送りません（端末の中で数字にするだけです）。<br>
     ・医療の検査ではありません。痛み・めまい・気分の悪さが出たら、すぐにやめてください。<br>
