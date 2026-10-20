@@ -485,6 +485,7 @@ function say(html) {
   if (STAFF && VMAP) { (window.__voiceMiss = window.__voiceMiss || []).push(u); console.log('[voice] 音声ファイルなし：' + u); }
   if (!window.speechSynthesis) return;
   VA.pause();
+  u = u.replace(/合わせ、止める/g, '合わせて、とめる').replace(/止め/g, 'とめ');   // 端末の声は「止める」を「やめる」と読むことがある（2026-10-20 宮崎さん）
   try { speechSynthesis.cancel(); const x = new SpeechSynthesisUtterance(u); x.lang = 'ja-JP'; x.rate = 1.1;
     jaV = jaV || pickJa(); if (jaV) x.voice = jaV; speechSynthesis.speak(x); } catch (e) {}
 }
