@@ -482,7 +482,7 @@ const NSTEP = 17;   // 2026-10-16 サッカード・注視を外して 16→14�
 $('steps').innerHTML = '<span></span>'.repeat(NSTEP);
 let tok = 0, CUR = null;
 // テストの最中でも、いまのテストを最初からやり直せる（2026-10-14 宮崎さん）
-const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首を横に倒す': stepSide, '3. 首の8の字': stepEight, '4. 首の左右・上下': stepNeck, '5. 表情の左右差': stepFace, '6. 目の準備（測る前の合わせ）': stepEyePrep, '7. 点を目で追う': stepPursuit, '8. 流れる縞を見る': stepOkn, '9. 頭を動かして点を見つめる': stepVor, '10. 寄り目': stepConv, '11. 舌の出方': stepTongue, '12. 口の開け方': stepJaw, '13. 線をまっすぐにする': stepSvv, [NOSE_A_T]: stepNoseA, [NOSE_B_T]: stepNoseB, [VERG_T]: stepVerg, [CIRC_T]: stepCircle });                       // 段を移ったら増える（前の段の待ちを止めるため）
+const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首を横に倒す': stepSide, '3. 首の8の字': stepEight, '4. 首の左右・上下': stepNeck, '5. 表情の左右差': stepFace, '6. 目の準備（測る前の合わせ）': stepEyePrep, '7. 点を目で追う': stepPursuit, '8. 流れる縞を見る': stepOkn, '9. 頭を動かして点を見つめる': stepVor, '10. 寄り目': stepConv, '11. 舌の出方': stepTongue, '12. 口の開け方': stepJaw, '13. 線をまっすぐにする': stepSvv, [NOSE_A_T]: stepNoseA, [NOSE_B_T]: stepNoseB, [VERG_T]: stepVerg, [CIRC_T]: stepCircle, '18. 鼻先で円をなぞる': stepCircle });                       // 段を移ったら増える（前の段の待ちを止めるため）
 function show(step, title) {
   tok++;
   // 選んだ検査だけのときは、上の棒も選んだ数だけにする（最初の位置合わせ＋選んだ検査）
@@ -2958,11 +2958,11 @@ $('bHome').onclick = () => { SIDE_AFTER = false; tok++; $('sEnd').classList.add(
 // /check から ?t=dVerg,dCircle,side&dv=R&dc=R,U&back=/check で開く。終わったら首を横に倒すで測り直して /check へ戻る
 // ①寄り目のワーク（dVerg）：線をまっすぐにする（SVV・SVH）で線が傾いた側（dv）へ頭を倒し、上の点を見たまま、スマホを目へ近づけて・離して×3回。
 //   近づいた・離れたは目の大きさ（eyeSize）で見る。近すぎて顔が読めなくなったときも「近づいた」とみなす。読めなくても VERG_MAX で次へ進む（止まらない）
-// ②鼻先で円をなぞる（dCircle）：鼻先を真ん中に戻すテストでずれが大きかった2つの向き（dc）に円を出す。鼻先（赤い点）で、画面で見て時計回りに2周 → 反対回りに2周。
-//   円の線の近くを通った分だけ進む（大きく外れた所は数えない）。1つの回り方で CIRC_MAX たったら次へ進む
+// ②鼻先で動く点を追う（dCircle）：鼻先を真ん中に戻すテストでずれが大きかった2つの向き（dc）に円を出し、円の上を動く点を鼻先（赤い点）で追う。
+//   途中2回向きが変わり、速さもゆれる。合っている＝キラキラ、外れた＝ブブッ（振動）。1つの円で CIRC_MAX たったら次へ進む
 const DQ = new URLSearchParams(location.search);
 const DRILL = { v: /^[RL]$/.test(DQ.get('dv') || '') ? DQ.get('dv') : 'R', c: (DQ.get('dc') || 'R,U').split(',').filter(k => /^[RLUD]$/.test(k)).slice(0, 2) };
-const VERG_T = '17. 寄り目のワーク', CIRC_T = '18. 鼻先で円をなぞる';
+const VERG_T = '17. 寄り目のワーク', CIRC_T = '18. 鼻先で動く点を追う';   // 前の名前「18. 鼻先で円をなぞる」の記録からも、やり直しで開ける（REDO）
 const VERG_N = 3, VERG_MAX = 6000, VERG_NEAR = 1.6, VERG_FAR = 1.2, VERG_TILT = 12, VERG_TILT_MAX = 8000;   // 回数・1回の近づける/離すの待ちの上限・近づいた（目の大きさが始めの何倍）・離れた・倒したとみなす角度（度）
 const headTilt = () => last ? -frame(last).ang * 180 / Math.PI + (phoneRoll() ?? 0) : null;   // ＋＝本人の右へ倒れた（首を横に倒すと同じ取り方）
 async function untilOk(ok, max) { const my = tok, t0 = performance.now(); let since = null;
@@ -2994,59 +2994,94 @@ async function stepVerg() {
     drillDone(stepVerg);
   });
 }
-const CIRC_OFF = 1.0, CIRC_R = 0.64, CIRC_BAND = 0.45, CIRC_LAPS = 2, CIRC_MAX = 45000;   // 円の中心（真ん中の点から、点までの距離の何倍）・半径（同じ）・線から外れてよい幅（半径の何倍）・周回・1つの回り方の上限（ms）。半径は 0.85 → 0.64（2026-10-20 宮崎さん「円が大きすぎる。今の4分の3くらいに」）
+// 2026-10-20 宮崎さん「2周と決めるのではなく、円の中を動く点を鼻先で追う形に。途中で2回勝手に向きを変えたり、速さが変わったり。
+//   うまくできている時はキラキラ、できていない時はブブッ（バイブと連動）。年配の方がやるので難しくしすぎない」
+// 点は円の上を合わせて約2.5周。途中2回、向きを変える（変える前に少しゆっくりになり、一瞬止まる）。速さは 0.75〜1.25 倍の間でゆるく変わる。
+// 鼻先が点から離れたまま CIRC_WAIT たつと、点は止まって待つ（置いていかれない）
+const CIRC_OFF = 1.0, CIRC_R = 0.64, CIRC_MAX = 60000;   // 円の中心（真ん中の点から、点までの距離の何倍）・半径（同じ。0.85 → 0.64：2026-10-20 宮崎さん「今の4分の3くらいに」）・1つの円の上限（ms）
+const CIRC_LAP = 9000, CIRC_ON = 0.45, CIRC_MISS = 700, CIRC_WAIT = 1500, CIRC_TURN = 600;   // ふつうの速さの1周（ms）・合っているとみなす鼻先と点の距離（半径の何倍。甘め）・外れてブブッまで（ms）・点が止まって待つまで（ms）・向きを変えるときに止まる時間（ms）
 function drawCircle(t, pts) {
   const g = G, u = OVU, c = g.c;
-  oc.lineWidth = 12 * u; oc.strokeStyle = 'rgba(0,0,0,.45)'; oc.beginPath(); oc.arc(c.x, c.y, c.r, 0, 7); oc.stroke();   // 下に黒いふち（顔の上でも線が見えるように）
-  oc.lineWidth = 6 * u; oc.strokeStyle = 'rgba(255,255,255,.9)'; oc.setLineDash([12 * u, 8 * u]); oc.beginPath(); oc.arc(c.x, c.y, c.r, 0, 7); oc.stroke(); oc.setLineDash([]);
-  if (g.a0 != null && g.prog > 0) {   // なぞった分を緑で（映像の座標は画面と左右が逆なので、画面の時計回り＝映像の反時計回り＝角度が減る向き）
-    const lap = g.prog % (Math.PI * 2), a1 = g.a0 + g.want * lap;
-    oc.lineWidth = 10 * u; oc.strokeStyle = '#5ad18b'; oc.beginPath(); oc.arc(c.x, c.y, c.r, g.a0, a1, g.want < 0); oc.stroke();
-  }
-  // 回る向きの矢印（円の上に3つ）
-  for (let i = 0; i < 3; i++) { const a = -Math.PI / 2 + i * Math.PI * 2 / 3, x = c.x + c.r * Math.cos(a), y = c.y + c.r * Math.sin(a), d = g.want, tx = -Math.sin(a) * d, ty = Math.cos(a) * d, s = 12 * u;
-    oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.moveTo(x + tx * s, y + ty * s); oc.lineTo(x - tx * s * 0.6 + Math.cos(a) * s * 0.7, y - ty * s * 0.6 + Math.sin(a) * s * 0.7); oc.lineTo(x - tx * s * 0.6 - Math.cos(a) * s * 0.7, y - ty * s * 0.6 - Math.sin(a) * s * 0.7); oc.closePath(); oc.fill(); }
+  oc.lineWidth = 10 * u; oc.strokeStyle = 'rgba(0,0,0,.4)'; oc.beginPath(); oc.arc(c.x, c.y, c.r, 0, 7); oc.stroke();   // 下に黒いふち（顔の上でも線が見えるように）
+  oc.lineWidth = 4 * u; oc.strokeStyle = 'rgba(255,255,255,.75)'; oc.setLineDash([10 * u, 8 * u]); oc.beginPath(); oc.arc(c.x, c.y, c.r, 0, 7); oc.stroke(); oc.setLineDash([]);
   if (g.showC) { oc.fillStyle = '#ffcc00'; oc.beginPath(); oc.arc(g.cx, g.cy, 13 * u, 0, 7); oc.fill(); oc.fillStyle = '#000'; oc.beginPath(); oc.arc(g.cx, g.cy, 4 * u, 0, 7); oc.fill(); }
-  if (pts) { const n = pts[1]; oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, 8 * u, 0, 7); oc.fill(); }
+  if (g.pt) {
+    // キラキラ：合っている間、点のまわりから星が散る
+    const dt = Math.min(50, t - (g.tLast ?? t)); g.tLast = t; g.spark = g.spark || [];
+    if (g.st === 'on') for (let i = 0; i < 2; i++) { const a = Math.random() * 7, v = (0.05 + Math.random() * 0.07) * u; g.spark.push({ x: g.pt.x, y: g.pt.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, s: (4 + Math.random() * 5) * u, hue: Math.random() < 0.5 ? '#fff6b0' : '#ffd23f' }); }
+    g.spark = g.spark.filter(p => (p.life -= dt / 700) > 0);
+    for (const p of g.spark) { p.x += p.vx * dt; p.y += p.vy * dt; oc.globalAlpha = p.life; oc.fillStyle = p.hue; oc.beginPath();
+      for (let k = 0; k < 8; k++) { const r = k % 2 ? p.s * 0.35 : p.s, a = k * Math.PI / 4; k ? oc.lineTo(p.x + r * Math.cos(a), p.y + r * Math.sin(a)) : oc.moveTo(p.x + r, p.y); }
+      oc.closePath(); oc.fill(); }
+    oc.globalAlpha = 1;
+    // 点：合っている＝緑に光る・外れた＝黄色のまま、ブブッの間だけ左右にふるえて赤い輪が広がる（鼻先の赤い点と見分けるため、点そのものは赤くしない）
+    let { x, y } = g.pt; const sh = g.buzzAt ? performance.now() - g.buzzAt : 1e9;
+    if (sh < 400) x += Math.sin(t / 18) * 7 * u;
+    const col = g.st === 'on' ? '#5ad18b' : '#ffcc00', R = 20 * u;
+    if (sh < 600) { oc.lineWidth = 6 * u; oc.strokeStyle = `rgba(255,70,70,${1 - sh / 600})`; oc.beginPath(); oc.arc(x, y, R * (1.2 + sh / 300), 0, 7); oc.stroke(); }
+    if (g.st === 'on') { oc.fillStyle = 'rgba(90,209,139,.35)'; oc.beginPath(); oc.arc(x, y, R * (1.6 + 0.2 * Math.sin(t / 120)), 0, 7); oc.fill(); }
+    oc.lineWidth = 5 * u; oc.strokeStyle = 'rgba(0,0,0,.5)'; oc.fillStyle = col; oc.beginPath(); oc.arc(x, y, R, 0, 7); oc.fill(); oc.stroke();
+    oc.fillStyle = '#fff'; oc.beginPath(); oc.arc(x, y, 5 * u, 0, 7); oc.fill();
+  }
+  if (pts) { const n = pts[1]; oc.lineWidth = 3 * u; oc.strokeStyle = '#fff'; oc.fillStyle = '#ff5a5a'; oc.beginPath(); oc.arc(n.x, n.y, 8 * u, 0, 7); oc.fill(); oc.stroke(); }
 }
-// 1つの回り方を CIRC_LAPS 周。進んだ角度（ラジアン）と、線からの外れ（半径に対する割合の中央）を返す
-async function circLaps(g, want, cnt) {
-  const my = tok, t0 = performance.now(), off = []; let prev = null, shown = -1;
-  g.want = want; g.prog = 0; g.a0 = null;
-  while (my === tok && performance.now() - t0 < CIRC_MAX && g.prog < CIRC_LAPS * Math.PI * 2) {
-    if (last) {
-      const n = last[1], dx = n.x - g.c.x, dy = n.y - g.c.y, d = Math.hypot(dx, dy), a = Math.atan2(dy, dx), on = Math.abs(d - g.c.r) < g.c.r * CIRC_BAND;
-      if (on) { off.push(Math.abs(d - g.c.r) / g.c.r); if (g.a0 == null) g.a0 = a;
-        if (prev != null) { let da = a - prev; if (da > Math.PI) da -= Math.PI * 2; if (da < -Math.PI) da += Math.PI * 2; if (Math.abs(da) < 0.8) g.prog = Math.max(0, g.prog + da * want); }
-        prev = a; } else prev = null;
-      const lap = Math.min(CIRC_LAPS, Math.floor(g.prog / (Math.PI * 2)) + 1);
-      if (lap !== shown) { shown = lap; cue(`${cnt}<br><b style="font-size:1.6em">${lap}周目</b>／${CIRC_LAPS}`, 'top', `${lap}周目`); }
+function circBuzz() {   // できていない合図：ブブッ（振動＋低い音2つ）。iPhone は振動を出せないので音と画面だけ
+  try { navigator.vibrate && navigator.vibrate([60, 50, 60]); } catch (e) {}
+  beep(180, 70); setTimeout(() => beep(160, 70), 120);
+}
+function circChime() { beep(1568, 70); setTimeout(() => beep(2093, 90), 80); }   // うまくできている合図：キラン
+// 点を動かして、鼻先がついてきた割合を返す。want：最初の向き（−1＝画面の時計回り）
+async function circFollow(g, want, J) {
+  const my = tok, L = Math.PI * 2, rnd = (a, b) => a + Math.random() * (b - a);
+  const legs = [rnd(0.9, 1.2) * L, rnd(0.6, 0.9) * L]; legs.push(Math.max(0.5 * L, 2.5 * L - legs[0] - legs[1]));   // 向きを変えるまでの角度×3（合わせて約2.5周）
+  const ph = Math.random() * 7, base = L / CIRC_LAP;   // 速さのゆれ・ふつうの角速度（rad/ms）
+  let a = -Math.PI / 2, dir = want, leg = 0, done = 0, offSince = null, onSince = null, lastT = performance.now(), on = 0, all = 0, buzzes = 0;
+  const t0 = lastT, place = () => { g.pt = { x: g.c.x + g.c.r * Math.cos(a), y: g.c.y + g.c.r * Math.sin(a) }; };
+  place();
+  while (my === tok && leg < legs.length && performance.now() - t0 < CIRC_MAX) {
+    const now = performance.now(), dt = Math.min(50, now - lastT); lastT = now;
+    const ok = !!last && dist(last[1], g.pt) < g.c.r * CIRC_ON;
+    all++; if (ok) on++;
+    if (ok) { offSince = null; onSince = onSince ?? now; if (g.st !== 'on') g.st = 'on'; if (now - onSince > 3000) { circChime(); onSince = now; } }
+    else { onSince = null; offSince = offSince ?? now; if (now - offSince > CIRC_MISS && g.st !== 'off') { g.st = 'off'; g.buzzAt = performance.now(); buzzes++; circBuzz(); } }
+    const wait = offSince != null && now - offSince > CIRC_WAIT;   // 置いていかれたら、点が止まって待つ
+    const left = legs[leg] - done, slow = Math.min(1, 0.35 + left / (0.25 * L));   // 向きを変える手前で、ゆっくりになる
+    const v = wait ? 0 : base * (1 + 0.25 * Math.sin((now - t0) / 2600 + ph)) * slow;
+    const step = Math.min(left, v * dt); a += dir * step; done += step; place();
+    if (done >= legs[leg] - 1e-6) {
+      leg++; done = 0;
+      if (leg < legs.length) { dir = -dir; beep(660, 90); cue(`<b style="font-size:1.6em">反対へ！</b>`, 'top', ''); await sleep(CIRC_TURN); lastT = performance.now(); if (my !== tok) return null;
+        cue(`<b>${J}</b>の円<small>点を鼻先で追いかける</small>`, 'top', ''); }
     }
     await sleep(16);
   }
-  return { laps: r1(g.prog / (Math.PI * 2)), off: off.length ? r3(med(off)) : null, ms: r0(performance.now() - t0) };
+  g.pt = null;
+  return { acc: all ? r3(on / all) : null, buzzes, ms: r0(performance.now() - t0) };
 }
 async function stepCircle() {
   show(18, CIRC_T);
   const ws = DRILL.c.map(k => DJ[k]).join('と');
-  cue(`鼻先で<b>円をなぞる</b>ワーク<small>${ws}に出る円を、鼻先（赤い点）でなぞります。時計回りに2周、次に反対回りに2周。スマホは動かさず、首だけで</small>`, '', '鼻先で円をなぞるワーク。画面に出る円を、鼻先でなぞります。時計回りに2周、次に反対回りに2周。スマホは動かさず、首だけで');
+  cue(`鼻先で<b>動く点を追う</b>ワーク<small>${ws}に出る円の上を、黄色い点が動きます。鼻先（赤い点）で、点を追いかけてください。途中で向きや速さが変わります。スマホは動かさず、首だけで</small>`, '', '鼻先で動く点を追うワーク。円の上を、黄色い点が動きます。鼻先で、点を追いかけてください。途中で向きや速さが変わります。スマホは動かさず、首だけで');
   btn('始める', async () => {
     const my = tok; clearBtns(); noseStart(); await voiceQuiet(); if (my !== tok) return;
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepCircle, '顔が見つかりませんでした');
     const out = [];
-    for (const k of DRILL.c) {
+    for (const [i, k] of DRILL.c.entries()) {
       if (my !== tok) return;
       const g0 = placeNose(), [vx, vy] = DV[k];   // 本人の右＝映像の x が小さい側（noseTgt と同じ）
-      G = { ...g0, draw: drawCircle, c: { x: g0.cx - vx * g0.h * CIRC_OFF, y: g0.cy - vy * g0.h * CIRC_OFF, r: g0.h * CIRC_R }, want: -1, prog: 0, a0: null, showC: true };
+      G = { ...g0, draw: drawCircle, c: { x: g0.cx - vx * g0.h * CIRC_OFF, y: g0.cy - vy * g0.h * CIRC_OFF, r: g0.h * CIRC_R }, pt: null, st: null, showC: true };
       cue('スマホを動かして、鼻先を真ん中の点に', 'top'); await noseOn({ x: g0.cx, y: g0.cy }, 8000); if (my !== tok) return;
       G.showC = false; const J = DJ[k];
-      cue(`<b>${J}</b>の円を、鼻先でなぞる<small>時計回りに2周。スマホは動かさず、首だけで</small>`, 'top', `${J}の円を、鼻先でなぞる。時計回りに2周`); await voiceQuiet(5000); if (my !== tok) return;
-      const cw = await circLaps(G, -1, `${J}の円・時計回り`); if (my !== tok) return;
-      beep(880, 120);
-      cue('<b>反対回り</b>に2周', 'top', '反対回りに2周'); await voiceQuiet(3000); if (my !== tok) return;
-      const ccw = await circLaps(G, 1, `${J}の円・反対回り`); if (my !== tok) return;
-      beep(880, 120); out.push({ k, cw, ccw });
+      G.pt = { x: G.c.x, y: G.c.y - G.c.r };
+      cue(`<b>${J}</b>の円<small>まず、鼻先を黄色い点に合わせる</small>`, 'top', `${J}の円。まず、鼻先を黄色い点に合わせます`);
+      await untilOk(() => !!last && dist(last[1], G.pt) < G.c.r * CIRC_ON, 10000); if (my !== tok) return;
+      G.st = 'on'; await voiceQuiet(5000); if (my !== tok) return;
+      cue(`<b>${J}</b>の円<small>点を鼻先で追いかける</small>`, 'top', '点が動きます。鼻先で追いかけて');
+      const r = await circFollow(G, i % 2 ? 1 : -1, J); if (my !== tok || !r) return;
+      circChime(); out.push({ k, ...r });
+      cue(r.acc != null && r.acc >= 0.6 ? 'よく追えました！' : 'おつかれさまでした', 'top');
+      await sleep(1500); if (my !== tok) return;
     }
     G = null; cue(''); endBeep();
     RUN.dCircle = { dirs: out, at: new Date().toISOString() };
