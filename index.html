@@ -151,7 +151,7 @@ html:not(.funnel) #sMain #bVoice,html:not(.funnel) #sMain #bRedo{color:var(--gol
   <div class="brand staffOnly"><img src="icons/icon-192.png" alt=""><b>FUNCTIONAL NEURO TRAINING</b></div>
   <h1 class="staffOnly">カメラでチェック<small>トレーナー用</small></h1>
   <h1 class="funnelOnly">からだの神経チェック</h1>
-  <p class="funnelOnly">カメラを使って、首と目の感覚をチェックします。音が出るようにしてください。</p>
+  <p class="funnelOnly">カメラを使って、首と目の感覚をチェックします。音が出るようにしてください。<br>途中でやめても、終わったチェックまでは保存され、あとで続きからできます。</p>
   <p class="staffOnly">カメラで顔・目・口の動きを読み取ります。全部を通して測るか、使いたい検査だけを選んで測れます。</p>
   <div class="rule staffOnly"></div>
   <div class="res small">
@@ -165,6 +165,7 @@ html:not(.funnel) #sMain #bVoice,html:not(.funnel) #sMain #bRedo{color:var(--gol
   <p class="small">選んだ検査だけを、上から順に測ります。1つだけでも選べます。</p>
   <div class="pick" id="pick"></div>
   <div class="row2"><button class="sub" id="bPickAll">全部選ぶ</button><button class="sub" id="bPickNone">全部外す</button></div>
+  <div id="resumeBox" class="hide"><p class="small" id="resumeNote"></p><button id="bResume" disabled>続きから再開する</button></div>
   <button id="bPick" disabled>選んだ検査を始める</button>
 </div>
 
@@ -541,7 +542,7 @@ function fail(again, why) {
   btn('もう一度', again);
 }
 // お客さんの画面：判定も数字も出さず「記録しました」だけ
-function recorded(again, next, nextLabel) { if (!SIDE_AFTER) { const n = planNext(again); if (n) [next, nextLabel] = n; } if (!STAFF) cue('記録しました'); btn('もう一度', again, 'sub'); btn(nextLabel, next); }
+function recorded(again, next, nextLabel) { partSave(again); if (!SIDE_AFTER) { const n = planNext(again); if (n) [next, nextLabel] = n; } if (!STAFF) cue('記録しました'); btn('もう一度', again, 'sub'); btn(nextLabel, next); }
 
 // ── 目の的（点）。画面の座標：x は −1（左）〜 +1（右）、y は −1（下）〜 +1（上）。右・左は画面を見ている本人の右・左
 const dot = $('dot');
@@ -2894,7 +2895,7 @@ function saveRun() {   // 前の版で撮ったのどの奥の写真は重いの
 }
 function finish() {
   tok++; judge(); mitate(); RUN.ended = new Date().toISOString(); RUN.delegate = delegate;
-  const n = saveRun();
+  const n = saveRun(); if (BACK && !WORKMODE) try { localStorage.removeItem(PART_KEY); } catch (e) {}
   if (BACK) { $('sMain').classList.add('hide'); try { video.srcObject && video.srcObject.getTracks().forEach(t => t.stop()); } catch (e) {} location.replace(BACK + '#cc=' + encodeURIComponent(RUN.started)); return; }   // replace：戻るボタンでカメラの画面に戻さず、1つ前の結果の画面へ戻す（2026-10-20）
   $('sMain').classList.add('hide'); $('sEnd').classList.remove('hide');
   $('endLead').textContent = PLAN && PLAN.length < TESTS.length ? `選んだ検査（${PLAN.map(f => TESTS.find(t => t[2] === f)[1].replace(/^\d+\.\s*/, '')).join('・')}）が終わりました。` : 'すべてのチェックが終わりました。';
@@ -3045,7 +3046,7 @@ const PICK_KEY = 'fntcc_pick';
   $('pick').onchange = pickSync;
 })();
 const picked = () => [...$('pick').querySelectorAll('input:checked')].map(i => i.value);
-function pickSync() { const n = picked().length; $('bPick').disabled = !lm || !n; $('bPick').textContent = BACK ? (WORKMODE ? 'ワークを始める' : 'チェックを始める') : n ? `選んだ検査を始める（${n}つ）` : '選んだ検査を始める'; localStorage.setItem(PICK_KEY, JSON.stringify(picked())); }
+function pickSync() { const n = picked().length; $('bPick').disabled = !lm || !n; $('bResume').disabled = !lm; $('bPick').textContent = BACK ? (WORKMODE ? 'ワークを始める' : $('bPick').classList.contains('sub') ? '最初からやり直す' : 'チェックを始める') : n ? `選んだ検査を始める（${n}つ）` : '選んだ検査を始める'; localStorage.setItem(PICK_KEY, JSON.stringify(picked())); }
 $('bPickAll').onclick = () => { $('pick').querySelectorAll('input').forEach(i => { i.checked = true; }); pickSync(); };
 $('bPickNone').onclick = () => { $('pick').querySelectorAll('input').forEach(i => { i.checked = false; }); pickSync(); };
 // お客さん用（/check から）は ?t= に並べた順に流す（ワークのあとに首で測り直すため。トレーナー用は一覧の順）
@@ -3053,8 +3054,28 @@ $('bPick').onclick = () => { const ks = picked(), want = BACK && (location.searc
   begin(want ? decodeURIComponent(want).split(',').map(k => TESTS.find(t => t[0] === k)).filter(Boolean).map(t => t[2]) : TESTS.filter(t => ks.includes(t[0])).map(t => t[2])); };
 $('bStart').onclick = () => begin(TESTS.map(t => t[2]));
 
-async function begin(plan) {
-  PLAN = plan; SIDE_AFTER = false; newRun(); RUN.plan = plan.map(f => TESTS.find(t => t[2] === f)[0]);
+// ── 途中から再開（2026-10-20 宮崎さん「途中経過を一旦保存しておいて、後で再開できる機能」）
+// /check から開いたチェック（ワーク以外）は、1つ終わるたびに、それまでの記録と残りの検査をこの端末に保存する。
+// 同じ組み合わせで7日以内に開き直すと「続きから再開する」が出て、終わった検査を飛ばして残りだけを流す。全部終わったら消す
+const PART_KEY = 'fntcc_partial', PART_DAYS = 7, CC_T = (location.search.match(/[?&]t=([^&]+)/) || [])[1] || '';
+function partSave(done) {
+  if (!BACK || WORKMODE || SIDE_AFTER || !PLAN) return;
+  const i = PLAN.indexOf(done); if (i < 0) return;
+  const rest = PLAN.slice(i + 1).map(f => TESTS.find(t => t[2] === f)[0]);
+  try { if (rest.length) localStorage.setItem(PART_KEY, JSON.stringify({ t: CC_T, at: Date.now(), rest, run: RUN })); else localStorage.removeItem(PART_KEY); } catch (e) {}
+}
+function partGet() { try { const p = JSON.parse(localStorage.getItem(PART_KEY) || 'null'); return p && p.t === CC_T && Date.now() - p.at < PART_DAYS * 864e5 && p.rest && p.rest.length ? p : null; } catch (e) { return null; } }
+const nameOf = k => TESTS.find(t => t[0] === k)[1].replace(/^\d+\.\s*/, '');
+(() => {
+  const p = BACK && !WORKMODE ? partGet() : null; if (!p) return;
+  const done = (p.run.plan || []).filter(k => !p.rest.includes(k));
+  $('resumeNote').innerHTML = `前回の続きがあります。<br>終わったチェック：${done.map(nameOf).join('・')}<br>残り：${p.rest.map(nameOf).join('・')}`;
+  $('resumeBox').classList.remove('hide'); $('bPick').classList.add('sub'); pickSync();
+  $('bResume').onclick = () => { const q = partGet(); if (q) begin(q.rest.map(k => TESTS.find(t => t[0] === k)[2]), q.run); };
+})();
+
+async function begin(plan, resume) {
+  PLAN = plan; SIDE_AFTER = false; if (resume) RUN = resume; else { newRun(); RUN.plan = plan.map(f => TESTS.find(t => t[2] === f)[0]); }
   try { VA.muted = false; VA.src = 'voice/unlock.mp3'; VA.play().catch(() => {}); } catch (e) {}   // スマホは、押したときに一度鳴らしておかないと後で音が出ない。消音のまま鳴らすと許可にならない端末があるので、無音のファイルを音ありで鳴らす
   $('bStart').disabled = $('bPick').disabled = true;
   const camLive = video.srcObject && video.srcObject.getVideoTracks().some(t => t.readyState === 'live');   // トップに戻って選び直したときは、カメラはつけたまま
