@@ -2895,7 +2895,7 @@ function saveRun() {   // 前の版で撮ったのどの奥の写真は重いの
 function finish() {
   tok++; judge(); mitate(); RUN.ended = new Date().toISOString(); RUN.delegate = delegate;
   const n = saveRun();
-  if (BACK) { $('sMain').classList.add('hide'); try { video.srcObject && video.srcObject.getTracks().forEach(t => t.stop()); } catch (e) {} location.href = BACK + '#cc=' + encodeURIComponent(RUN.started); return; }
+  if (BACK) { $('sMain').classList.add('hide'); try { video.srcObject && video.srcObject.getTracks().forEach(t => t.stop()); } catch (e) {} location.replace(BACK + '#cc=' + encodeURIComponent(RUN.started)); return; }   // replace：戻るボタンでカメラの画面に戻さず、1つ前の結果の画面へ戻す（2026-10-20）
   $('sMain').classList.add('hide'); $('sEnd').classList.remove('hide');
   $('endLead').textContent = PLAN && PLAN.length < TESTS.length ? `選んだ検査（${PLAN.map(f => TESTS.find(t => t[2] === f)[1].replace(/^\d+\.\s*/, '')).join('・')}）が終わりました。` : 'すべてのチェックが終わりました。';
   $('bSideAgain').style.display = RUN.side ? '' : 'none';
