@@ -2954,7 +2954,7 @@ async function stepVerg() {
     drillDone(stepVerg);
   });
 }
-const CIRC_OFF = 1.0, CIRC_R = 0.85, CIRC_BAND = 0.45, CIRC_LAPS = 2, CIRC_MAX = 45000;   // 円の中心（真ん中の点から、点までの距離の何倍）・半径（同じ）・線から外れてよい幅（半径の何倍）・周回・1つの回り方の上限（ms）
+const CIRC_OFF = 1.0, CIRC_R = 0.64, CIRC_BAND = 0.45, CIRC_LAPS = 2, CIRC_MAX = 45000;   // 円の中心（真ん中の点から、点までの距離の何倍）・半径（同じ）・線から外れてよい幅（半径の何倍）・周回・1つの回り方の上限（ms）。半径は 0.85 → 0.64（2026-10-20 宮崎さん「円が大きすぎる。今の4分の3くらいに」）
 function drawCircle(t, pts) {
   const g = G, u = OVU, c = g.c;
   oc.lineWidth = 12 * u; oc.strokeStyle = 'rgba(0,0,0,.45)'; oc.beginPath(); oc.arc(c.x, c.y, c.r, 0, 7); oc.stroke();   // 下に黒いふち（顔の上でも線が見えるように）
