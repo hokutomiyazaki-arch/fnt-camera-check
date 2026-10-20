@@ -54,6 +54,19 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 /* 音声の入り切り（いつでも押せるよう右上に固定） */
 #bVoice{position:absolute;right:10px;top:calc(40px + env(safe-area-inset-top));width:auto;margin:0;padding:6px 12px;font-size:14px;border-radius:20px;background:rgba(0,0,0,.6);border:1px solid #556;z-index:10}
 #bRedo{position:absolute;left:10px;top:calc(40px + env(safe-area-inset-top));width:auto;margin:0;padding:6px 12px;font-size:14px;border-radius:20px;background:rgba(0,0,0,.6);border:1px solid #556;z-index:10}
+/* あとで続ける（/check から開いたチェックの間ずっと出す。2026-10-20 宮崎さん「途中でやめる人が続きを再開できるボタンを常に表示」） */
+#bLater{position:absolute;left:50%;transform:translateX(-50%);top:calc(40px + env(safe-area-inset-top));width:auto;margin:0;padding:6px 14px;font-size:14px;font-weight:800;border-radius:20px;background:#e07b39;color:#fff;border:0;z-index:10;white-space:nowrap}
+#later{position:fixed;inset:0;background:rgba(29,42,51,.55);z-index:30;display:none;align-items:flex-end;justify-content:center}
+#later.on{display:flex}
+#later>div{background:#f6f4ef;color:#1d2a33;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:18px 20px calc(22px + env(safe-area-inset-bottom));font-family:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif}
+#later h3{margin:0 0 6px;font-size:21px;color:#2f7d6d}
+#later p{font-size:16px;line-height:1.7;margin:6px 0}
+#later label{display:block;font-weight:700;margin:12px 0 4px;font-size:16px}
+#later input,#later select{width:100%;box-sizing:border-box;font:inherit;font-size:19px;padding:11px;border:2px solid #e3ded3;border-radius:12px;background:#fff;color:#1d2a33}
+#later button{display:block;width:100%;margin:12px 0 0;border:0;border-radius:14px;padding:15px;font:inherit;font-size:19px;font-weight:800;background:#e07b39;color:#fff}
+#later button.sub{background:#fff;color:#1d2a33;border:2px solid #e3ded3;font-size:17px}
+#later .err{color:#b5442f;font-weight:700}
+#later .note{font-size:13px;color:#5b6b76}
 #cue.top{top:calc(82px + env(safe-area-inset-top));transform:translateX(-50%);padding:8px 12px 12px}
 #cue.top canvas{width:170px;height:131px}
 /* 鼻先を合わせる：3行の説明は1行ずつに収める（2026-10-18 宮崎さん「もう少し文字を小さくすれば1行以内に収まる」）。見本の動画は少し大きく */
@@ -197,11 +210,38 @@ html:not(.funnel) #sMain #bVoice,html:not(.funnel) #sMain #bRedo{color:var(--gol
   <div id="cue"></div>
   <button id="bVoice"></button>
   <button id="bRedo" style="display:none">↺ 最初からやり直し</button>
+  <button id="bLater" class="funnelOnly">⏸ あとで続ける</button>
   <div id="near"></div>
   <div id="bottom"><div id="result"></div><div id="btns"></div><div id="msg"></div></div>
   <div id="svv"><canvas id="svvC"></canvas><div id="svvMsg"></div></div>
 </div>
 
+<div id="later"><div>
+  <div id="laterForm">
+    <h3>あとで続ける</h3>
+    <p>終わったチェックまでを保存して、<b>続きのリンクをメールでお送りします。</b>どのスマホからでも、リンクを開けば続きができます。</p>
+    <p class="note">最後に結果を見るときは、ここで入れた内容を使うので、もう一度入れなくてかまいません。</p>
+    <label for="lName">お名前</label><input id="lName" autocomplete="name">
+    <label for="lMail">メールアドレス</label><input id="lMail" type="email" autocomplete="email" inputmode="email">
+    <label for="lAge">年代</label>
+    <select id="lAge"><option value="">選んでください</option><option>〜39歳</option><option>40代</option><option>50代</option><option>60代</option><option>70代以上</option></select>
+    <p class="err" id="lErr"></p>
+    <button id="bLaterSend">続きのリンクを送る</button>
+    <button class="sub" id="bLaterBack">このままチェックを続ける</button>
+    <p class="note">ご登録いただいたメールアドレスに、FNT（宮崎ほくと）からのお知らせが届きます。いつでも解除できます。<a href="/privacy">個人情報の取り扱い</a></p>
+  </div>
+  <div id="laterDone" style="display:none">
+    <h3>メールをお送りしました</h3>
+    <p>数分で「チェックの続き」のメールが届きます。メールのリンクを開くと、続きから始められます（30日間）。</p>
+    <p class="note">届かないときは、迷惑メールのフォルダも見てください。このスマホなら、同じページを開き直しても続きが出ます。</p>
+    <button id="bLaterQuit">ここで終わる</button>
+    <button class="sub" id="bLaterGo">このままチェックを続ける</button>
+  </div>
+  <div id="laterBye" style="display:none">
+    <h3>おつかれさまでした</h3>
+    <p>続きは、メールのリンクからいつでもどうぞ。この画面は閉じてかまいません。</p>
+  </div>
+</div></div>
 <script type="module">
 import { FilesetResolver, FaceLandmarker } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.0/vision_bundle.mjs';
 const WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.0/wasm';
@@ -3074,6 +3114,41 @@ const nameOf = k => TESTS.find(t => t[0] === k)[1].replace(/^\d+\.\s*/, '');
   $('resumeBox').classList.remove('hide'); $('bPick').classList.add('sub'); pickSync();
   $('bResume').onclick = () => { const q = partGet(); if (q) begin(q.rest.map(k => TESTS.find(t => t[0] === k)[2]), q.run); };
 })();
+
+
+// ── あとで続ける（2026-10-20 宮崎さん「後で続けるボタンを押した人には、その場でメールアドレスを入力させて、最後に結果を見る時にはもう一度入力を求めない」）
+// 名前・メール・年代と、終わったチェックまでの記録を /api/check に送る。サーバーが続きを private の置き場に置き、Kit の自動メールが続きのリンクを送る。
+// 入れた3つはこの端末にも置き（chk_reg）、/check の登録の画面はそれを使って聞き直さずに進む
+if (!BACK || WORKMODE) $('bLater').style.display = 'none';
+const laterPane = k => ['laterForm', 'laterDone', 'laterBye'].forEach(id => { $(id).style.display = id === k ? '' : 'none'; });
+$('bLater').onclick = () => {
+  try { speechSynthesis.cancel(); } catch (e) {} VA.pause();
+  try { const g = JSON.parse(localStorage.getItem('chk_reg') || 'null'); if (g) { $('lName').value = g.name || ''; $('lMail').value = g.email || ''; $('lAge').value = g.age || ''; } } catch (e) {}
+  $('lErr').textContent = ''; laterPane('laterForm'); $('later').classList.add('on');
+};
+$('bLaterBack').onclick = $('bLaterGo').onclick = () => $('later').classList.remove('on');
+$('bLaterSend').onclick = async () => {
+  const name = $('lName').value.trim(), email = $('lMail').value.trim(), age = $('lAge').value;
+  if (!name || !email || !age) { $('lErr').textContent = 'お名前・メールアドレス・年代を入れてください。'; return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { $('lErr').textContent = 'メールアドレスの形が正しくないようです。'; return; }
+  // 続き：1つ以上終わっていればその保存（partGet）。まだ1つも終わっていなければ、全部を残りにする
+  const all = (RUN && RUN.plan) || decodeURIComponent(CC_T).split(',');
+  const part = partGet() || { t: CC_T, rest: all, run: RUN };
+  $('bLaterSend').disabled = true; $('lErr').textContent = '';
+  try {
+    const r = await fetch('/api/check', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'save', vid: localStorage.getItem('chk_vid') || '', variant: localStorage.getItem('chk_var') || 'free', name, email, age, part }) });
+    const j = await r.json(); if (!j.ok) throw new Error();
+  } catch (e) { $('lErr').textContent = '送れませんでした。少し時間をおいて、もう一度押してください。'; $('bLaterSend').disabled = false; return; }
+  $('bLaterSend').disabled = false;
+  localStorage.setItem('chk_reg', JSON.stringify({ name, email, age }));
+  laterPane('laterDone');
+};
+$('bLaterQuit').onclick = () => {
+  try { speechSynthesis.cancel(); } catch (e) {} VA.pause();
+  try { video.srcObject && video.srcObject.getTracks().forEach(t => t.stop()); } catch (e) {}
+  $('sMain').classList.add('hide'); laterPane('laterBye');
+};
 
 async function begin(plan, resume) {
   PLAN = plan; SIDE_AFTER = false; if (resume) RUN = resume; else { newRun(); RUN.plan = plan.map(f => TESTS.find(t => t[2] === f)[0]); }
