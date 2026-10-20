@@ -2974,7 +2974,7 @@ async function stepVerg() {
   cue(`頭を<b>${S}へ倒して</b>、寄り目のワーク<small>上の点を見たまま、スマホを目に近づけて・離してを3回。頭は${S}へ倒したまま</small>`);
   btn('始める', async () => {
     const my = tok; clearBtns(); await motionStart(); noseStart(); await voiceQuiet(); if (my !== tok) return;
-    cue(`頭を${S}へ倒す<small>倒せるところの半分くらいまで</small>`); await voiceQuiet(4000); if (my !== tok) return;
+    // 2026-10-20 宮崎さん：入口で「倒したまま」と言ったあとに「倒して」をもう一度言うのと、「倒せるところの半分くらい」はいらない。倒れるのを黙って待つ
     const tilted = await untilOk(() => { const h = headTilt(); return h != null && h * sg >= VERG_TILT; }, VERG_TILT_MAX); if (my !== tok) return;
     cue(''); dark(true); placeDot(0, 1.25);
     near('頭を倒したまま<br><b>上の点を見る</b>', null, null, '頭を倒したまま、上の点を見る'); await voiceQuiet(4000); await sleep(800); if (my !== tok) return;
