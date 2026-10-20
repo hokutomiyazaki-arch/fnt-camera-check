@@ -231,8 +231,8 @@ html:not(.funnel) #sMain #bVoice,html:not(.funnel) #sMain #bRedo{color:var(--gol
     <p class="note">ご登録いただいたメールアドレスに、FNT（宮崎ほくと）からのお知らせが届きます。いつでも解除できます。<a href="/privacy">個人情報の取り扱い</a></p>
   </div>
   <div id="laterDone" style="display:none">
-    <h3>メールをお送りしました</h3>
-    <p>数分で「チェックの続き」のメールが届きます。メールのリンクを開くと、続きから始められます（30日間）。</p>
+    <h3 id="laterH">メールをお送りしました</h3>
+    <p id="laterP">数分で「チェックの続き」のメールが届きます。メールのリンクを開くと、続きから始められます（30日間）。</p>
     <p class="note">届かないときは、迷惑メールのフォルダも見てください。このスマホなら、同じページを開き直しても続きが出ます。</p>
     <button id="bLaterQuit">ここで終わる</button>
     <button class="sub" id="bLaterGo">このままチェックを続ける</button>
@@ -3172,11 +3172,14 @@ $('bLaterSend').onclick = async () => {
   $('bLaterSend').disabled = true; $('lErr').textContent = '';
   try {
     const r = await fetch('/api/check', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'save', vid: localStorage.getItem('chk_vid') || '', variant: localStorage.getItem('chk_var') || 'free', name, email, age, part, st: JSON.parse(localStorage.getItem('chk_resume_st') || 'null') }) });
-    const j = await r.json(); if (!j.ok) throw new Error();
+      body: JSON.stringify({ kind: 'save', vid: localStorage.getItem('chk_vid') || '', variant: localStorage.getItem('chk_var') || 'free', name, email, age, part, st: JSON.parse(localStorage.getItem('chk_resume_st') || 'null'), rid: localStorage.getItem('chk_rid') || '' }) });
+    var j = await r.json(); if (!j.ok) throw new Error();
   } catch (e) { $('lErr').textContent = '送れませんでした。少し時間をおいて、もう一度押してください。'; $('bLaterSend').disabled = false; return; }
   $('bLaterSend').disabled = false;
-  localStorage.setItem('chk_reg', JSON.stringify({ name, email, age }));
+  localStorage.setItem('chk_reg', JSON.stringify({ name, email, age })); if (j.id) localStorage.setItem('chk_rid', j.id);
+  // 前に送ったメールと同じリンクに上書きしたとき（Kit は2通目を送らない）は、前のメールから開くように書く
+  $('laterH').textContent = j.reused ? '保存しました' : 'メールをお送りしました';
+  $('laterP').textContent = j.reused ? '前にお送りしたメール「からだの神経チェックの続きはこちらです」のボタンから、いまの続きが開けます（30日間）。' : '数分で「チェックの続き」のメールが届きます。メールのリンクを開くと、続きから始められます（30日間）。';
   laterPane('laterDone');
 };
 $('bLaterQuit').onclick = () => {
