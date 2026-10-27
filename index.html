@@ -2658,7 +2658,19 @@ function noseHTML(o, back, lab) {
   return `${lab}：ズレの平均 <b>${S.meanDeg != null ? S.meanDeg + '°' : '—'}</b>（画面の上 ${f2(S.meanPx)}）・いちばん大きい向き <b>${S.worst ? DJ[S.worst] : '—'}</b>${noseSVG(o.trials)}${rows.join('<br>')}<br><span class="small">度は頭の向き（＋＝本人の右・上）。カメラは回旋を8割・上下を半分ほどに小さく読むので目安。画面の上の数字は鼻先の位置（目じりの間＝1）。判定は下の枠${openW.length ? `<br><span style="color:#ff8a65">※目が開いていた回：${openW.join('・')}（戻すあいだの半分以上で目が開いていた）</span>` : ''}</span>${jpeHTML(o, back)}`;
 }
 const NOSE_A_T = '14. 鼻先を合わせる①（目を閉じて真ん中へ）', NOSE_B_T = '15. 鼻先を合わせる②（目を閉じて8つの点へ）';
-function noseStart() { try { const A = window.AudioContext || window.webkitAudioContext; endBeep.a = endBeep.a || new A(); endBeep.a.resume(); } catch (e) {} }   // 音はボタンを押したときに用意しないと鳴らない端末がある
+function noseStart() { try { const A = window.AudioContext || window.webkitAudioContext; endBeep.a = endBeep.a || new A(); endBeep.a.resume(); } catch (e) {} noseNumLoad(); }   // 音はボタンを押したときに用意しないと鳴らない端末がある
+// 「5・4・3・2・1」の声は前もって読み込み、音の時計で1秒ごとに鳴らす（2026-10-27 宮崎さん「5、4、3、2、1のリズムが途中で崩れる時がある」）。
+// 前は数字ごとに音声ファイルを読み込み直して鳴らし、sleep(1000) を積み重ねていたので、読み込みや処理の遅れがそのまま間隔のずれになっていた
+const NOSE_NUM = {};
+function noseNumLoad() {
+  const a = endBeep.a; if (!a || !VMAP) return;
+  for (let n = 1; n <= NOSE_COUNT; n++) {
+    const f = VMAP[String(n)], k = VDIR + f; if (!f || NOSE_NUM[k]) continue;
+    NOSE_NUM[k] = fetch(k).then(r => r.arrayBuffer()).then(b => new Promise((ok, ng) => { const p = a.decodeAudioData(b, ok, ng); if (p && p.then) p.then(ok, ng); }))
+      .then(x => (NOSE_NUM[k] = x)).catch(() => { delete NOSE_NUM[k]; });
+  }
+}
+const noseNums = () => { if (!VMAP) return null; const b = []; for (let n = NOSE_COUNT; n >= 1; n--) { const x = NOSE_NUM[VDIR + VMAP[String(n)]]; if (!(x && x.duration)) return null; b.push(x); } return b; };
 // 説明はひとことに（2026-10-18 宮崎さん「目をつぶって顔を中心に戻せるかのテストです、ぐらいシンプルに」）。練習は2か所だけ・記録しない（同「ちょっと難しいので簡単な練習を」）
 const NOSE_SUB = '<small>3秒後に鼻先の位置を確定します。「ピッ」と鳴ったら目を開ける</small>';
 const NOSE_SUB_A = '<small>同じ方向に2回ずつやります（右へ2回 → 左へ2回 → 上へ2回 → 下へ2回）。回せるところまで回し、目をつぶったまま「5・4・3・2・1」でゆっくり真ん中へ。「ピッ」と鳴ったら目を開ける</small>';   // ①は hanasaki-awase と同じ流れ（2回ずつ・数えて戻す）。向きは右左と上下（2026-10-18 夜 宮崎さん「鼻先を合わせるテストは、左右と上下だけ」）
@@ -2694,12 +2706,20 @@ async function noseTurned(ref, max) {
 async function noseBack(ref) {
   const my = tok, a = [];
   let rec = true; (async () => { while (rec && my === tok) { if (last && window.__hp) a.push(noseSnap()); await sleep(16); } })();
-  for (let n = NOSE_COUNT; n >= 1; n--) {
-    if (my !== tok) { rec = false; return null; }
-    cue(`目をつぶったまま、ゆっくり真ん中へ戻す<br><b style="font-size:2.4em">${n}</b>`, 'top', String(n)); await sleep(1000);
+  // 始めた時刻を基準に、数字の表示・声・最後の「ピッ」・確定をそろえる（遅れても次の数字の時刻は動かさない）。声が読み込めていなければ前と同じ読み上げ
+  const ac = endBeep.a, B = VOICE && ac && ac.state === 'running' ? noseNums() : null, src = [], T0 = performance.now() + 60, A0 = ac ? ac.currentTime + 0.06 : 0;
+  const stop = () => { rec = false; src.forEach(x => { try { x.stop(); } catch (e) {} }); };   // やり直したときは、先に入れた声と「ピッ」も止める
+  if (B) { try { speechSynthesis.cancel(); } catch (e) {} VA.pause(); said = '';
+    try { B.forEach((b, i) => { const x = ac.createBufferSource(); x.buffer = b; x.connect(ac.destination); x.start(A0 + i); src.push(x); });
+      const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = 1320; g.gain.value = 0.2; o.connect(g); g.connect(ac.destination); o.start(A0 + NOSE_COUNT); o.stop(A0 + NOSE_COUNT + 0.16); src.push(o); } catch (e) {} }
+  const until = async t => { while (my === tok && performance.now() < t) await sleep(Math.min(40, t - performance.now())); return my === tok; };
+  for (let i = 0; i < NOSE_COUNT; i++) {
+    if (!await until(T0 + i * 1000)) { stop(); return null; }
+    const n = NOSE_COUNT - i; cue(`目をつぶったまま、ゆっくり真ん中へ戻す<br><b style="font-size:2.4em">${n}</b>`, 'top', B ? '' : String(n));
   }
-  rec = false; if (my !== tok) return null;
-  beep(1320, 160);
+  if (!await until(T0 + NOSE_COUNT * 1000)) { stop(); return null; }
+  rec = false;
+  if (!src.length) beep(1320, 160);
   const end = a.filter(s => s.t >= performance.now() - 300), r = noseAgg(end.length >= 3 ? end : a.slice(-5));
   const ok = !!(last && window.__hp && (!ref || !Number.isFinite(ref.rot) || noseOff(ref) < NOSE_NEAR));
   return r && { ...r, reached: ok, shut: r3(a.filter(s => s.shut >= 0.5).length / Math.max(1, a.length)) };
