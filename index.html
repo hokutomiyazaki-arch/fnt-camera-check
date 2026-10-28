@@ -592,7 +592,7 @@ function fail(again, why) {
   btn('もう一度', again);
 }
 // お客さんの画面：判定も数字も出さず「記録しました」だけ
-function recorded(again, next, nextLabel) { partSave(again); if (tnum(CUR)) cev('cc_d' + tnum(CUR)); if (!SIDE_AFTER) { const n = planNext(again); if (n) [next, nextLabel] = n; } if (!STAFF) cue('記録しました'); btn('もう一度', again, 'sub'); btn(nextLabel, next); }
+function recorded(again, next, nextLabel) { partSave(again); if (tnum(CUR)) cev('cc_d' + tnum(CUR)); if (!SIDE_AFTER) { const n = planNext(again); if (n) [next, nextLabel] = n; } if (!STAFF) { cue('記録しました'); const my = tok; setTimeout(() => { if (my === tok) next(); }, 900); return; } btn('もう一度', again, 'sub'); btn(nextLabel, next); }   // お客さん用は2回目を挟まず次へ（2026-10-28 宮崎さん「失敗した場合にはもう1回、そうじゃない場合にはすぐ次に」）
 
 // ── 目の的（点）。画面の座標：x は −1（左）〜 +1（右）、y は −1（下）〜 +1（上）。右・左は画面を見ている本人の右・左
 const dot = $('dot');
@@ -612,6 +612,16 @@ const DV = { R: [1, 0], UR: [1, 1], U: [0, 1], UL: [-1, 1], L: [-1, 0], DL: [-1,
 const dirOf = (x, y) => DIRS[((Math.round(Math.atan2(y, x) * 180 / Math.PI / 45) % 8) + 8) % 8];
 
 // ════ 0. 位置合わせ
+// お客さん用の入口：最初に音を出すかを選ぶ（2026-10-28 宮崎さん・スタッフ「音声が出るのが途中でやめる理由では。気軽なテストは音を出せない所でやる」）。
+// 音なしでは声を出さず、画面の文字だけで進む。目を閉じる鼻先①は「戻したと思ったら目を開ける」で確定する（noseBackOpen）
+function askSound() {
+  show(0, '最初に：音について');
+  cue('<b>音を出せる場所ですか？</b><small>音なしでも、画面の文字だけで最後までできます</small>');
+  const go = on => { VOICE = on; localStorage.setItem('fntVoice', on ? 'on' : 'off'); voiceBtn(); cev('cc_sound', { on });
+    if (!on) { try { speechSynthesis.cancel(); } catch (e) {} VA.pause(); } else { try { VA.muted = false; VA.src = 'voice/unlock.mp3'; VA.play().catch(() => {}); } catch (e) {} }
+    stepAlign(); };
+  btn('🔇 音なしで進める', () => go(false), 'sub'); btn('🔊 音ありで進める', () => go(true));
+}
 async function stepAlign() {
   const my = show(0, '最初に：顔の位置を合わせる');
   const [first, firstLabel] = planNext(stepAlign) || [stepTilt, '次へ（ふだんの首の傾き）'];
@@ -742,13 +752,15 @@ async function stepSide() {
     cue('まず<br>まっすぐ前を見て', 'thin low'); await sleep(1200); if (my !== tok) return;
     const base = await record(1500);
     const segs = [];
-    for (let k = 0; k < SIDE_REPS && my === tok; k++) for (const s of ['右', '左']) {
+    const order = []; for (let k = 0; k < (STAFF ? SIDE_REPS : 1); k++) order.push('右', '左');   // お客さん用は1回ずつ（2026-10-28 宮崎さん）
+    for (let j = 0; j < order.length && my === tok; j++) { const s = order[j];
       if (my !== tok) return;
       cue(`<b>${s}</b>へ<br>倒せるところまで`, 'thin low'); if (G && G.draw === drawSideGuide) G.tilt = s;
       await sleep(1500); if (my !== tok) return;
       const ro = [], r = await record(SIDE_HOLD, () => { const p = phoneRoll(); if (p != null) ro.push({ t: performance.now(), p }); });
       segs.push({ s, r, ro });
       if (my !== tok) return;
+      if (!STAFF && j < 3 && !sideOne(segs.at(-1)).ok && segs.filter(x => x.s === s).length < 2) order.splice(j + 1, 0, s);   // 読めなかった側だけ、すぐもう1回
       cue('もどして', 'thin low'); if (G && G.draw === drawSideGuide) G.tilt = null; await sleep(1500);
     }
     if (G && G.draw === drawSideGuide) G = null;
@@ -2513,7 +2525,7 @@ async function stepSvv() {
     if (my !== tok) return;
     if (phoneRoll() == null) { RUN.svv = { ok: false, why: 'この端末ではスマホの傾きを測れない' }; cue('この端末では<br>測れませんでした'); const [nx, nl] = planNext(stepSvv) || [stepAsk, '次へ（最後の質問）']; btn(nl, nx); return; }
     const plan = [];   // 縦4・横4。始めの傾きは右・左を交互に（最初の向きはばらばら）、大きさは 12〜20° でばらばら
-    for (const kind of ['V', 'H']) { const s0 = Math.random() < 0.5 ? 1 : -1; for (let i = 0; i < SVV_N; i++) plan.push({ kind, start: (i % 2 ? -s0 : s0) * (12 + Math.random() * 8) }); }
+    for (const kind of ['V', 'H']) { const s0 = Math.random() < 0.5 ? 1 : -1; for (let i = 0; i < (STAFF ? SVV_N : 1); i++) plan.push({ kind, start: (i % 2 ? -s0 : s0) * (12 + Math.random() * 8) }); }   // お客さん用は縦・横1回ずつ（2026-10-28 宮崎さん）
     cue(''); svvShow(true); const T = [];
     // 前は最初に「顔に近づけて」を出し、カメラで顔の大きさを見て近くなるまで待っていた（2026-10-16）。
     // 2026-10-18 宮崎さん「老眼で近づけすぎると何も見えなくなる人がいる。そこまで近づけなくていい。だいたい顔の近めに持って、の指示だけに」で、待つのをやめた
@@ -2522,13 +2534,14 @@ async function stepSvv() {
       if (i === 0 || plan[i - 1].kind !== p.kind) { svvLine(null); svvMsg(p.kind === 'V' ? '線を<b>まっすぐ縦</b>に<small>スマホを傾けて合わせ、止める。1回10秒</small>' : '次は<b>まっすぐ横</b>に<small>スマホを傾けて合わせ、止める。1回10秒</small>'); await sleep(3000); if (my !== tok) return svvShow(false); svvMsg(''); }
       T.push(await svvTrial(p, my)); if (my !== tok) return svvShow(false);
       beep(660, 80); svvLine(null); await sleep(800);
+      const t = T.at(-1); if (!STAFF && (!t.ok || t.off) && T.filter(x => x.kind === p.kind).length < 2) { plan.splice(i + 1, 0, { kind: p.kind, start: -p.start }); svvMsg('うまく合わせられなかったので<br><b>もう1回</b>'); await sleep(2000); if (my !== tok) return svvShow(false); svvMsg(''); }   // 合わせられなかったときだけ
     }
     svvShow(false); analyzeSvv(T);
   });
 }
 function analyzeSvv(T) {
   const one = (kind, th) => { const a = T.filter(t => t.kind === kind && t.ok && !t.off);   // 平均は、合わせられた回（ずれ10°以内）だけで出す
-    if (a.length < 2) return { ok: false, n: a.length };
+    if (a.length < (STAFF ? 2 : 1)) return { ok: false, n: a.length };
     const e = a.map(t => t.err), m = mean(e), side = Math.abs(m) >= th ? (m > 0 ? '右' : '左') : null, hd = a.map(t => t.head).filter(Number.isFinite);
     return { ok: true, n: a.length, mean: r1(m), sd: r1(sd(e)), each: e, side, th, head: hd.length ? r1(med(hd)) : null }; };
   const V = one('V', SVV_TH), H = one('H', SVH_TH);
@@ -2683,11 +2696,15 @@ const noseNums = () => { if (!VMAP) return null; const b = []; for (let n = NOSE
 // 説明はひとことに（2026-10-18 宮崎さん「目をつぶって顔を中心に戻せるかのテストです、ぐらいシンプルに」）。練習は2か所だけ・記録しない（同「ちょっと難しいので簡単な練習を」）
 const NOSE_SUB = '<small>3秒後に鼻先の位置を確定します。「ピッ」と鳴ったら目を開ける</small>';
 const NOSE_SUB_A = '<small>同じ方向に2回ずつやります（右へ2回 → 左へ2回 → 上へ2回 → 下へ2回）。回せるところまで回し、目をつぶったまま「5・4・3・2・1」でゆっくり真ん中へ。「ピッ」と鳴ったら目を開ける</small>';   // ①は hanasaki-awase と同じ流れ（2回ずつ・数えて戻す）。向きは右左と上下（2026-10-18 夜 宮崎さん「鼻先を合わせるテストは、左右と上下だけ」）
+// お客さん用は右・左・上・下を1回ずつ。音なしなら「戻したと思ったら目を開ける」で確定（2026-10-28 宮崎さん）
+const NOSE_SUB_AF = '<small>右・左・上・下へ1回ずつやります。回せるところまで回し、目をつぶったまま「5・4・3・2・1」でゆっくり真ん中へ。「ピッ」と鳴ったら目を開ける</small>';
+const NOSE_SUB_AQ = '<small>右・左・上・下へ1回ずつやります。目を閉じて回せるところまで回し、目をつぶったままゆっくり真ん中へ。<b>真ん中に戻したと思ったら目を開ける</b>（目を開けたところで記録します）</small>';
 function noseIntro(step, title, head, kind, run, practiced) {
   show(step, title); placeNose();
-  const t = (practiced === true ? '練習おわり。次は本番です<br>' : '') + head + (kind === 'noseA' ? NOSE_SUB_A : NOSE_SUB);
+  const sub = kind !== 'noseA' ? NOSE_SUB : STAFF ? NOSE_SUB_A : VOICE ? NOSE_SUB_AF : NOSE_SUB_AQ;
+  const t = (practiced === true ? '練習おわり。次は本番です<br>' : '') + head + sub;
   cue(DEMO + t, 'top fit', practiced === true ? '練習おわり。次は本番です' : t); demo(kind);
-  btn(practiced === true ? 'もう一度練習する' : (kind === 'noseA' ? 'まず練習する（各向き1回ずつ）' : 'まず練習する（2か所・記録しない）'), () => run(true), 'sub');
+  btn(practiced === true ? 'もう一度練習する' : (kind === 'noseA' ? (STAFF ? 'まず練習する（各向き1回ずつ）' : 'まず1回だけ練習する') : 'まず練習する（2か所・記録しない）'), () => run(true), 'sub');
   btn(practiced === true ? '本番を始める' : '練習せずに始める', () => run(false));
 }
 const stepNoseA = practiced => noseIntro(14, NOSE_A_T, '目をつぶって<br><b>顔を中心に戻せるか</b>のテストです', 'noseA', runNoseA, practiced);
@@ -2733,30 +2750,59 @@ async function noseBack(ref) {
   const ok = !!(last && window.__hp && (!ref || !Number.isFinite(ref.rot) || noseOff(ref) < NOSE_NEAR));
   return r && { ...r, reached: ok, shut: r3(a.filter(s => s.shut >= 0.5).length / Math.max(1, a.length)) };
 }
+// 音なしのとき（2026-10-28 宮崎さん「音声が出ない方向で」）：目をつぶったまま真ん中へ戻し、戻したと思ったら目を開ける → 開ける直前の位置で確定。
+// 目が開いたかは顔の点のまばたきの値（eyeBlink）で読む。閉じているのを一度見てから、開いたのが 0.12 秒続いたら確定。12 秒たっても開かなければ、そのときの位置
+// 首の位置感覚の元の検査も「戻ったと思ったら合図」なので、合図を目を開けることに置き換えた形。Android は確定で短く震える（iPhone のブラウザは震えない）
+async function noseBackOpen(ref) {
+  const my = tok, a = [], t0 = performance.now(); let openAt = null, wasShut = false;
+  while (my === tok && performance.now() - t0 < 12000) {
+    if (last && window.__hp) { const s = noseSnap(); a.push(s);
+      if (s.shut >= 0.5) { wasShut = true; openAt = null; }
+      else if (s.shut < 0.3) { openAt = openAt ?? s.t; if (wasShut && s.t - openAt >= 120) break; }
+      else openAt = null; }
+    await sleep(16);
+  }
+  if (my !== tok) return null;
+  try { navigator.vibrate && navigator.vibrate(120); } catch (e) {}
+  const tEnd = wasShut && openAt != null ? openAt : performance.now(), before = a.filter(s => s.t < tEnd), w = before.filter(s => s.t >= tEnd - 450 && s.t < tEnd - 100);
+  const r = noseAgg(w.length >= 3 ? w : before.slice(-5));
+  const ok = !!(last && window.__hp && (!ref || !Number.isFinite(ref.rot) || noseOff(ref) < NOSE_NEAR));
+  return r && { ...r, reached: ok, shut: r3(before.filter(s => s.shut >= 0.5).length / Math.max(1, before.length)) };
+}
 async function runNoseA(practice) {
   {
     const my = tok; clearBtns(); noseStart(); await voiceQuiet(); if (my !== tok) return;
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepNoseA, '顔が見つかりませんでした');
     const g = placeNose(), T = [];
-    const SEQ = practice ? ['R', 'L', 'U', 'D'] : NOSE_A_SEQ;
-    for (const [i, k] of SEQ.entries()) {
+    const SEQ = practice ? (STAFF ? ['R', 'L', 'U', 'D'] : ['R']) : STAFF ? [...NOSE_A_SEQ] : ['R', 'L', 'U', 'D'];   // お客さん用は1回ずつ（2026-10-28 宮崎さん）
+    const quiet = !STAFF && !VOICE;   // 音なし：数える声と「ピッ」の代わりに、目を開けたところで確定
+    for (let i = 0; i < SEQ.length; i++) { const k = SEQ[i];
       if (my !== tok) return;
       // 何回続くかを言う（hanasaki-awase と同じ。2026-10-18 夜 宮崎さん「右に回すのが何回続くのか分からない。2回ってちゃんと言ってほしい」）。回数は画面に小さく出す（声では読まない）
       const nk = SEQ.filter(x => x === k).length, ik = SEQ.slice(0, i + 1).filter(x => x === k).length, J = DJ[k], lr = k === 'R' || k === 'L';
       const cnt = practice ? `<small>練習：${J}へ</small>` : `<small>${J}へ ${ik}回目／${nk}回</small>`;
-      if (ik === 1 && !practice) { cue(`${i ? '次は' : 'まず'}${J}へ2回やります<small>同じ方向に2回続けます</small>`, 'top'); await voiceQuiet(5000); if (my !== tok) return; }
+      if (ik === 1 && !practice && nk > 1) { cue(`${i ? '次は' : 'まず'}${J}へ2回やります<small>同じ方向に2回続けます</small>`, 'top'); await voiceQuiet(5000); if (my !== tok) return; }
       g.tgt = null; g.hideC = false; cue('スマホを動かして、鼻先を真ん中の点に' + cnt, 'top', 'スマホを動かして、鼻先を真ん中の点に');
       const ref = await noseOn({ x: g.cx, y: g.cy }, Infinity); if (my !== tok) return;
       const go = lr ? `目を閉じて、${J}へ回せるところまで回す` : `目を閉じて、${J}へ向けられるところまで向ける`;   // 上下は「向ける」
-      cue(go + cnt, 'top', go);
+      if (quiet) { cue(`${go}<br><b>真ん中に戻したと思ったら目を開ける</b>` + cnt, 'top', ''); await sleep(1800); if (my !== tok) return; }   // 読んでから目を閉じられるよう少し待つ
+      else cue(go + cnt, 'top', go);
       const turned = await noseTurned(ref, NOSE_TURN_MAX); if (my !== tok) return;
-      await voiceQuiet(3000); if (my !== tok) return;
-      cue('目をつぶったまま、ゆっくり真ん中へ戻す' + cnt, 'top', '目をつぶったまま、ゆっくり真ん中へ戻す'); await voiceQuiet(4000); if (my !== tok) return;
-      const cap = await noseBack(ref); if (my !== tok) return;
+      let cap;
+      if (quiet) cap = await noseBackOpen(ref);
+      else {
+        await voiceQuiet(3000); if (my !== tok) return;
+        cue('目をつぶったまま、ゆっくり真ん中へ戻す' + cnt, 'top', '目をつぶったまま、ゆっくり真ん中へ戻す'); await voiceQuiet(4000); if (my !== tok) return;
+        cap = await noseBack(ref);
+      }
+      if (my !== tok) return;
       const err = ref && cap ? noseErr(ref, cap, k, g) : null;
-      T.push({ k, ref, cap, err, turned, reached: !!(ref && ref.reached && cap && cap.reached), shut: cap ? cap.shut : null });
+      T.push({ k, ref, cap, err, turned, reached: !!(ref && ref.reached && cap && cap.reached), shut: cap ? cap.shut : null, by: quiet ? 'open' : 'count' });
       await noseMark(g, cap, { x: g.cx, y: g.cy }); if (my !== tok) return;
+      // お客さん用：測れなかった（顔が読めない・目が開いていた）ときだけ、同じ向きをすぐもう1回。測れなかった回は数えない
+      if (!STAFF && !practice && (!err || (cap && cap.shut != null && cap.shut < 0.5)) && SEQ.filter(x => x === k).length < 2) {
+        T.pop(); SEQ.splice(i + 1, 0, k); cue('うまく測れなかったので、<b>もう1回</b>', 'top'); await sleep(1500); if (my !== tok) return; }
     }
     if (my !== tok) return;
     G = null; cue('');
@@ -3226,7 +3272,7 @@ async function begin(plan, resume) {
   if (!camLive) try { await Promise.race([startTry(), sleep(10000).then(() => { throw { name: '時間切れ。ほかのアプリやタブでカメラを使っていないか確かめて、ページを読み込み直してください' }; })]); }
   catch (e) { cev('cc_cam_ng', { denied: /NotAllowed|Security/.test(e.name) }, false); $('loadState').textContent = 'カメラを起動できませんでした（' + e.name + '）。' + (/NotAllowed|Security/.test(e.name) ? 'ブラウザの設定でカメラを許可してください。' : 'Chrome のほかのタブ（このページの古いタブも）や、カメラを使うアプリを閉じてから、もう一度押してください。'); $('bStart').disabled = false; pickSync(); return; }
   cev('cc_cam_ok'); $('sIntro').classList.add('hide'); $('sMain').classList.remove('hide'); $('bStart').disabled = false; pickSync();
-  stepAlign();
+  if (!STAFF && !WORKMODE) askSound(); else stepAlign();
 }
 // 確かめ用（自動の試験から各段を直接呼ぶ）
 window.__steps = { noseG: () => G, noseLast: () => last, analyzeSide, sideOne, sideMix, sideDiff, sideAgain, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepNoseA, stepNoseB, noseErr, noseSum, noseHTML, noseTgt, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
