@@ -482,7 +482,7 @@ const NSTEP = 17;   // 2026-10-16 サッカード・注視を外して 16→14�
 $('steps').innerHTML = '<span></span>'.repeat(NSTEP);
 let tok = 0, CUR = null;
 // テストの最中でも、いまのテストを最初からやり直せる（2026-10-14 宮崎さん）
-const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首を横に倒す': stepSide, '3. 首の8の字': stepEight, '4. 首の左右・上下': stepNeck, '5. 表情の左右差': stepFace, '6. 目の準備（測る前の合わせ）': stepEyePrep, '7. 点を目で追う': stepPursuit, '8. 流れる縞を見る': stepOkn, '9. 頭を動かして点を見つめる': stepVor, '10. 寄り目': stepConv, '11. 舌の出方': stepTongue, '12. 口の開け方': stepJaw, '13. 線をまっすぐにする': stepSvv, [NOSE_A_T]: stepNoseA, [NOSE_B_T]: stepNoseB, [VERG_T]: stepVerg, [CIRC_T]: stepCircle, '18. 鼻先で円をなぞる': stepCircle });                       // 段を移ったら増える（前の段の待ちを止めるため）
+const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首を横に倒す': stepSide, '3. 首の8の字': stepEight, '4. 首の左右・上下': stepNeck, '5. 表情の左右差': stepFace, '6. 目の準備（測る前の合わせ）': stepEyePrep, '7. 点を目で追う': stepPursuit, '8. 流れる縞を見る': stepOkn, '9. 頭を動かして点を見つめる': stepVor, '10. 寄り目': stepConv, '11. 舌の出方': stepTongue, '12. 口の開け方': stepJaw, '13. 線をまっすぐにする': stepSvv, [NOSE_A_T]: stepNoseA, [NOSE_B_T]: stepNoseB, [BS_T]: stepBs, [VERG_T]: stepVerg, [CIRC_T]: stepCircle, '18. 鼻先で円をなぞる': stepCircle });                       // 段を移ったら増える（前の段の待ちを止めるため）
 // お客さん用の入口で、どの検査まで進んだかを /api/check に送る（名前・メールは入れない。/check と同じ端末の番号 chk_vid）。
 // 始めた119人→最後まで37人の間のどこで抜けるかが見えなかった（2026-10-28 宮崎さん・スタッフ「音声が出るから途中でやめるのでは」の確かめ）。voice＝そのとき音声オンか
 const cevSent = new Set();
@@ -1647,6 +1647,7 @@ function judge() {
   const sv = RUN.svv;   // 線をまっすぐにする：傾いた側の耳石（Z-Health Next Evolution）
   if (sv && sv.V && sv.V.side) J.push({ k: `${sv.V.side}の耳石（SVV）`, src: 'SVV', side: sv.V.side, why: `線をまっすぐ縦にすると上の端が${sv.V.side}へ平均 ${Math.abs(sv.V.mean).toFixed(1)}°（${SVV_TH}°以上で異常。球形嚢寄り）` });
   if (sv && sv.H && sv.H.side) J.push({ k: `${sv.H.side}の耳石（SVH）`, src: 'SVH', side: sv.H.side, why: `線をまっすぐ横にすると${sv.H.side}の端が下がる 平均 ${Math.abs(sv.H.mean).toFixed(1)}°（${SVH_TH}°以上で異常。卵形嚢寄り）` });
+  if (RUN.bs && RUN.bs.cortex) J.push({ k: RUN.bs.cortex + 'の皮質', src: '盲点', why: '盲点が' + RUN.bs.big + 'で' + RUN.bs.diff + '%大きい（BDC 盲点）' });
   RUN.judge = J;
 }
 // only を渡すと、その検査の分だけを出す（2026-10-16 宮崎さん「各テストの後に出る読みはそのテストだけでの読みに。最終的な判定に全部を統合した読みとして出して」）。
@@ -2679,6 +2680,7 @@ function noseHTML(o, back, lab) {
   const openW = turn ? noseRowsTurn(o).filter(({ t }) => t.shut != null && t.shut < 0.5).map(({ lab: l }) => l) : S.open.map(k => DJ[k]);
   return `${lab}：ズレの平均 <b>${S.meanDeg != null ? S.meanDeg + '°' : '—'}</b>（画面の上 ${f2(S.meanPx)}）・いちばん大きい向き <b>${S.worst ? DJ[S.worst] : '—'}</b>${noseSVG(o.trials)}${rows.join('<br>')}<br><span class="small">度は頭の向き（＋＝本人の右・上）。カメラは回旋を8割・上下を半分ほどに小さく読むので目安。画面の上の数字は鼻先の位置（目じりの間＝1）。判定は下の枠${openW.length ? `<br><span style="color:#ff8a65">※目が開いていた回：${openW.join('・')}（戻すあいだの半分以上で目が開いていた）</span>` : ''}</span>${jpeHTML(o, back)}`;
 }
+const BS_T = '16. 盲点マップ（壁＋30cm）';
 const NOSE_A_T = '14. 鼻先を合わせる①（目を閉じて真ん中へ）', NOSE_B_T = '15. 鼻先を合わせる②（目を閉じて8つの点へ）';
 function noseStart() { try { const A = window.AudioContext || window.webkitAudioContext; endBeep.a = endBeep.a || new A(); endBeep.a.resume(); } catch (e) {} noseNumLoad(); }   // 音はボタンを押したときに用意しないと鳴らない端末がある
 // 「5・4・3・2・1」の声は前もって読み込み、音の時計で1秒ごとに鳴らす（2026-10-27 宮崎さん「5、4、3、2、1のリズムが途中で崩れる時がある」）。
@@ -2841,18 +2843,62 @@ async function runNoseB(practice) {
     const o = { trials: T, d: r3(g.d), cm: g.cm }; o.sum = noseSum(T, false); RUN.noseB = o;
     if (!o.sum.n) return fail(stepNoseB, '顔が見えている時間が短すぎました');
     staff(noseHTML(o, false, '目を閉じて合わせた位置の、目を開けて合わせた位置からのズレ'));
-    recorded(stepNoseB, stepAsk, '次へ（最後の質問）');
+    recorded(stepNoseB, stepBs, '次へ（盲点マップ）');
   }
 }
 
-// ════ 13. 最後の質問：痛みの出やすい側・いまの痛み・聞こえ（2026-10-14 宮崎さん）
+// ════ 16. 盲点マップ（壁＋30cm）
+const bsEyeText = (o, nm) => o ? `${nm} 面積${o.A}（幅${o.w}・高さ${o.h}・上${Math.round(o.up * 100)}%）${o.edge ? '※画面の端で止まった（実際はもっと大きい）' : ''}` : `${nm} —`;
+async function stepBs() {
+  const my = show(16, BS_T);
+  const next = () => { const [nx, nl] = planNext(stepBs) || [stepAsk, '次へ（最後の質問）']; btn(nl, nx); };
+  cue('<b>盲点マップ</b><br>壁から約30cm・スマホを壁に当てて測ります<small>カメラは使いません。終わったら自動でここに戻ります</small>');
+  btn('盲点マップを開く', () => {
+    if (my !== tok) return;
+    $('btns').innerHTML = '';
+    const iframe = document.createElement('iframe');
+    iframe.src = '/moten-map/?embed=1'; iframe.allow = 'autoplay';
+    iframe.style.cssText = 'position:fixed;inset:0;z-index:2147483647;border:0;width:100%;height:100%;background:#000';
+    const cleanup = () => { iframe.remove(); window.removeEventListener('message', receive); clearInterval(watch); };
+    const receive = e => {
+      if (my !== tok) { cleanup(); return; }
+      if (e.origin !== location.origin || e.source !== iframe.contentWindow) return;
+      if (e.data?.type !== 'moten-result' && e.data?.type !== 'moten-cancel') return;
+      cleanup();
+      if (e.data.type === 'moten-cancel') {
+        RUN.bs = {ok:false, why:'途中でやめた'};
+        cue('盲点マップをやめました'); btn('もう一度開く', stepBs); next(); return;
+      }
+      RUN.bs = {ok:true, ...e.data.data};
+      const {R, L} = RUN.bs;
+      if (R && L) {
+        const big = R.A >= L.A ? 'R' : 'L', ratio = Math.max(R.A, L.A) / Math.min(R.A, L.A) - 1;
+        RUN.bs.diff = Math.round(ratio * 100);
+        RUN.bs.big = ratio >= 0.10 ? (big === 'R' ? '右目' : '左目') : null;
+        RUN.bs.cortex = RUN.bs.big ? (big === 'R' ? '左' : '右') : null;
+      }
+      cue('盲点マップを記録しました');
+      if (STAFF) {
+        const escape = v => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
+        staff([bsEyeText(R, '右目'), bsEyeText(L, '左目'), `差 ${RUN.bs.diff ?? '—'}%`, ...(RUN.bs.reading || [])].map(escape).join('<br>'));
+      }
+      recorded(stepBs, stepAsk, '次へ（最後の質問）');
+    };
+    const watch = setInterval(() => { if (my !== tok) cleanup(); }, 100);
+    window.addEventListener('message', receive);
+    document.body.appendChild(iframe);
+  });
+  btn('飛ばす', () => { RUN.bs = {ok:false, why:'飛ばした'}; $('btns').innerHTML = ''; next(); }, 'sub');
+}
+
+// ════ 17. 最後の質問：痛みの出やすい側・いまの痛み・聞こえ（2026-10-14 宮崎さん）
 const QS = [
   { k: 'painSide', q: '痛みが出ることが多いのは<br>体のどちら側ですか？', a: ['右半身', '左半身', 'どちらも同じくらい', '痛みはあまり出ない'] },
   { k: 'painNow', q: 'いま気になっている痛みは<br>どちら側にありますか？', a: ['右側', '左側', '両側・真ん中', 'いまは無い'] },
   { k: 'hearing', q: '左右の耳で<br>聞こえにくい側はありますか？', a: ['右が聞こえにくい', '左が聞こえにくい', 'どちらも同じ'] },
 ];
 async function stepAsk() {
-  const my = show(16, ASK_T);
+  const my = show(17, ASK_T);
   RUN.ask = {};
   for (const Q of QS) {
     const a = await new Promise(res => { $('btns').innerHTML = ''; cue(Q.q); for (const t of Q.a) btn(t, () => res(t)); });
@@ -3003,7 +3049,8 @@ function summaryLines() {
     L.push(`13. 線をまっすぐにする：${one(sv.V, '縦（SVV）')}／${one(sv.H, '横（SVH）')}（＋＝時計回り＝本人の右）`); }
   for (const [o, t] of [[RUN.noseA, '14. 鼻先を合わせる①（目を閉じて真ん中へ）'], [RUN.noseB, '15. 鼻先を合わせる②（目を閉じて8つの点へ）']]) if (o) L.push(`${t}：ズレの平均 ${o.sum.meanDeg ?? '—'}°（画面の上 ${f2(o.sum.meanPx)}）／${noseTrialsText(o)}${o.sum.open.length ? '／目が開いていた回 ' + o.sum.open.map(k => DJ[k]).join('・') : ''}`);
   for (const [o, b] of [[RUN.noseA, true], [RUN.noseB, false]]) if (o) { const x = jpeText(o, b); if (x) L.push(x); }
-  if (RUN.ask) L.push(`16. 質問：痛みが出やすい側 ${RUN.ask.painSide || '—'}／いまの痛み ${RUN.ask.painNow || '—'}／聞こえにくい耳 ${RUN.ask.hearing || '—'}`);
+  const bs = RUN.bs; if (bs) L.push(bs.ok ? `16. 盲点マップ：${bsEyeText(bs.R, '右目')}／${bsEyeText(bs.L, '左目')}／差 ${bs.diff ?? '—'}%${!(bs.R && bs.L) ? '・片目だけ（左右は比べられない）' : bs.big ? '・' + bs.big + 'が大きい→' + bs.cortex + 'の皮質' : '・左右ほぼ同じ'}` : `16. 盲点マップ：—（${bs.why}）`);
+  if (RUN.ask) L.push(`17. 質問：痛みが出やすい側 ${RUN.ask.painSide || '—'}／いまの痛み ${RUN.ask.painNow || '—'}／聞こえにくい耳 ${RUN.ask.hearing || '—'}`);
   return L;
 }
 function saveRun() {   // 前の版で撮ったのどの奥の写真は重いので消す
@@ -3172,13 +3219,13 @@ function drillDone(again) {
 // 並びは全部を通すときと同じ。選んだものだけを上から順に測り、最後の検査のあと記録の画面へ行く。
 // 目の検査（追従・縞・VOR）は、目の準備をしていなければ始める前に自動で目の合わせをする（eyeStepStart）ので、単独でも測れる
 // 直接のリンク：?t=vor,conv のように key を並べると、その検査に印が付いた状態で開く
-const ASK_T = '16. 最後にいくつか質問';
+const ASK_T = '17. 最後にいくつか質問';
 const TESTS = [
   ['tilt', '1. ふだんの首の傾き', stepTilt, '首'], ['side', '2. 首を横に倒す', stepSide, '首'], ['eight', '3. 首の8の字', stepEight, '首'], ['neck', '4. 首の左右・上下', stepNeck, '首'],
   ['face', '5. 表情の左右差', stepFace, '顔'],
   ['prep', '6. 目の準備（測る前の合わせ）', stepEyePrep, '目'], ['pursuit', '7. 点を目で追う', stepPursuit, '目'], ['okn', '8. 流れる縞を見る', stepOkn, '目'], ['vor', '9. 頭を動かして点を見つめる', stepVor, '目'], ['conv', '10. 寄り目', stepConv, '目'],
   ['tongue', '11. 舌の出方', stepTongue, '口'], ['jaw', '12. 口の開け方', stepJaw, '口'],
-  ['svv', '13. 線をまっすぐにする', stepSvv, 'そのほか'], ['noseA', NOSE_A_T, stepNoseA, 'そのほか'], ['noseB', NOSE_B_T, stepNoseB, 'そのほか'], ['ask', ASK_T, stepAsk, 'そのほか'],
+  ['svv', '13. 線をまっすぐにする', stepSvv, 'そのほか'], ['noseA', NOSE_A_T, stepNoseA, 'そのほか'], ['noseB', NOSE_B_T, stepNoseB, 'そのほか'], ['bs', BS_T, stepBs, 'そのほか'], ['ask', ASK_T, stepAsk, 'そのほか'],
   ['dVerg', VERG_T, stepVerg, 'ワーク'], ['dCircle', CIRC_T, stepCircle, 'ワーク'],
 ];
 // cur の次に測る検査と、ボタンの文字。並びの外（ドリルのあとの測り直しなど）は null＝元の流れのまま
