@@ -3073,7 +3073,8 @@ async function copyText(t, b) { let ok = false; try { await navigator.clipboard.
 $('bCopy').onclick = () => copyText($('endText').value, $('bCopy'));
 $('bSideAgain').onclick = sideAgain;
 $('bCopyAll').onclick = () => copyText(localStorage.getItem('fntcc_runs') || '[]', $('bCopyAll'));
-$('bAgain').onclick = () => { SIDE_AFTER = false; newRun(); RUN.plan = PLAN && PLAN.map(f => TESTS.find(t => t[2] === f)[0]); CAL = null; $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepAlign(); };
+$('bAgain').onclick = () => { if (PLAN && PLAN.length === 1 && PLAN[0] === stepBs) { $('sEnd').classList.add('hide'); begin(PLAN); return; }   // 盲点マップだけのときはカメラなしでもう一度
+  SIDE_AFTER = false; newRun(); RUN.plan = PLAN && PLAN.map(f => TESTS.find(t => t[2] === f)[0]); CAL = null; $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepAlign(); };
 $('bHome').onclick = () => { SIDE_AFTER = false; tok++; $('sEnd').classList.add('hide'); $('sMain').classList.add('hide'); $('sIntro').classList.remove('hide'); scrollTo(0, 0); };
 
 // ════ ワーク（からだの神経チェックの結果のあとに、その人のズレに合わせて出す。2026-10-19 宮崎さん）
@@ -3314,6 +3315,7 @@ async function begin(plan, resume) {
   PLAN = plan; SIDE_AFTER = false; if (resume) RUN = resume; else { newRun(); RUN.plan = plan.map(f => TESTS.find(t => t[2] === f)[0]); }
   try { VA.muted = false; VA.src = 'voice/unlock.mp3'; VA.play().catch(() => {}); } catch (e) {}   // スマホは、押したときに一度鳴らしておかないと後で音が出ない。消音のまま鳴らすと許可にならない端末があるので、無音のファイルを音ありで鳴らす
   $('bStart').disabled = $('bPick').disabled = true; cev('cc_begin');
+  if (STAFF && plan.length === 1 && plan[0] === stepBs) { $('sIntro').classList.add('hide'); $('sMain').classList.remove('hide'); $('bStart').disabled = false; pickSync(); stepBs(); return; }   // 盲点マップだけのときはカメラを使わないので、カメラの起動と位置合わせを飛ばす（2026-10-31）
   const camLive = video.srcObject && video.srcObject.getVideoTracks().some(t => t.readyState === 'live');   // トップに戻って選び直したときは、カメラはつけたまま
   const startTry = async () => { for (let i = 0; ; i++) { try { return await startCam(); } catch (e) { if (i >= 4 || !/NotReadable|Abort|TrackStart/.test(e.name)) throw e; await sleep(1000); } } };   // 前のページがカメラを手放すまで少し待って、やり直す
   if (!camLive) try { await Promise.race([startTry(), sleep(10000).then(() => { throw { name: '時間切れ。ほかのアプリやタブでカメラを使っていないか確かめて、ページを読み込み直してください' }; })]); }
@@ -3322,7 +3324,7 @@ async function begin(plan, resume) {
   if (!STAFF && !WORKMODE) askSound(); else stepAlign();
 }
 // 確かめ用（自動の試験から各段を直接呼ぶ）
-window.__steps = { noseG: () => G, noseLast: () => last, analyzeSide, sideOne, sideMix, sideDiff, sideAgain, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepNoseA, stepNoseB, noseErr, noseSum, noseHTML, noseTgt, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
+window.__steps = { noseG: () => G, noseLast: () => last, analyzeSide, sideOne, sideMix, sideDiff, sideAgain, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepNoseA, stepNoseB, stepBs, noseErr, noseSum, noseHTML, noseTgt, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
   analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, judgeHTML, mitate, mitateHTML, saccJudge, analyzeTilt, analyzeFace, analyzePupil, pupilOne, wrinkleCount, stepTilt, stepPupil, stepAsk, get RUN() { return RUN; }, summaryLines, P, setSideAfter: v => { SIDE_AFTER = v; }, setCAL: c => { CAL = c; }, PT, DV, planNext, begin, TESTS, get PLAN() { return PLAN; } };
 </script>
 </body>
