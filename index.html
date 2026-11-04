@@ -1430,7 +1430,7 @@ function fitAxis(segs, negK, posK, names) {
     const o = { nm, mc, slope, sep: Math.round(sep * 10) / 10, mono };
     if (Math.abs(slope) > 1e-6) { all.push(o); if (!best || sep > best.sep) best = o; }
   }
-  if (best) best.all = all;   // 追従では、組ごとに点の動きといちばん合う読み方を選び直す（下の pickSeries）
+  if (best) Object.defineProperty(best, 'all', { value: all, enumerable: false });   // 追従では、組ごとに点の動きといちばん合う読み方を選び直す（下の pickSeries）。all は best 自身を含むので、数えない形にして記録（JSON）に入れない（2026-11-04：入れると循環して saveRun が黙って失敗し、目の検査をした回が保存されなかった）
   return best;
 }
 function fitCalib(segs) {
