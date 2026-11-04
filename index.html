@@ -687,7 +687,7 @@ const phoneRoll = () => MOT && MOT.roll != null && performance.now() - MOT.t < 1
 const r1 = v => Number.isFinite(v) ? Math.round(v * 10) / 10 : null;
 async function stepTilt() {
   show(1, '1. ふだんの首の傾き');
-  cue('<b>楽にして</b><br>画面を見るだけ<small>スマホは縦にまっすぐ</small>');   // 指示は最小限・大きく（2026-10-15 宮崎さん。以下の段も同じ）
+  cue('<b>頭位の静的アライメント</b>のテストを始めます<br><b>楽にして</b><br>画面を見るだけ<small>スマホは縦にまっすぐ</small>');   // 2026-11-05 宮崎さん「テストの際には難しい言葉を言ってそれっぽく」：各テストの頭に専門の名前を言う   // 指示は最小限・大きく（2026-10-15 宮崎さん。以下の段も同じ）
   btn('始める', async () => {
     const my = tok; clearBtns();
     const mot = await motionStart();
@@ -751,13 +751,13 @@ function drawSideGuide(t, pts) {
 async function stepSide() {
   show(2, '2. 首を横に倒す');
   G = { draw: drawSideGuide, tilt: null };
-  cue('顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>腕を軽く伸ばす。スマホは動かさず、首だけを横に倒します。肩は下げたまま</small>');
+  cue('<b>頸椎の側屈可動域</b>のテストを始めます<br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>腕を軽く伸ばす。スマホは動かさず、首だけを横に倒します。肩は下げたまま</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
     const mot = await motionStart();
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepSide, '顔が見つかりませんでした');
-    await voiceQuiet();
+    await voiceQuiet(30000);   // 2026-11-05 説明の頭に専門の名前を足して長くなったので、読み終えるまで待つ
     // 倒す前に、まっすぐの顔の向きを1.5秒とる（回旋・上下は、この人のまっすぐからの変化で読む）
     cue('まず<br>まっすぐ前を見て', 'thin low'); await sleep(1200); if (my !== tok) return;
     const base = await record(1500);
@@ -844,13 +844,13 @@ const ROT_TURN = 1500, ROT_HOLD = 2500, ROT_REPS = 2, ROT_GAP = 10;   // 差の�
 async function stepRot() {
   show(2, ROT_T);
   G = { draw: drawSideGuide, tilt: null };
-  cue('顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>スマホは動かさず、顔ごと右・左を向きます。肩は動かさない</small>');
+  cue('<b>頸椎の回旋可動域</b>のテストを始めます<br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>スマホは動かさず、顔ごと右・左を向きます。肩は動かさない</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (my !== tok) return;
     if (!last) return fail(stepRot, '顔が見つかりませんでした');
-    await voiceQuiet(); if (my !== tok) return;
+    await voiceQuiet(30000); if (my !== tok) return;   // 専門の名前を足して長くなった説明を読み終えるまで待つ
     cue('まず<br>まっすぐ前を見て', 'thin low'); await sleep(1200); if (my !== tok) return;
     const base = await record(1500); if (my !== tok) return;
     const segs = [], order = []; for (let k = 0; k < (STAFF ? ROT_REPS : 1); k++) order.push('右', '左');
@@ -1565,7 +1565,7 @@ const PT = 3200, PC = 2, PUR_ERR = 0.35;   // PUR_ERR：点からの位置のず
 const PUR = [{ k: 'よこ', v: [1, 0] }, { k: 'たて', v: [0, 1] }, { k: 'ななめ（右上↔左下）', v: [1, 1] }, { k: 'ななめ（左上↔右下）', v: [-1, 1] }];
 async function stepPursuit() {
   show(7, '7. 点を目で追う');
-  cue('動く点を<br><b>目だけ</b>で追う');
+  cue('<b>眼球運動（円滑性追従）</b>のテストを始めます<br>動く点を<br><b>目だけ</b>で追う');
   btn('始める', async () => {
     const my = tok; clearBtns();
     const g = await eyeStepStart(stepPursuit); if (!g) return;
@@ -2590,7 +2590,7 @@ async function svvTrial(p, my) {
 }
 async function stepSvv() {
   show(13, '13. 線をまっすぐにする');
-  cue('スマホを<b>手に持って</b><br><b>顔の近めに</b><small>線がはっきり見える近さで。部屋を暗くできれば暗く</small>');
+  cue('<b>自覚的視性垂直位</b>のテストを始めます<br>スマホを<b>手に持って</b><br><b>顔の近めに</b><small>線がはっきり見える近さで。部屋を暗くできれば暗く</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
     await motionStart();
@@ -2781,7 +2781,7 @@ function noseIntro(step, title, head, kind, run, practiced) {
   btn(practiced === true ? 'もう一度練習する' : (kind === 'noseA' ? (STAFF ? 'まず練習する（各向き1回ずつ）' : 'まず1回だけ練習する') : 'まず練習する（2か所・記録しない）'), () => run(true), 'sub');
   btn(practiced === true ? '本番を始める' : '練習せずに始める', () => run(false));
 }
-const stepNoseA = practiced => noseIntro(14, NOSE_A_T, '目をつぶって<br><b>顔を中心に戻せるか</b>のテストです', 'noseA', runNoseA, practiced);
+const stepNoseA = practiced => noseIntro(14, NOSE_A_T, '<b>頸椎の固有受容覚</b>のテストを始めます<br>目をつぶって<br><b>顔を中心に戻せるか</b>を調べます', 'noseA', runNoseA, practiced);
 const stepNoseB = practiced => noseIntro(15, NOSE_B_T, '目をつぶって<br><b>覚えた点に顔を向けられるか</b>のテストです', 'noseB', runNoseB, practiced);
 // ①は元の検査（首の位置感覚＝JPSE）の流れ（2026-10-18。宮崎さんの基準「76cm先の的。閉眼で頭を回し、ゆっくり中心へ戻す（左右3回ずつの平均）」）：
 // 鼻先を真ん中の点に合わせる → 目を閉じて右（左）へ回せるところまで回す → 2秒止める → ゆっくり真ん中へ戻す → 止まったら「ピッ」。右3回 → 左3回
@@ -2845,7 +2845,7 @@ async function noseBackOpen(ref) {
 }
 async function runNoseA(practice) {
   {
-    const my = tok; clearBtns(); noseStart(); await voiceQuiet(); if (my !== tok) return;
+    const my = tok; clearBtns(); noseStart(); await voiceQuiet(45000); if (my !== tok) return;   // 説明（お客さん用 約34秒）を読み終えてから始める
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepNoseA, '顔が見つかりませんでした');
     const g = placeNose(), T = [];
@@ -2868,6 +2868,7 @@ async function runNoseA(practice) {
       else {
         await voiceQuiet(3000); if (my !== tok) return;
         cue('目をつぶったまま、ゆっくり真ん中へ戻す' + cnt, 'top', '目をつぶったまま、ゆっくり真ん中へ戻す'); await voiceQuiet(4000); if (my !== tok) return;
+        await sleep(700); if (my !== tok) return;   // 2026-11-05 宮崎さん「『ゆっくり戻して5』みたいに続いてしまう」：言い終えてから数え始めるまでに間を置く
         cap = await noseBack(ref);
       }
       if (my !== tok) return;
@@ -3276,7 +3277,7 @@ async function stepCircle() {
       cue(`<b>${J}</b>の円<small>点を鼻先で追いかける</small>`, 'top', '点が動きます。鼻先で追いかけて');
       const r = await circFollow(G, i % 2 ? 1 : -1, J); if (my !== tok || !r) return;
       circChime(); out.push({ k, ...r });
-      cue(r.acc != null && r.acc >= 0.6 ? 'よく追えました！' : 'おつかれさまでした', 'top');
+      cue('', 'top');   // 2026-11-05 宮崎さん「『よくおえました』は馬鹿にされているような気分になる」：ほめ言葉を外し、円の終わりは音（circChime）だけ
       await sleep(1500); if (my !== tok) return;
     }
     G = null; cue(''); endBeep();
