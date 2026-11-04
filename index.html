@@ -482,7 +482,7 @@ const NSTEP = 17;   // 2026-10-16 サッカード・注視を外して 16→14�
 $('steps').innerHTML = '<span></span>'.repeat(NSTEP);
 let tok = 0, CUR = null;
 // テストの最中でも、いまのテストを最初からやり直せる（2026-10-14 宮崎さん）
-const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首を横に倒す': stepSide, '3. 首の8の字': stepEight, '4. 首の左右・上下': stepNeck, '5. 表情の左右差': stepFace, '6. 目の準備（測る前の合わせ）': stepEyePrep, '7. 点を目で追う': stepPursuit, '8. 流れる縞を見る': stepOkn, '9. 頭を動かして点を見つめる': stepVor, '10. 寄り目': stepConv, '11. 舌の出方': stepTongue, '12. 口の開け方': stepJaw, '13. 線をまっすぐにする': stepSvv, [NOSE_A_T]: stepNoseA, [NOSE_B_T]: stepNoseB, [BS_T]: stepBs, [VERG_T]: stepVerg, [CIRC_T]: stepCircle, '18. 鼻先で円をなぞる': stepCircle });                       // 段を移ったら増える（前の段の待ちを止めるため）
+const REDO = () => ({ '1. ふだんの首の傾き': stepTilt, '2. 首を横に倒す': stepSide, [ROT_T]: stepRot, '3. 首の8の字': stepEight, '4. 首の左右・上下': stepNeck, '5. 表情の左右差': stepFace, '6. 目の準備（測る前の合わせ）': stepEyePrep, '7. 点を目で追う': stepPursuit, '8. 流れる縞を見る': stepOkn, '9. 頭を動かして点を見つめる': stepVor, '10. 寄り目': stepConv, '11. 舌の出方': stepTongue, '12. 口の開け方': stepJaw, '13. 線をまっすぐにする': stepSvv, [NOSE_A_T]: stepNoseA, [NOSE_B_T]: stepNoseB, [BS_T]: stepBs, [VERG_T]: stepVerg, [CIRC_T]: stepCircle, '18. 鼻先で円をなぞる': stepCircle });                       // 段を移ったら増える（前の段の待ちを止めるため）
 // お客さん用の入口で、どの検査まで進んだかを /api/check に送る（名前・メールは入れない。/check と同じ端末の番号 chk_vid）。
 // 始めた119人→最後まで37人の間のどこで抜けるかが見えなかった（2026-10-28 宮崎さん・スタッフ「音声が出るから途中でやめるのでは」の確かめ）。voice＝そのとき音声オンか
 const cevSent = new Set();
@@ -812,7 +812,7 @@ function analyzeSide(segs, mot, base) {
   const mixT = (k, o) => !o ? `${k}へ倒したとき：顔の向きを読めず` : `${k}へ倒したとき：${o.w.length ? '<b>' + o.w.join('・') + '</b>' : 'まっすぐ倒せている'}${o.cerv ? ` → <b>${o.cerv}</b>（見立て）` : ''}（回旋 ${o.rot > 0 ? '右' : '左'}${Math.abs(o.rot)}°・上下 ${o.up > 0 ? '上' : '下'}${Math.abs(o.up)}°）`;
   staff(`${after ? '<b>ドリルのあと</b><br>' + sideDiff(RUN.side, S).join('<br>') + '<br><br>' : ''}首を横に倒した角度：<b>右 ${S.R}°・左 ${S.L}°</b>（差 ${Math.abs(S.gap).toFixed(1)}°）<br>${mixT('右', S.mix.R)}<br>${mixT('左', S.mix.L)}<br><span class="small">各回 ${each.map(x => x.ok ? `${x.s}${Math.abs(x.deg).toFixed(1)}°（顔の線${Math.abs(x.raw).toFixed(1)}°・スマホ${x.phone ?? '—'}°）` : `${x.s}読めず`).join('／')}</span>
   <div class="res judge">記録のみ（読みは未定）：${S.less ? `<b>${S.less}へ倒れにくい</b>（${SIDE_GAP}°以上の差・仮）` : '左右の差は小さい'}${phoneOk ? '' : '<br>※スマホの傾きを測れていない。スマホが手と一緒に傾いた分は入っていない'}<br><span class="small">2回のうち大きいほう。目じりを結んだ線の傾き＋スマホの傾き。肩や体ごと倒すとその分も入る。回旋・上下は倒す前のまっすぐからの変化で、回旋${SIDE_ROT}°・上下${SIDE_UP}°以上が2回とも出たときだけ「まっすぐ倒せていない」と読む（仮）。同側回旋＝上位頸椎・反対回旋＝下位頸椎の動きが悪い見立て。カメラは回旋を8割ほど・上下を半分ほどに小さく読むので目安</span></div>`);
-  if (after) { saveRun(); recorded(stepSide, finish, '終わる（記録を見る）'); } else recorded(stepSide, stepEight, '次へ（首の8の字）');
+  if (after) { saveRun(); recorded(stepSide, finish, '終わる（記録を見る）'); } else recorded(stepSide, stepRot, '次へ（首を左右に向ける）');
 }
 // ドリルの前後の比べ（2026-10-18 宮崎さん「終わった後に回旋角度も含めてどこまで良くなったかを保存しておく」）。
 // 倒せた角度は大きくなれば良い、混ざった回旋は 0 に近づけば良い
@@ -826,6 +826,68 @@ function sideDiff(a, b) {
   return L;
 }
 function sideAgain() { SIDE_AFTER = true; $('sEnd').classList.add('hide'); $('sMain').classList.remove('hide'); stepSide(); }
+
+// ════ 19. 首を左右に向ける（回旋の可動域）：スマホを固定し、鼻先の動いた幅も残す
+// 2026-11-04 宮崎さん「スマホを前に構えたまま右と左を向くチェック。鼻先がどこまで動くかをカメラで撮って、その範囲を評価基準に」
+const ROT_T = '19. 首を左右に向ける';
+const ROT_TURN = 1500, ROT_HOLD = 2500, ROT_REPS = 2, ROT_GAP = 10;   // 差の基準は仮。記録のみで読みは未定
+async function stepRot() {
+  show(2, ROT_T);
+  G = { draw: drawSideGuide, tilt: null };
+  cue('顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>スマホは動かさず、顔ごと右・左を向きます。肩は動かさない</small>');
+  btn('始める', async () => {
+    const my = tok; clearBtns();
+    let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
+    if (my !== tok) return;
+    if (!last) return fail(stepRot, '顔が見つかりませんでした');
+    await voiceQuiet(); if (my !== tok) return;
+    cue('まず<br>まっすぐ前を見て', 'thin low'); await sleep(1200); if (my !== tok) return;
+    const base = await record(1500); if (my !== tok) return;
+    const segs = [], order = []; for (let k = 0; k < (STAFF ? ROT_REPS : 1); k++) order.push('右', '左');
+    for (let j = 0; j < order.length && my === tok; j++) { const s = order[j];
+      cue(`<b>${s}</b>を<br>向けるところまで`, 'thin low');
+      // 端で顔が消える前の最大値を拾うため、向く途中から続けて録る
+      const r = await record(ROT_TURN + ROT_HOLD); segs.push({ s, r });
+      if (my !== tok) return;
+      if (!STAFF && !rotOne(segs.at(-1)).ok && segs.filter(x => x.s === s).length < 2) order.splice(j + 1, 0, s);
+      cue('もどして', 'thin low'); await sleep(1500);
+    }
+    if (G && G.draw === drawSideGuide) G = null;
+    if (my !== tok) return;
+    cue(''); analyzeRot(segs, base);
+  });
+}
+function rotOne(seg, b0) {
+  const n = seg.r.length, dir = seg.s === '右' ? 1 : -1;
+  // 5フレームの移動中央値で点の揺れをならす。本人の右＝映像の x が小さい側
+  const peak = a => a.length ? Math.max(0, ...a.map((_, i) => dir * med(a.slice(Math.max(0, i - 2), i + 3)))) : null;
+  const nx = b0 && b0.d > 0 ? seg.r.map(x => (b0.x - x.pts[1].x) / b0.d) : [];
+  const deg = b0 && b0.rot != null ? seg.r.filter(x => x.hp).map(x => (x.hp.rot - b0.rot) / CAM_ROT) : [];
+  const nose = peak(nx), expected = b0 && b0.dt > 0 ? (ROT_TURN + ROT_HOLD) / b0.dt : null;
+  // 顔が端で消えた目安。正面の間隔より記録が少なく、最後も最大幅の半分以上なら残す
+  const edge = expected != null && n < 0.6 * expected && nx.length > 0 && dir * nx.at(-1) >= 0.5 * nose;
+  return { s: seg.s, ok: n >= 8, n, nose: r3(nose), deg: r1(peak(deg)), edge };
+}
+function analyzeRot(segs, base) {
+  const bf = (base || []).filter(x => x.pts && x.pts[1]), bh = bf.filter(x => x.hp);
+  const dt = bf.slice(1).map((x, i) => x.t - bf[i].t).filter(x => x > 0);
+  // 横を向くと目じりの間が縮むので、鼻先の幅は正面の距離を使う
+  const b0 = { x: bf.length >= 5 ? med(bf.map(x => x.pts[1].x)) : null,
+    d: bf.length >= 5 ? med(bf.map(x => dist(x.pts[P.eyeOut[0]], x.pts[P.eyeOut[1]]))) : null,
+    rot: bh.length >= 5 ? med(bh.map(x => x.hp.rot)) : null, dt: med(dt) };
+  const each = segs.map(x => rotOne(x, b0)), got = s => each.filter(x => x.s === s && x.ok);
+  const rr = got('右'), ll = got('左');
+  if (!rr.length || !ll.length || !(b0.d > 0) || b0.rot == null || [...rr, ...ll].some(x => x.deg == null)) return fail(stepRot, '顔が見えている時間が短すぎました');
+  // 鼻先と角度はそれぞれ最良値。どちらかを選んだ回で端に達したら注記する
+  const best = a => { const nose = a.reduce((v, x) => x.nose > v.nose ? x : v), deg = a.reduce((v, x) => x.deg > v.deg ? x : v);
+    return { nose: nose.nose, deg: deg.deg, edge: nose.edge || deg.edge }; };
+  const R = best(rr), L = best(ll), gap = r1(R.deg - L.deg);
+  RUN.rot = { R, L, gap, noseGap: r3(R.nose - L.nose), less: Math.abs(R.deg - L.deg) >= ROT_GAP ? (R.deg < L.deg ? '右' : '左') : null, threshold: ROT_GAP, each, at: new Date().toISOString() };
+  const edgeNote = x => x.edge ? '・端で顔が読めなくなった（実際はもっと回っている可能性）' : '';
+  staff(`首を左右に向けた角度：<b>右へ ${R.deg}°・左へ ${L.deg}°</b>（差 ${Math.abs(gap)}°）<br>鼻先の動いた幅 右 ${R.nose}・左 ${L.nose}（目じりの間＝1）${R.edge ? '<br>右' + edgeNote(R) : ''}${L.edge ? '<br>左' + edgeNote(L) : ''}<br><span class="small">各回<br>${each.map((x, i) => `${i + 1}回目 ${x.s}：${x.ok ? `${x.deg ?? '—'}°・鼻先 ${x.nose ?? '—'}${edgeNote(x)}` : '読めず'}`).join('<br>')}</span>
+  <div class="res judge">記録のみ（読みは未定）<br><span class="small">カメラは回旋を8割ほどに小さく読むので÷0.8で戻した目安・横を向き切ると顔を読めなくなるので、そこで止まる</span></div>`);
+  recorded(stepRot, stepEight, '次へ（首の8の字）');
+}
 
 // ── 首の検査（8の字・左右・上下）の読み。右・左は本人から見た向き（2026-10-14 宮崎さん）
 // 8の字：真ん中→左下＝右の前半規管、→右上＝右の後半規管、→右下＝左の前半規管、→左上＝左の後半規管（左上は 2026-10-14 夕方に宮崎さんが VOR の対応として確定。8の字と同じ）
@@ -3030,6 +3092,7 @@ function summaryLines() {
   const L = [], e = RUN.eight, nk = RUN.neck, f = RUN.face, p = RUN.pursuit, s = RUN.saccade, x = RUN.fixation, c = RUN.conv, t = RUN.tongue;
   if (RUN.tilt) L.push(`1. ふだんの首の傾き：${Math.abs(RUN.tilt.deg) < 0.5 ? 'ほぼまっすぐ' : (RUN.tilt.deg > 0 ? '右' : '左') + 'へ' + Math.abs(RUN.tilt.deg) + '°'}（スマホの傾き ${RUN.tilt.phone ?? '—'}°）`);
   const sd2 = RUN.side; if (sd2) L.push(`2. 首を横に倒す：右${sd2.R}°・左${sd2.L}°（差${Math.abs(sd2.gap)}°${sd2.less ? '・' + sd2.less + 'へ倒れにくい' : ''}${sd2.phone ? '' : '・スマホの傾きなし'}）／混ざり ${['R', 'L'].map(k => { const o = sd2.mix && sd2.mix[k]; return `${k === 'R' ? '右' : '左'}：${o ? `回旋${o.rot > 0 ? '右' : '左'}${Math.abs(o.rot)}°・上下${o.up > 0 ? '上' : '下'}${Math.abs(o.up)}°${o.w.length ? '→' + o.w.join('・') : ''}${o.cerv ? '＝' + o.cerv : ''}` : '—'}`; }).join('／')}`);
+  const rt = RUN.rot; if (rt) L.push(`${ROT_T}：右${rt.R.deg}°・左${rt.L.deg}°（差${Math.abs(rt.gap)}°${rt.less ? '・' + rt.less + 'へ向きにくい（仮）' : ''}）／鼻先 右${rt.R.nose}・左${rt.L.nose}${['R', 'L'].filter(k => rt[k].edge).map(k => '／' + (k === 'R' ? '右' : '左') + '：端で顔が読めなくなった（実際はもっと回っている可能性）').join('')}（記録のみ・読みは未定）`);
   const sa = RUN.sideAfter; if (sd2 && sa) L.push(`2'. 首を横に倒す（ドリルのあと${sa.at ? '・' + new Date(sa.at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : ''}）：${sideDiff(sd2, sa).map(x => x.replace(/<\/?b>/g, '')).join('／')}`);
   if (e) L.push(`3. 首の8の字：点について線の上 最初${e.fwd.follow}%・反対${e.rev.follow}%／なぞれた範囲 右の輪 ${e.fwd.covR}%・${e.rev.covR}%／左の輪 ${e.fwd.covL}%・${e.rev.covL}%／ずれた割合 ${['UR', 'UL', 'DR', 'DL'].map(k => `${LEGJ[k].slice(4)}${e.legs?.[k]?.off ?? '—'}%`).join('・')}／気持ち悪さ ${e.nausea || '—'}`);
   if (nk) L.push(`4. 首の左右・上下：線の上 左右${nk.H?.follow ?? '—'}%・上下${nk.V?.follow ?? '—'}%／ずれた割合 ${['toR', 'toL', 'up', 'down'].map(k => `${LEGJ[k]}${nk.legs?.[k]?.off ?? '—'}%（速さ${nk.legs?.[k]?.speed ?? '—'}%）`).join('・')}／気持ち悪さ ${nk.nausea || '—'}`);
@@ -3222,7 +3285,7 @@ function drillDone(again) {
 // 直接のリンク：?t=vor,conv のように key を並べると、その検査に印が付いた状態で開く
 const ASK_T = '17. 最後にいくつか質問';
 const TESTS = [
-  ['tilt', '1. ふだんの首の傾き', stepTilt, '首'], ['side', '2. 首を横に倒す', stepSide, '首'], ['eight', '3. 首の8の字', stepEight, '首'], ['neck', '4. 首の左右・上下', stepNeck, '首'],
+  ['tilt', '1. ふだんの首の傾き', stepTilt, '首'], ['side', '2. 首を横に倒す', stepSide, '首'], ['rot', ROT_T, stepRot, '首'], ['eight', '3. 首の8の字', stepEight, '首'], ['neck', '4. 首の左右・上下', stepNeck, '首'],
   ['face', '5. 表情の左右差', stepFace, '顔'],
   ['prep', '6. 目の準備（測る前の合わせ）', stepEyePrep, '目'], ['pursuit', '7. 点を目で追う', stepPursuit, '目'], ['okn', '8. 流れる縞を見る', stepOkn, '目'], ['vor', '9. 頭を動かして点を見つめる', stepVor, '目'], ['conv', '10. 寄り目', stepConv, '目'],
   ['tongue', '11. 舌の出方', stepTongue, '口'], ['jaw', '12. 口の開け方', stepJaw, '口'],
@@ -3324,7 +3387,7 @@ async function begin(plan, resume) {
   if (!STAFF && !WORKMODE) askSound(); else stepAlign();
 }
 // 確かめ用（自動の試験から各段を直接呼ぶ）
-window.__steps = { noseG: () => G, noseLast: () => last, analyzeSide, sideOne, sideMix, sideDiff, sideAgain, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepNoseA, stepNoseB, stepBs, noseErr, noseSum, noseHTML, noseTgt, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
+window.__steps = { noseG: () => G, noseLast: () => last, stepRot, analyzeRot, rotOne, analyzeSide, sideOne, sideMix, sideDiff, sideAgain, stepSide, analyzeEight, analyzeNeck, lPos, gPos, finish, stepAlign, stepEight, stepNeck, stepFace, stepEyePrep, stepPursuit, stepSacc, stepFix, stepConv, stepTongue, stepJaw, stepVor, analyzeVor, vorJudge, stepSvv, analyzeSvv, svvTrial, stepNoseA, stepNoseB, stepBs, noseErr, noseSum, noseHTML, noseTgt, stepOkn, analyzeOkn, oknJudge, analyzeJaw, jawGeom,
   analyzePursuitSeries, analyzeSaccSeries, analyzeFixSeries, analyzeTongue, tongueFrame, fitCalib, judge, judgeHTML, mitate, mitateHTML, saccJudge, analyzeTilt, analyzeFace, analyzePupil, pupilOne, wrinkleCount, stepTilt, stepPupil, stepAsk, get RUN() { return RUN; }, summaryLines, P, setSideAfter: v => { SIDE_AFTER = v; }, setCAL: c => { CAL = c; }, PT, DV, planNext, begin, TESTS, get PLAN() { return PLAN; } };
 </script>
 </body>
