@@ -3185,7 +3185,7 @@ async function stepVerg() {
 // 点は円の上を合わせて約2.5周。途中2回、向きを変える（変える前に少しゆっくりになり、一瞬止まる）。速さは 0.75〜1.25 倍の間でゆるく変わる。
 // 鼻先が点から離れたまま CIRC_WAIT たつと、点は止まって待つ（置いていかれない）
 const CIRC_OFF = 1.0, CIRC_R = 0.64, CIRC_MAX = 60000;   // 円の中心（真ん中の点から、点までの距離の何倍）・半径（同じ。0.85 → 0.64：2026-10-20 宮崎さん「今の4分の3くらいに」）・1つの円の上限（ms）
-const CIRC_LAP = 9000, CIRC_ON = 0.45, CIRC_MISS = 700, CIRC_WAIT = 1500, CIRC_TURN = 600;   // ふつうの速さの1周（ms）・合っているとみなす鼻先と点の距離（半径の何倍。甘め）・外れてブブッまで（ms）・点が止まって待つまで（ms）・向きを変えるときに止まる時間（ms）
+const CIRC_LAP = 6500, CIRC_ON = 0.45, CIRC_MISS = 700, CIRC_WAIT = 1500, CIRC_TURN = 600;   // ふつうの速さの1周（ms。9000 → 6500：2026-11-04 宮崎さん「もう少しスピードを速く」）・合っているとみなす鼻先と点の距離（半径の何倍。甘め）・外れてブブッまで（ms）・点が止まって待つまで（ms）・向きを変えるときに止まる時間（ms）
 function drawCircle(t, pts) {
   const g = G, u = OVU, c = g.c;
   oc.lineWidth = 10 * u; oc.strokeStyle = 'rgba(0,0,0,.4)'; oc.beginPath(); oc.arc(c.x, c.y, c.r, 0, 7); oc.stroke();   // 下に黒いふち（顔の上でも線が見えるように）
@@ -3247,7 +3247,7 @@ async function circFollow(g, want, J) {
 async function stepCircle() {
   show(18, CIRC_T);
   const ws = DRILL.c.map(k => DJ[k]).join('と');
-  cue(`鼻先で<b>動く点を追う</b>ワーク<small>${ws}に出る円の上を、黄色い点が動きます。鼻先（赤い点）で、点を追いかけてください。途中で向きや速さが変わります。スマホは動かさず、首だけで</small>`, '', '鼻先で動く点を追うワーク。円の上を、黄色い点が動きます。鼻先で、点を追いかけてください。途中で向きや速さが変わります。スマホは動かさず、首だけで');
+  cue(`鼻先で<b>動く点を追う</b>ワーク<small>${ws}に出る円の上を、黄色い点が動きます。鼻先（赤い点）で、点を追いかけてください。<b>点は途中で、ランダムに向きを変えます。</b>速さも変わります。スマホは動かさず、首だけで</small>`, '', '鼻先で動く点を追うワーク。円の上を、黄色い点が動きます。鼻先で、点を追いかけてください。点は途中で、ランダムに向きを変えます。速さも変わります。スマホは動かさず、首だけで');
   btn('始める', async () => {
     const my = tok; clearBtns(); noseStart(); await voiceQuiet(); if (my !== tok) return;
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
