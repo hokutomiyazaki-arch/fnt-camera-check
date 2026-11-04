@@ -51,11 +51,14 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 #cue.huge{font-size:clamp(60px,22vw,110px)}
 #cue small{display:block;font-size:16px;font-weight:600;color:#dfe3ea;margin-top:8px;line-height:1.5}
 #cue canvas{display:block;margin:0 auto 6px;width:220px;height:170px}
-/* 音声の入り切り（いつでも押せるよう右上に固定） */
-#bVoice{position:absolute;right:10px;top:calc(40px + env(safe-area-inset-top));width:auto;margin:0;padding:6px 12px;font-size:14px;border-radius:20px;background:rgba(0,0,0,.6);border:1px solid #556;z-index:10}
-#bRedo{position:absolute;left:10px;top:calc(40px + env(safe-area-inset-top));width:auto;margin:0;padding:6px 12px;font-size:14px;border-radius:20px;background:rgba(0,0,0,.6);border:1px solid #556;z-index:10}
+/* 上のボタンは横並びで収める（2026-11-04 宮崎さん） */
+#tbtn{position:absolute;left:8px;right:8px;top:calc(40px + env(safe-area-inset-top));display:flex;justify-content:space-between;align-items:center;gap:6px;z-index:10;pointer-events:none}
+#tbtn>button{pointer-events:auto;position:static;transform:none;flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#tbtn>#bVoice{margin-left:auto}
+#bVoice{width:auto;margin:0;padding:6px 12px;font-size:14px;border-radius:20px;background:rgba(0,0,0,.6);border:1px solid #556;z-index:10}
+#bRedo{width:auto;margin:0;padding:6px 12px;font-size:14px;border-radius:20px;background:rgba(0,0,0,.6);border:1px solid #556;z-index:10}
 /* あとで続ける（/check から開いたチェックの間ずっと出す。2026-10-20 宮崎さん「途中でやめる人が続きを再開できるボタンを常に表示」） */
-#bLater{position:absolute;left:50%;transform:translateX(-50%);top:calc(40px + env(safe-area-inset-top));width:auto;margin:0;padding:6px 14px;font-size:14px;font-weight:800;border-radius:20px;background:#e07b39;color:#fff;border:0;z-index:10;white-space:nowrap}
+#bLater{width:auto;margin:0;padding:6px 14px;font-size:14px;font-weight:800;border-radius:20px;background:#e07b39;color:#fff;border:0;z-index:10;white-space:nowrap}
 #later{position:fixed;inset:0;background:rgba(29,42,51,.55);z-index:30;display:none;align-items:flex-end;justify-content:center}
 #later.on{display:flex}
 #later>div{background:#f6f4ef;color:#1d2a33;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:18px 20px calc(22px + env(safe-area-inset-bottom));font-family:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif}
@@ -208,9 +211,11 @@ html:not(.funnel) #sMain #bVoice,html:not(.funnel) #sMain #bRedo{color:var(--gol
   </div>
   <div id="top"><div class="steps" id="steps"></div><div id="title"></div></div>
   <div id="cue"></div>
-  <button id="bVoice"></button>
-  <button id="bRedo" style="display:none">↺ 最初からやり直し</button>
-  <button id="bLater" class="funnelOnly">⏸ あとで続ける</button>
+  <div id="tbtn">
+    <button id="bRedo" style="display:none">↺ やり直し</button>
+    <button id="bLater" class="funnelOnly">⏸ あとで続ける</button>
+    <button id="bVoice"></button>
+  </div>
   <div id="near"></div>
   <div id="bottom"><div id="result"></div><div id="btns"></div><div id="msg"></div></div>
   <div id="svv"><canvas id="svvC"></canvas><div id="svvMsg"></div></div>
@@ -531,6 +536,8 @@ function say(html) {
   const f = VMAP && VMAP[vkey(u)];
   if (f) { try { speechSynthesis.cancel(); } catch (e) {} vplay(VDIR + f); return; }
   if (STAFF && VMAP) { (window.__voiceMiss = window.__voiceMiss || []).push(u); console.log('[voice] 音声ファイルなし：' + u); }
+  // お客さん用の音声不足は同じ文につき一度だけ記録する（2026-11-04 宮崎さん）
+  if (!STAFF && VMAP) { const miss = window.__vmiss = window.__vmiss || new Set(); if (!miss.has(u)) { miss.add(u); cev('cc_voice_miss', { t: u.slice(0, 80) }, false); } }
   if (!window.speechSynthesis) return;
   VA.pause();
   u = u.replace(/合わせ、止める/g, '合わせて、とめる').replace(/止め/g, 'とめ');   // 端末の声は「止める」を「やめる」と読むことがある（2026-10-20 宮崎さん）
@@ -596,7 +603,8 @@ function recorded(again, next, nextLabel) { partSave(again); if (tnum(CUR)) cev(
 
 // ── 目の的（点）。画面の座標：x は −1（左）〜 +1（右）、y は −1（下）〜 +1（上）。右・左は画面を見ている本人の右・左
 const dot = $('dot');
-function placeDot(x, y, cls = '') { const st = $('stage'); dot.className = 'tgt ' + cls; dot.style.display = 'block'; dot.style.left = (st.clientWidth * (0.5 + 0.40 * x)) + 'px'; dot.style.top = (st.clientHeight * (0.47 - 0.33 * y)) + 'px'; }
+// 2026-11-04 宮崎さん：寄り目の上の点（y＞1）がボタンに隠れないように下げる。採点に使う点（y は −1〜1）の位置は変えない
+function placeDot(x, y, cls = '') { const st = $('stage'); dot.className = 'tgt ' + cls; dot.style.display = 'block'; dot.style.left = (st.clientWidth * (0.5 + 0.40 * x)) + 'px'; let top = st.clientHeight * (0.47 - 0.33 * y); const tb = $('tbtn'); if (y > 1 && tb && tb.offsetParent !== null) { const minTop = tb.getBoundingClientRect().bottom - st.getBoundingClientRect().top + 30; top = Math.max(top, minTop); } dot.style.top = top + 'px'; }
 function hideDot() { dot.style.display = 'none'; }
 // 的（点）のすぐ下に案内を出す。目を的から離さずに読めて、ボタンも文字のすぐ下にある（2026-10-14 宮崎さん）
 function near(html, label, fn, voice) {
@@ -616,9 +624,11 @@ const dirOf = (x, y) => DIRS[((Math.round(Math.atan2(y, x) * 180 / Math.PI / 45)
 // 音なしでは声を出さず、画面の文字だけで進む。目を閉じる鼻先①は「戻したと思ったら目を開ける」で確定する（noseBackOpen）
 function askSound() {
   show(0, '最初に：音について');
-  cue('<b>音を出せる場所ですか？</b><small>音なしでも、画面の文字だけで最後までできます</small>');
-  const go = on => { VOICE = on; localStorage.setItem('fntVoice', on ? 'on' : 'off'); voiceBtn(); cev('cc_sound', { on });
+  cue('<b>音を出せる場所ですか？</b><small>音なしでも、画面の文字だけで最後までできます</small>', '', '');
+  const go = async on => { const my = tok; VOICE = on; localStorage.setItem('fntVoice', on ? 'on' : 'off'); voiceBtn(); cev('cc_sound', { on });
     if (!on) { try { speechSynthesis.cancel(); } catch (e) {} VA.pause(); } else { try { VA.muted = false; VA.src = 'voice/unlock.mp3'; VA.play().catch(() => {}); } catch (e) {} }
+    // 音を選んだあとに座る姿勢を案内する（2026-11-04 宮崎さん）
+    if (!STAFF) { clearBtns(); cue('<b>まっすぐ、いい姿勢で</b><br>座ってください<small>背すじをのばして座り、テストを行います</small>'); await voiceQuiet(9000); await sleep(600); if (my !== tok) return; }
     stepAlign(); };
   btn('🔇 音なしで進める', () => go(false), 'sub'); btn('🔊 音ありで進める', () => go(true));
 }
@@ -3157,7 +3167,7 @@ async function untilOk(ok, max) { const my = tok, t0 = performance.now(); let si
 async function stepVerg() {
   show(17, VERG_T);
   const S = DJ[DRILL.v], sg = DRILL.v === 'R' ? 1 : -1;
-  cue(`頭を<b>${S}へ倒して</b>、寄り目のワーク<small>上の点を見たまま、スマホを目に近づけて・離してを3回。頭は${S}へ倒したまま</small>`);
+  cue(`頭を<b>${S}へ倒して</b>、寄り目のワーク<small>このあと表示される上の点を見たまま、スマホを目に近づけて・離してを3回。頭は${S}へ倒したまま</small>`);
   btn('始める', async () => {
     const my = tok; clearBtns(); await motionStart(); noseStart(); await voiceQuiet(); if (my !== tok) return;
     // 2026-10-20 宮崎さん：入口で「倒したまま」と言ったあとに「倒して」をもう一度言うのと、「倒せるところの半分くらい」はいらない。倒れるのを黙って待つ

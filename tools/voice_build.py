@@ -22,7 +22,8 @@ VOICE = '1cOJcfrlMmUCGpeJbXg9'   # リョウ
 FUNNEL = '--funnel' in sys.argv
 if FUNNEL: VOICE, OUT = 'jWxWvPtq4PJFwe66Y9xi', ROOT / 'voice_f'
 # お客さん用で流れる段（/check：首を横に倒す・線をまっすぐ・鼻先を合わせる①）と、その前後の共通の段。足したらここにも足す
-FUNNEL_FN = ['stepAlign', 'gate', 'motionStart', 'recorded', 'fail', 'stepTilt', 'stepSide', 'stepRot', 'stepSvv', 'svvTrial', 'noseIntro', 'stepNoseA', 'runNoseA', 'noseMark', 'countdown', 'stepCircle', 'drillDone']
+# 音の選択後の姿勢・目の準備・追視・寄り目も女性の声にする（2026-11-04 宮崎さん）
+FUNNEL_FN = ['askSound', 'stepPursuit', 'calibrate', 'eyeStepStart', 'stepEyePrep', 'stepVerg', 'stepAlign', 'gate', 'motionStart', 'recorded', 'fail', 'stepTilt', 'stepSide', 'stepRot', 'stepSvv', 'svvTrial', 'noseIntro', 'stepNoseA', 'runNoseA', 'noseMark', 'countdown', 'stepCircle', 'drillDone']
 
 # ①（鼻先を真ん中に戻す）で、回数を画面だけに出すために声の文を別に渡しているもの（runNoseA の cue の第3引数・数え）
 NA = {'目を閉じて、右へ回せるところまで回す', '目を閉じて、左へ回せるところまで回す', '目を閉じて、上へ向けられるところまで向ける', '目を閉じて、下へ向けられるところまで向ける',
@@ -62,6 +63,7 @@ def texts():
     for h in ['目をつぶって。顔を中心に戻せるかのテストです', '目をつぶって。覚えた点に顔を向けられるかのテストです']:
         E.add(h + '。' + nsub)
     E.add('目をつぶって。顔を中心に戻せるかのテストです。同じ方向に2回ずつやります（右へ2回 → 左へ2回 → 上へ2回 → 下へ2回）。回せるところまで回し、目をつぶったまま「5・4・3・2・1」でゆっくり真ん中へ。「ピッ」と鳴ったら目を開ける')   # ①の説明（NOSE_SUB_A。2026-10-18 夜 hanasaki-awase の流れに・右左と上下）
+    E.add('目をつぶって。顔を中心に戻せるかのテストです。右・左・上・下へ1回ずつやります。回せるところまで回し、目をつぶったまま「5・4・3・2・1」でゆっくり真ん中へ。「ピッ」と鳴ったら目を開ける')   # お客さん用・音ありの NOSE_SUB_AF（2026-11-04 宮崎さん）
     E |= NA   # 数え（1〜5）は str(1..10) に入っている。🔴 お客さん用（voice_f）の 1〜5 は、かな（KAZU）で作り、言い終わりのあとの雑音を tools/voice_trim_f.py で切ってある（作り直したら切り直す。hanasaki-awase の voice_trim.py だと「いち」の「ち」まで切れた）
     E |= {'次は。' + k for k in ['よこ', 'たて', 'ななめ（右上↔左下）', 'ななめ（左上↔右下）']}
     E |= {'見つめたまま。あと10秒', '見つめたまま。あと4秒'}
@@ -102,7 +104,7 @@ def texts():
     WORK = {'頭を倒したまま、上の点を見る', '近づけて', '離して', 'おつかれさまでした', 'よく追えました！', '点が動きます。鼻先で追いかけて',
             '鼻先で動く点を追うワーク。円の上を、黄色い点が動きます。鼻先で、点を追いかけてください。点は途中で、ランダムに向きを変えます。速さも変わります。スマホは動かさず、首だけで'}   # 2026-10-20 円をなぞる→動く点を追う。2026-11-04「ランダムに向きを変えます」を足した
     for d in ('右', '左'):
-        WORK |= {f'頭を{d}へ倒して、寄り目のワーク。上の点を見たまま、スマホを目に近づけて・離してを3回。頭は{d}へ倒したまま', f'頭を{d}へ倒す。倒せるところの半分くらいまで'}
+        WORK |= {f'頭を{d}へ倒して、寄り目のワーク。このあと表示される上の点を見たまま、スマホを目に近づけて・離してを3回。頭は{d}へ倒したまま', f'頭を{d}へ倒す。倒せるところの半分くらいまで'}
     WORK |= {f'{d}の円。まず、鼻先を黄色い点に合わせます' for d in ('右', '左', '上', '下')}
     E |= WORK
     E |= {'目を開けて'}   # 鼻先を合わせる（2026-10-18）：ズレの数字は字だけ、声は「目を開けて」
@@ -116,7 +118,10 @@ def texts():
             body = s[m.start():s.find('\n}', m.start())] if s[m.start():].startswith(('function', 'async')) else s[m.start():s.find('\n', m.start())]
             for q in re.finditer(r"\b(?:cue|near|fail|svvMsg)\((?:[a-zA-Z]+,\s*)?(['`])((?:(?!\1).)*)\1", body, re.S):
                 if '${' not in q.group(2): F.add(to_speech(q.group(2)))
-        keep = lambda t: (t in F or t in WORK or re.fullmatch(r'\d+', t) or '倒せるところまで' in t or '向けるところまで' in t or t.startswith('顔の位置を合わせます') or '顔を中心に戻せるか' in t or t in NA
+        # 追視・近さの合図・目の再試行・座る姿勢も残す（2026-11-04 宮崎さん）
+        keep = lambda t: (t.startswith('次は。') or any(x in t for x in ('白い線が緑の帯に入ればOK', 'OK ✓。この近さのまま', '顔が見えません。スマホを顔の正面に持ってください'))
+                          or t in ('目の位置を読み取れませんでした。顔を画面に入れて、もう一度どうぞ', '目が見えている時間が短すぎました。顔を画面に入れて、もう一度どうぞ', 'まっすぐ、いい姿勢で。座ってください。背すじをのばして座り、テストを行います')
+                          or t in F or t in WORK or re.fullmatch(r'\d+', t) or '倒せるところまで' in t or '向けるところまで' in t or t.startswith('顔の位置を合わせます') or '顔を中心に戻せるか' in t or t in NA
                           or t in ('OK。下の「次へ」を押してください', 'スマホをまっすぐ縦に', 'スマホを顔に近づけて。画面で見える範囲がほぼ埋まるくらい', 'その近さのまま', '目を開けて', '真ん中に戻す', '真ん中', '練習おわり。次は本番です',
                                    '線をまっすぐ縦に。スマホを傾けて合わせ、止める。1回10秒', '次はまっすぐ横に。スマホを傾けて合わせ、止める。1回10秒')
                           or re.match(r'(顔が見つかりませんでした|顔が見えている時間が短すぎました)。顔を画面に入れて', t))
