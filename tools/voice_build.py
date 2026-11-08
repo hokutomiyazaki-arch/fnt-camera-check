@@ -48,11 +48,13 @@ def texts():
     H |= set(re.findall(r"q: '([^']+)'", s))
     H |= set(re.findall(r"\['\w+', '([^']+)', (?:\d+\]|null\]|bs =>)", s))   # 表情の合図
     S = {to_speech(h) for h in H}
-    side_cue = re.search(r"const SIDE_CUE = '([^']*)';", s).group(1)
-    why_side = re.search(r"const WHY_SIDE = \{(.*?)\};", s, re.S).group(1)
-    side_texts = {to_speech(side_cue.replace('%WHY%', value))
-                  for value in re.findall(r"^\s*'[^']*': '([^']*)',?\s*$", why_side, re.M)}
-    E = set(side_texts)
+    why_texts = set()
+    for name in ('SIDE', 'TILT', 'ROT', 'SVV', 'PURSUIT'):
+        cue = re.search(r"const " + name + r"_CUE = '([^'\n]*)';", s).group(1)
+        why = re.search(r"const WHY_" + name + r" = \{(.*?)\};", s, re.S).group(1)
+        why_texts.update(to_speech(cue.replace('%WHY%', value))
+                         for value in re.findall(r"^\s*'[^']*': '([^']*)',?\s*$", why, re.M))
+    E = set(why_texts)
     # 数字・組み合わせが入る文（index.html の該当箇所と合わせる）
     E |= {str(i) for i in range(1, 11)} | {f'{i}秒' for i in range(1, 11)}
     E |= {'白い線の上に。鼻先を置いて。3', '舌を出す準備。3', '鼻先を8の字の真ん中に置いて。矢印の向きへ動き出します 3', '点を見たまま 3'}
@@ -126,7 +128,7 @@ def texts():
         # 追視・近さの合図・目の再試行・座る姿勢も残す（2026-11-04 宮崎さん）
         keep = lambda t: (t.startswith('次は。') or any(x in t for x in ('白い線が緑の帯に入ればOK', 'OK ✓。この近さのまま', '顔が見えません。スマホを顔の正面に持ってください'))
                           or t in ('目の位置を読み取れませんでした。顔を画面に入れて、もう一度どうぞ', '目が見えている時間が短すぎました。顔を画面に入れて、もう一度どうぞ', 'まっすぐ、いい姿勢で。座ってください。背すじをのばして座り、テストを行います')
-                          or t in side_texts or t in F or t in WORK or re.fullmatch(r'\d+', t) or '倒せるところまで' in t or '向けるところまで' in t or t.startswith('顔の位置を合わせます') or '顔を中心に戻せるか' in t or t in NA
+                          or t in why_texts or t in F or t in WORK or re.fullmatch(r'\d+', t) or '倒せるところまで' in t or '向けるところまで' in t or t.startswith('顔の位置を合わせます') or '顔を中心に戻せるか' in t or t in NA
                           or t in ('OK。下の「次へ」を押してください', 'スマホをまっすぐ縦に', 'スマホを顔に近づけて。画面で見える範囲がほぼ埋まるくらい', 'その近さのまま', '目を開けて', '真ん中に戻す', '真ん中', '練習おわり。次は本番です',
                                    '線をまっすぐ縦に。スマホを傾けて合わせ、止める。1回10秒', '次はまっすぐ横に。スマホを傾けて合わせ、止める。1回10秒')
                           or re.match(r'(顔が見つかりませんでした|顔が見えている時間が短すぎました)。顔を画面に入れて', t))
