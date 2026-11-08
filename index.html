@@ -51,6 +51,8 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 #cue.huge{font-size:clamp(60px,22vw,110px)}
 #cue small{display:block;font-size:16px;font-weight:600;color:#dfe3ea;margin-top:8px;line-height:1.5}
 #cue .why{display:block;font-size:17px;font-weight:600;color:#ffe9a8;margin:10px 0 12px;line-height:1.6;text-align:left;text-shadow:none}
+#cue .whySkip{pointer-events:auto;font-size:14px;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:8px;padding:6px 12px;display:block;margin:4px auto 10px;background:rgba(0,0,0,.3)}
+#cue .whySkip+br{display:none}
 #cue .why+br{display:none}   /* 理由の段のあとの改行は読み上げの区切りだけ（画面では空き行にしない） */
 #cue canvas{display:block;margin:0 auto 6px;width:220px;height:170px}
 /* 上のボタンは横並びで収める（2026-11-04 宮崎さん） */
@@ -516,6 +518,19 @@ function show(step, title) {
 // 指示は画面の真ん中に太く大きく出す（2026-10-14 宮崎さん「常に画面の真ん中に指示が出て、その通りに目や顔を動かす」）
 // ∞・線のガイドを出している間は、指示を下へ逃がして線を隠さない（2026-10-14 宮崎さん「点線が文字の後ろに被って見えない」）
 function cue(html, cls = '', voice) { const c = $('cue'); if (G && !/low|top/.test(cls)) cls += ' low'; c.className = cls; c.innerHTML = html; say(voice ?? html); }   // voice：細かく変わる数字を読ませたくないときの読み上げ文
+function whyCue(html) {
+  cue(html);
+  const why = $('cue').querySelector('span.why');
+  if (!why) return;
+  const test = CUR, button = document.createElement('button');
+  button.className = 'whySkip'; button.type = 'button'; button.textContent = '説明をとばす ▶';
+  why.after(button);
+  button.onclick = () => {
+    VA.pause(); try { speechSynthesis.cancel(); } catch (e) {}
+    why.remove(); button.remove();
+    cev('cc_why_skip', { test }, false);
+  };
+}
 // ── 音声の指示（2026-10-14 宮崎さん「音声で指示を伝えてほしい。すぐにオフにできるボタンをつけて」）。右上のボタンで入り切り、端末に覚える
 let VOICE = localStorage.getItem('fntVoice') !== 'off', said = '', jaV = null;
 // 声は ElevenLabs で前もって作った音声（voice/）を流す。無い文だけ端末の声で読む（2026-10-14 宮崎さん「音声は連携してあるAIの声で」）
@@ -689,11 +704,11 @@ const phoneRoll = () => MOT && MOT.roll != null && performance.now() - MOT.t < 1
 const r1 = v => Number.isFinite(v) ? Math.round(v * 10) / 10 : null;
 async function stepTilt() {
   show(1, '1. ふだんの首の傾き');
-  STAFF ? cue('<b>頭位の静的アライメント</b>のテストを始めます<br><b>楽にして</b><br>画面を見るだけ<small>スマホは縦にまっすぐ</small>') : cue('<b>頭位の静的アライメント</b>のテストを始めます<br><span class="why">ふだん頭が少し傾いたままだと、首や肩の片側ばかりに負担がかかり、こりやすさの左右差につながることがあります</span><br><b>楽にして</b><br>画面を見るだけ<small>スマホは縦にまっすぐ</small>');   // 2026-11-05 宮崎さん「テストの際には難しい言葉を言ってそれっぽく」：各テストの頭に専門の名前を言う   // 指示は最小限・大きく（2026-10-15 宮崎さん。以下の段も同じ）
+  STAFF ? cue('<b>頭位の静的アライメント</b>のテストを始めます<br><b>楽にして</b><br>画面を見るだけ<small>スマホは縦にまっすぐ</small>') : whyCue('<b>頭位の静的アライメント</b>のテストを始めます<br><span class="why">ふだんの頭の傾きは、耳の奥でバランスを感じる器官（三半規管などの前庭）の左右差を表していることがあります。左右差があると、脳はそれに合わせて、本人も気づかないまま頭を傾けます</span><br><b>楽にして</b><br>画面を見るだけ<small>スマホは縦にまっすぐ</small>');   // 2026-11-05 宮崎さん「テストの際には難しい言葉を言ってそれっぽく」：各テストの頭に専門の名前を言う   // 指示は最小限・大きく（2026-10-15 宮崎さん。以下の段も同じ）
   btn('始める', async () => {
     const my = tok; clearBtns();
     const mot = await motionStart();   // 傾きのセンサーの許可は押した直後に取る（iPhone は待つと断られる）
-    if (!STAFF) { await voiceQuiet(20000); if (my !== tok) return; }   // お客さん用：説明（理由の1段）を読み終えてから測る
+    if (!STAFF) { await voiceQuiet(50000); if (my !== tok) return; }   // お客さん用（2026-11-08 説明が神経の話になり声が最長41秒。50秒まで待つ・「説明をとばす」で切れる）：説明（理由の1段）を読み終えてから測る
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepTilt, '顔が見つかりませんでした');
     if (mot) {   // スマホがまっすぐになるまで待つ（測れない端末・8秒たったら、そのまま進む）
@@ -751,16 +766,34 @@ function drawSideGuide(t, pts) {
   else { head(0, 0.55, true); if (ok) { oc.save(); oc.setLineDash([10 * u, 8 * u]); oc.lineWidth = 4 * u; oc.strokeStyle = 'rgba(90,209,139,.9)'; oc.beginPath(); oc.ellipse(cx, cy, hw, hh, 0, 0, 7); oc.stroke(); oc.restore(); } }
   g.fit = pts ? fw : null;
 }
+const WHY_SIDE = {
+  '肩こり・首こり': '首の動く範囲は、脳が「安全」と感じる範囲で決まります。首の感覚に左右差があると、脳は守るために片側の首や肩を緊張させ続け、もんでも戻る肩こり・首こりにつながることがあります',
+  '腰痛': '首の動く範囲は、脳が「安全」と感じる範囲で決まります。首の感覚はバランスの神経とつながり、背骨を支える筋肉の働きにも関わるため、左右差があると腰の筋肉が張り続け、腰痛につながることがあります',
+  '頭痛': '首の動く範囲は、脳が「安全」と感じる範囲で決まります。首の上のほうの動きや感覚の乱れは、頭や顔の痛みを伝える神経（三叉神経）を敏感にすることが知られていて、頭痛のもとになっていることがあります',
+  '疲れがとれない・眠り': '首の動く範囲は、脳が「安全」と感じる範囲で決まります。首とバランスの情報が食い違うと、脳は体を守る緊張を解けず、神経が休めないまま、疲れがとれにくい・眠りが浅いといった状態につながることがあります',
+  'ふらつき・つまずき': '首の動く範囲は、脳が「安全」と感じる範囲で決まります。首の感覚はバランスを保つ脳の中枢に直接届いているため、左右差があると脳の感じる「まっすぐ」が揺れ、ふらつきやつまずきにつながることがあります',
+  '姿勢（猫背・ストレートネック）': '首の動く範囲は、脳が「安全」と感じる範囲で決まります。脳はバランスの感覚の弱い側へ体を傾けて姿勢をつくるため、首の左右差は、猫背やストレートネックのような姿勢のくずれのもとになっていることがあります',
+  '': '首の動く範囲は、脳が「安全」と感じる範囲で決まります。首の感覚に左右差があると、脳の感じる「まっすぐ」の基準が揺れ、体のあちこちの緊張や不調として表れることがあります',
+};
+const SIDE_CUE = '<b>頸椎の側屈可動域</b>のテストを始めます<br><span class="why">%WHY%</span><br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>腕を軽く伸ばす。スマホは動かさず、首だけを横に倒します。肩は下げたまま</small>';
+function myWorry() {
+  try {
+    const data = JSON.parse(localStorage.getItem('chk_worries'));
+    if (Array.isArray(data?.w)) return Object.keys(WHY_SIDE).find(key => key && data.w.includes(key)) || '';
+  } catch (e) {}
+  return '';
+}
 async function stepSide() {
   show(2, '2. 首を横に倒す');
   G = { draw: drawSideGuide, tilt: null };
-  STAFF ? cue('<b>頸椎の側屈可動域</b>のテストを始めます<br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>腕を軽く伸ばす。スマホは動かさず、首だけを横に倒します。肩は下げたまま</small>') : cue('<b>頸椎の側屈可動域</b>のテストを始めます<br><span class="why">首を横に倒しづらい側があると、その側の首や肩がこわばり、動かしにくさにつながっていることがあります</span><br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>腕を軽く伸ばす。スマホは動かさず、首だけを横に倒します。肩は下げたまま</small>');
+  STAFF ? cue('<b>頸椎の側屈可動域</b>のテストを始めます<br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>腕を軽く伸ばす。スマホは動かさず、首だけを横に倒します。肩は下げたまま</small>') : whyCue(SIDE_CUE.replace('%WHY%', WHY_SIDE[myWorry()]));
+  if (!STAFF) cev('cc_why_side', { worry: myWorry() }, false);
   btn('始める', async () => {
     const my = tok; clearBtns();
     const mot = await motionStart();
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepSide, '顔が見つかりませんでした');
-    await voiceQuiet(30000);   // 2026-11-05 説明の頭に専門の名前を足して長くなったので、読み終えるまで待つ
+    await voiceQuiet(50000);   // 2026-11-08 悩みごとの説明で声が最長41秒になったので50秒まで待つ（「説明をとばす」で切れる）。2026-11-05 説明の頭に専門の名前を足して長くなったので、読み終えるまで待つ
     // 倒す前に、まっすぐの顔の向きを1.5秒とる（回旋・上下は、この人のまっすぐからの変化で読む）
     cue('まず<br>まっすぐ前を見て', 'thin low'); await sleep(1200); if (my !== tok) return;
     const base = await record(1500);
@@ -847,13 +880,13 @@ const ROT_TURN = 1500, ROT_HOLD = 2500, ROT_REPS = 2, ROT_GAP = 10;   // 差の�
 async function stepRot() {
   show(2, ROT_T);
   G = { draw: drawSideGuide, tilt: null };
-  STAFF ? cue('<b>頸椎の回旋可動域</b>のテストを始めます<br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>スマホは動かさず、顔ごと右・左を向きます。肩は動かさない</small>') : cue('<b>頸椎の回旋可動域</b>のテストを始めます<br><span class="why">左右どちらかを向きづらいと、振り向く動きのしにくさや、首・肩のこりにつながっていることがあります</span><br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>スマホは動かさず、顔ごと右・左を向きます。肩は動かさない</small>');
+  STAFF ? cue('<b>頸椎の回旋可動域</b>のテストを始めます<br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>スマホは動かさず、顔ごと右・左を向きます。肩は動かさない</small>') : whyCue('<b>頸椎の回旋可動域</b>のテストを始めます<br><span class="why">左右を向く動きは、首の感覚と、目・耳のバランスの情報を脳がまとめてつくっています。向きづらい側があるのは、脳がその向きにブレーキをかけているしるしのことがあります</span><br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>スマホは動かさず、顔ごと右・左を向きます。肩は動かさない</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (my !== tok) return;
     if (!last) return fail(stepRot, '顔が見つかりませんでした');
-    await voiceQuiet(30000); if (my !== tok) return;   // 専門の名前を足して長くなった説明を読み終えるまで待つ
+    await voiceQuiet(50000); if (my !== tok) return;   // 2026-11-08 説明の声が32秒になったので50秒まで。専門の名前を足して長くなった説明を読み終えるまで待つ
     cue('まず<br>まっすぐ前を見て', 'thin low'); await sleep(1200); if (my !== tok) return;
     const base = await record(1500); if (my !== tok) return;
     const segs = [], order = []; for (let k = 0; k < (STAFF ? ROT_REPS : 1); k++) order.push('右', '左');
@@ -1568,7 +1601,7 @@ const PT = 3200, PC = 2, PUR_ERR = 0.35;   // PUR_ERR：点からの位置のず
 const PUR = [{ k: 'よこ', v: [1, 0] }, { k: 'たて', v: [0, 1] }, { k: 'ななめ（右上↔左下）', v: [1, 1] }, { k: 'ななめ（左上↔右下）', v: [-1, 1] }];
 async function stepPursuit() {
   show(7, '7. 点を目で追う');
-  STAFF ? cue('<b>眼球運動（円滑性追従）</b>のテストを始めます<br>動く点を<br><b>目だけ</b>で追う') : cue('<b>眼球運動（円滑性追従）</b>のテストを始めます<br><span class="why">動く点を目でなめらかに追えるかには、脳の左右の働きが表れます。左右の差は、体の動かしにくさやふらつきに関わっていることがあります</span><br>動く点を<br><b>目だけ</b>で追う');
+  STAFF ? cue('<b>眼球運動（円滑性追従）</b>のテストを始めます<br>動く点を<br><b>目だけ</b>で追う') : whyCue('<b>眼球運動（円滑性追従）</b>のテストを始めます<br><span class="why">動く点をなめらかに目で追う動きは、脳の頭頂葉や小脳が担っています。追いにくい向きがあれば、そうした脳の働きの左右差のしるしかもしれず、体の動かしにくさやふらつきに関わっていることがあります</span><br>動く点を<br><b>目だけ</b>で追う');
   const PQ = {
     'よこ': () => cue('次は<br><b>左右に動く点</b>を<br>顔は動かさず、目だけで追ってください', 'low'),
     'たて': () => cue('次は<br><b>上下に動く点</b>を<br>顔は動かさず、目だけで追ってください', 'low'),
@@ -2601,7 +2634,7 @@ async function svvTrial(p, my) {
 }
 async function stepSvv() {
   show(13, '13. 線をまっすぐにする');
-  STAFF ? cue('<b>自覚的視性垂直位</b>のテストを始めます<br>スマホを<b>手に持って</b><br><b>顔の近めに</b><small>線がはっきり見える近さで。部屋を暗くできれば暗く</small>') : cue('<b>自覚的視性垂直位</b>のテストを始めます<br><span class="why">自分が「まっすぐ」と感じている感覚がずれていると、体はそのズレに合わせて傾きます。それが姿勢のゆがみそのものにつながることがあります</span><br>スマホを<b>手に持って</b><br><b>顔の近めに</b><small>線がはっきり見える近さで。部屋を暗くできれば暗く</small>');
+  STAFF ? cue('<b>自覚的視性垂直位</b>のテストを始めます<br>スマホを<b>手に持って</b><br><b>顔の近めに</b><small>線がはっきり見える近さで。部屋を暗くできれば暗く</small>') : whyCue('<b>自覚的視性垂直位</b>のテストを始めます<br><span class="why">線をまっすぐに合わせる感覚は、耳の奥のバランスの器官が感じる「重力の向き」から生まれます。この感覚がずれていると、体はそのズレに合わせて傾き、姿勢のゆがみそのものにつながることがあります</span><br>スマホを<b>手に持って</b><br><b>顔の近めに</b><small>線がはっきり見える近さで。部屋を暗くできれば暗く</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
     await motionStart();
