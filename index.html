@@ -50,6 +50,8 @@ textarea{width:100%;height:160px;background:#1b1f27;color:#eee;border:1px solid 
 #cue.low{top:68%}
 #cue.huge{font-size:clamp(60px,22vw,110px)}
 #cue small{display:block;font-size:16px;font-weight:600;color:#dfe3ea;margin-top:8px;line-height:1.5}
+#cue .why{display:block;font-size:17px;font-weight:600;color:#ffe9a8;margin:10px 0 12px;line-height:1.6;text-align:left;text-shadow:none}
+#cue .why+br{display:none}   /* 理由の段のあとの改行は読み上げの区切りだけ（画面では空き行にしない） */
 #cue canvas{display:block;margin:0 auto 6px;width:220px;height:170px}
 /* 上のボタンは横並びで収める（2026-11-04 宮崎さん） */
 #tbtn{position:absolute;left:8px;right:8px;top:calc(40px + env(safe-area-inset-top));display:flex;justify-content:space-between;align-items:center;gap:6px;z-index:10;pointer-events:none}
@@ -687,10 +689,11 @@ const phoneRoll = () => MOT && MOT.roll != null && performance.now() - MOT.t < 1
 const r1 = v => Number.isFinite(v) ? Math.round(v * 10) / 10 : null;
 async function stepTilt() {
   show(1, '1. ふだんの首の傾き');
-  cue('<b>頭位の静的アライメント</b>のテストを始めます<br><b>楽にして</b><br>画面を見るだけ<small>スマホは縦にまっすぐ</small>');   // 2026-11-05 宮崎さん「テストの際には難しい言葉を言ってそれっぽく」：各テストの頭に専門の名前を言う   // 指示は最小限・大きく（2026-10-15 宮崎さん。以下の段も同じ）
+  STAFF ? cue('<b>頭位の静的アライメント</b>のテストを始めます<br><b>楽にして</b><br>画面を見るだけ<small>スマホは縦にまっすぐ</small>') : cue('<b>頭位の静的アライメント</b>のテストを始めます<br><span class="why">ふだん頭が少し傾いたままだと、首や肩の片側ばかりに負担がかかり、こりやすさの左右差につながることがあります</span><br><b>楽にして</b><br>画面を見るだけ<small>スマホは縦にまっすぐ</small>');   // 2026-11-05 宮崎さん「テストの際には難しい言葉を言ってそれっぽく」：各テストの頭に専門の名前を言う   // 指示は最小限・大きく（2026-10-15 宮崎さん。以下の段も同じ）
   btn('始める', async () => {
     const my = tok; clearBtns();
-    const mot = await motionStart();
+    const mot = await motionStart();   // 傾きのセンサーの許可は押した直後に取る（iPhone は待つと断られる）
+    if (!STAFF) { await voiceQuiet(20000); if (my !== tok) return; }   // お客さん用：説明（理由の1段）を読み終えてから測る
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
     if (!last) return fail(stepTilt, '顔が見つかりませんでした');
     if (mot) {   // スマホがまっすぐになるまで待つ（測れない端末・8秒たったら、そのまま進む）
@@ -751,7 +754,7 @@ function drawSideGuide(t, pts) {
 async function stepSide() {
   show(2, '2. 首を横に倒す');
   G = { draw: drawSideGuide, tilt: null };
-  cue('<b>頸椎の側屈可動域</b>のテストを始めます<br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>腕を軽く伸ばす。スマホは動かさず、首だけを横に倒します。肩は下げたまま</small>');
+  STAFF ? cue('<b>頸椎の側屈可動域</b>のテストを始めます<br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>腕を軽く伸ばす。スマホは動かさず、首だけを横に倒します。肩は下げたまま</small>') : cue('<b>頸椎の側屈可動域</b>のテストを始めます<br><span class="why">首を横に倒しづらい側があると、その側の首や肩がこわばり、動かしにくさにつながっていることがあります</span><br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>腕を軽く伸ばす。スマホは動かさず、首だけを横に倒します。肩は下げたまま</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
     const mot = await motionStart();
@@ -844,7 +847,7 @@ const ROT_TURN = 1500, ROT_HOLD = 2500, ROT_REPS = 2, ROT_GAP = 10;   // 差の�
 async function stepRot() {
   show(2, ROT_T);
   G = { draw: drawSideGuide, tilt: null };
-  cue('<b>頸椎の回旋可動域</b>のテストを始めます<br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>スマホは動かさず、顔ごと右・左を向きます。肩は動かさない</small>');
+  STAFF ? cue('<b>頸椎の回旋可動域</b>のテストを始めます<br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>スマホは動かさず、顔ごと右・左を向きます。肩は動かさない</small>') : cue('<b>頸椎の回旋可動域</b>のテストを始めます<br><span class="why">左右どちらかを向きづらいと、振り向く動きのしにくさや、首・肩のこりにつながっていることがあります</span><br>顔が<b>点線の頭</b>に入る距離で<br>スマホを構える<small>スマホは動かさず、顔ごと右・左を向きます。肩は動かさない</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
     let w0 = performance.now(); while (!last && performance.now() - w0 < 5000) await sleep(100);
@@ -1565,14 +1568,22 @@ const PT = 3200, PC = 2, PUR_ERR = 0.35;   // PUR_ERR：点からの位置のず
 const PUR = [{ k: 'よこ', v: [1, 0] }, { k: 'たて', v: [0, 1] }, { k: 'ななめ（右上↔左下）', v: [1, 1] }, { k: 'ななめ（左上↔右下）', v: [-1, 1] }];
 async function stepPursuit() {
   show(7, '7. 点を目で追う');
-  cue('<b>眼球運動（円滑性追従）</b>のテストを始めます<br>動く点を<br><b>目だけ</b>で追う');
+  STAFF ? cue('<b>眼球運動（円滑性追従）</b>のテストを始めます<br>動く点を<br><b>目だけ</b>で追う') : cue('<b>眼球運動（円滑性追従）</b>のテストを始めます<br><span class="why">動く点を目でなめらかに追えるかには、脳の左右の働きが表れます。左右の差は、体の動かしにくさやふらつきに関わっていることがあります</span><br>動く点を<br><b>目だけ</b>で追う');
+  const PQ = {
+    'よこ': () => cue('次は<br><b>左右に動く点</b>を<br>顔は動かさず、目だけで追ってください', 'low'),
+    'たて': () => cue('次は<br><b>上下に動く点</b>を<br>顔は動かさず、目だけで追ってください', 'low'),
+    'ななめ（右上↔左下）': () => cue('次は<br><b>右上と左下を行き来する点</b>を<br>目だけで追ってください', 'low'),
+    'ななめ（左上↔右下）': () => cue('次は<br><b>左上と右下を行き来する点</b>を<br>目だけで追ってください', 'low')
+  };
   btn('始める', async () => {
     const my = tok; clearBtns();
     const g = await eyeStepStart(stepPursuit); if (!g) return;
     dark(true); const segs = [];
     for (const s of PUR) {
       if (my !== tok) return;
-      placeDot(0, 0); cue(`次は<br><b>${s.k}</b>`, 'low'); await sleep(1800); cue('');
+      placeDot(0, 0); STAFF ? cue(`次は<br><b>${s.k}</b>`, 'low') : PQ[s.k](); await sleep(1800);
+      if (!STAFF) { await voiceQuiet(6000); if (my !== tok) return; }
+      cue('');
       const t0 = performance.now();
       const fr = await record(PT * PC, () => { const a = Math.sin(2 * Math.PI * (performance.now() - t0) / PT); placeDot(s.v[0] * a, s.v[1] * a); });
       segs.push({ k: s.k, v: s.v, t0, fr });
@@ -2590,7 +2601,7 @@ async function svvTrial(p, my) {
 }
 async function stepSvv() {
   show(13, '13. 線をまっすぐにする');
-  cue('<b>自覚的視性垂直位</b>のテストを始めます<br>スマホを<b>手に持って</b><br><b>顔の近めに</b><small>線がはっきり見える近さで。部屋を暗くできれば暗く</small>');
+  STAFF ? cue('<b>自覚的視性垂直位</b>のテストを始めます<br>スマホを<b>手に持って</b><br><b>顔の近めに</b><small>線がはっきり見える近さで。部屋を暗くできれば暗く</small>') : cue('<b>自覚的視性垂直位</b>のテストを始めます<br><span class="why">自分が「まっすぐ」と感じている感覚がずれていると、体はそのズレに合わせて傾きます。それが姿勢のゆがみそのものにつながることがあります</span><br>スマホを<b>手に持って</b><br><b>顔の近めに</b><small>線がはっきり見える近さで。部屋を暗くできれば暗く</small>');
   btn('始める', async () => {
     const my = tok; clearBtns();
     await motionStart();
@@ -2604,7 +2615,12 @@ async function stepSvv() {
     // 2026-10-18 宮崎さん「老眼で近づけすぎると何も見えなくなる人がいる。そこまで近づけなくていい。だいたい顔の近めに持って、の指示だけに」で、待つのをやめた
     for (let i = 0; i < plan.length; i++) {
       const p = plan[i];
-      if (i === 0 || plan[i - 1].kind !== p.kind) { svvLine(null); svvMsg(p.kind === 'V' ? '線を<b>まっすぐ縦</b>に<small>スマホを傾けて合わせ、止める。1回10秒</small>' : '次は<b>まっすぐ横</b>に<small>スマホを傾けて合わせ、止める。1回10秒</small>'); await sleep(3000); if (my !== tok) return svvShow(false); svvMsg(''); }
+      if (i === 0 || plan[i - 1].kind !== p.kind) { svvLine(null); if (STAFF) {
+          svvMsg(p.kind === 'V' ? '線を<b>まっすぐ縦</b>に<small>スマホを傾けて合わせ、止める。1回10秒</small>' : '次は<b>まっすぐ横</b>に<small>スマホを傾けて合わせ、止める。1回10秒</small>'); await sleep(3000);
+        } else {
+          p.kind === 'V' ? svvMsg('線を<b>完全な垂直</b>に<small>真上を指す、ぴったりまっすぐ縦の線に。スマホを傾けて合わせ、止める。1回10秒</small>') : svvMsg('次は<b>完全な水平</b>に<small>傾きのない、ぴったりまっすぐ横の線に。スマホを傾けて合わせ、止める。1回10秒</small>');
+          await sleep(1500); await voiceQuiet(16000);   // 声は12〜14秒
+        } if (my !== tok) return svvShow(false); svvMsg(''); }
       T.push(await svvTrial(p, my)); if (my !== tok) return svvShow(false);
       beep(660, 80); svvLine(null); await sleep(800);
       const t = T.at(-1); if (!STAFF && (!t.ok || t.off) && plan.filter(x => x.kind === p.kind).length < SVV_N_CUST + 1) { plan.splice(i + 1, 0, { kind: p.kind, start: -p.start }); svvMsg('うまく合わせられなかったので<br><b>もう1回</b>'); await sleep(2000); if (my !== tok) return svvShow(false); svvMsg(''); }   // 合わせられなかったときだけ
