@@ -2556,7 +2556,7 @@ function drawJaw({ img, pts }) {
 // 本来は暗室かバケツで、周りの縦横の手がかりを消す。スマホの画面だけでは消し切れない（Carrick CNS09-14：アプリだけでは周りが見える）ので、仮の代わり。部屋を暗くし、画面を顔に近づけてもらう
 // 1回は10秒決め打ちで、残りの秒数を出す。読むのは最後の1.5秒の傾き（2026-10-15 宮崎さん「何秒やればいいかわからない。合わせる時間は10秒ぐらい」「何回もやって平均値」）。
 // 前は「止まったら完了」にしていたが、手持ちのスマホは止めても1°以上揺れるので完了と読めず、全部の回が時間切れで捨てられていた（同日「読み取れなかった」）
-const SVV_TH = 2.5, SVH_TH = 1.5, SVV_N = 4, SVV_SEC = 10, SVV_TAIL = 1500, SVV_OFF = 10;   // 度・回数・1回の秒数・読む長さ(ms)・合わせられていないとみて平均から外すずれ(度)
+const SVV_TH = 2.5, SVH_TH = 1.5, SVV_N = 4, SVV_N_CUST = 3, SVV_SEC = 10, SVV_TAIL = 1500, SVV_OFF = 10;   // 度・回数・1回の秒数・読む長さ(ms)・合わせられていないとみて平均から外すずれ(度)
 function svvShow(on) { $('svv').style.display = on ? 'block' : 'none'; const bd = document.querySelector('.badge'); if (bd) bd.style.visibility = on ? 'hidden' : '';   // 札の文字も縦横の手がかりになるので隠す
   if (!on) svvMsg(''); }
 function svvMsg(html) { $('svvMsg').innerHTML = html; if (html) say(html); }
@@ -2598,7 +2598,7 @@ async function stepSvv() {
     if (my !== tok) return;
     if (phoneRoll() == null) { RUN.svv = { ok: false, why: 'この端末ではスマホの傾きを測れない' }; cue('この端末では<br>測れませんでした'); const [nx, nl] = planNext(stepSvv) || [stepAsk, '次へ（最後の質問）']; btn(nl, nx); return; }
     const plan = [];   // 縦4・横4。始めの傾きは右・左を交互に（最初の向きはばらばら）、大きさは 12〜20° でばらばら
-    for (const kind of ['V', 'H']) { const s0 = Math.random() < 0.5 ? 1 : -1; for (let i = 0; i < (STAFF ? SVV_N : 1); i++) plan.push({ kind, start: (i % 2 ? -s0 : s0) * (12 + Math.random() * 8) }); }   // お客さん用は縦・横1回ずつ（2026-10-28 宮崎さん）
+    for (const kind of ['V', 'H']) { const s0 = Math.random() < 0.5 ? 1 : -1; for (let i = 0; i < (STAFF ? SVV_N : SVV_N_CUST); i++) plan.push({ kind, start: (i % 2 ? -s0 : s0) * (12 + Math.random() * 8) }); }   // お客さん用は縦・横3回ずつ（2026-11-08 宮崎さん。それまで 10/28〜 1回ずつ）
     cue(''); svvShow(true); const T = [];
     // 前は最初に「顔に近づけて」を出し、カメラで顔の大きさを見て近くなるまで待っていた（2026-10-16）。
     // 2026-10-18 宮崎さん「老眼で近づけすぎると何も見えなくなる人がいる。そこまで近づけなくていい。だいたい顔の近めに持って、の指示だけに」で、待つのをやめた
@@ -2607,7 +2607,7 @@ async function stepSvv() {
       if (i === 0 || plan[i - 1].kind !== p.kind) { svvLine(null); svvMsg(p.kind === 'V' ? '線を<b>まっすぐ縦</b>に<small>スマホを傾けて合わせ、止める。1回10秒</small>' : '次は<b>まっすぐ横</b>に<small>スマホを傾けて合わせ、止める。1回10秒</small>'); await sleep(3000); if (my !== tok) return svvShow(false); svvMsg(''); }
       T.push(await svvTrial(p, my)); if (my !== tok) return svvShow(false);
       beep(660, 80); svvLine(null); await sleep(800);
-      const t = T.at(-1); if (!STAFF && (!t.ok || t.off) && T.filter(x => x.kind === p.kind).length < 2) { plan.splice(i + 1, 0, { kind: p.kind, start: -p.start }); svvMsg('うまく合わせられなかったので<br><b>もう1回</b>'); await sleep(2000); if (my !== tok) return svvShow(false); svvMsg(''); }   // 合わせられなかったときだけ
+      const t = T.at(-1); if (!STAFF && (!t.ok || t.off) && plan.filter(x => x.kind === p.kind).length < SVV_N_CUST + 1) { plan.splice(i + 1, 0, { kind: p.kind, start: -p.start }); svvMsg('うまく合わせられなかったので<br><b>もう1回</b>'); await sleep(2000); if (my !== tok) return svvShow(false); svvMsg(''); }   // 合わせられなかったときだけ
     }
     svvShow(false); analyzeSvv(T);
   });
